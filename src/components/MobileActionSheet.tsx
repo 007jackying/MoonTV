@@ -204,6 +204,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
                   fill
                   className={origin === 'live' ? 'object-contain' : 'object-cover'}
                   loading="lazy"
+                  referrerPolicy='no-referrer'
                 />
               </div>
             )}

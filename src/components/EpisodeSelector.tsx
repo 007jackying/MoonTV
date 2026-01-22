@@ -604,6 +604,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                               src={processImageUrl(source.poster)}
                               alt={source.title}
                               className='w-full h-full object-cover'
+                              referrerPolicy='no-referrer'
                               onError={(e) => {
                                 const target = e.target as HTMLImageElement;
                                 target.style.display = 'none';

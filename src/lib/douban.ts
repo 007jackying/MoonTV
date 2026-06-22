@@ -16,7 +16,6 @@ export async function fetchDoubanData<T>(url: string): Promise<T> {
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
       Referer: 'https://movie.douban.com/',
       Accept: 'application/json, text/plain, */*',
-      Origin: 'https://movie.douban.com',
     },
   };
 
@@ -28,7 +27,12 @@ export async function fetchDoubanData<T>(url: string): Promise<T> {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    return await response.json();
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`豆瓣返回了非 JSON 数据: ${text.slice(0, 200)}`);
+    }
   } catch (error) {
     clearTimeout(timeoutId);
     throw error;

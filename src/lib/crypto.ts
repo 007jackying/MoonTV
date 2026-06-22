@@ -41,18 +41,4 @@ export class SimpleCrypto {
     }
   }
 
-  /**
-   * 验证密码是否能正确解密数据
-   * @param encryptedData 加密的数据
-   * @param password 密码
-   * @returns 是否能正确解密
-   */
-  static canDecrypt(encryptedData: string, password: string): boolean {
-    try {
-      const decrypted = this.decrypt(encryptedData, password);
-      return decrypted.length > 0;
-    } catch {
-      return false;
-    }
-  }
 }

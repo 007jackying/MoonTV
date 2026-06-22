@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { inflate } from 'pako';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { configSelfCheck, setCachedConfig } from '@/lib/config';
@@ -10,7 +9,27 @@ import { db } from '@/lib/db';
 
 export const runtime = 'edge';
 
-// pako 的 gunzip 是同步的，不需要 promisify
+async function inflateFromBase64(b64: string): Promise<string> {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const stream = new DecompressionStream('deflate-raw');
+  const writer = stream.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const chunks: Uint8Array[] = [];
+  const reader = stream.readable.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.length; }
+  return new TextDecoder().decode(out);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -58,10 +77,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '解密失败，请检查密码是否正确' }, { status: 400 });
     }
 
-    // 解压缩数据
-    const compressedBuffer = Buffer.from(decryptedData, 'base64');
-    const decompressedBuffer = inflate(compressedBuffer);
-    const decompressedData = new TextDecoder().decode(decompressedBuffer);
+    const decompressedData = await inflateFromBase64(decryptedData);
 
     // 解析JSON数据
     let importData: any;

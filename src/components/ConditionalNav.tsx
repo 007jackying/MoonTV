@@ -1,7 +1,6 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { memo } from 'react';
 
 import MobileBottomNav from './MobileBottomNav';
 import MobileHeader from './MobileHeader';
@@ -42,5 +41,4 @@ const ConditionalNav = () => {
   );
 };
 
-// 使用 React.memo 优化，避免不必要的重新渲染
-export default memo(ConditionalNav);
+export default ConditionalNav;

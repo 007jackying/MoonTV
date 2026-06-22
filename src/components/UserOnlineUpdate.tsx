@@ -11,6 +11,12 @@ import { useEffect } from 'react';
 export default function UserOnlineUpdate() {
   useEffect(() => {
     const updateOnline = async () => {
+      const storageType =
+        process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
+      if (storageType === 'localstorage') {
+        return;
+      }
+
       try {
         const response = await fetch('/api/user/online', {
           method: 'POST',

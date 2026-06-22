@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { deflate } from 'pako';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { SimpleCrypto } from '@/lib/crypto';
@@ -10,7 +9,24 @@ import { CURRENT_VERSION } from '@/lib/version';
 
 export const runtime = 'edge';
 
-// pako 的 gzip 是同步的，不需要 promisify
+async function deflateToBase64(data: string): Promise<string> {
+  const stream = new CompressionStream('deflate-raw');
+  const writer = stream.writable.getWriter();
+  writer.write(new TextEncoder().encode(data));
+  writer.close();
+  const chunks: Uint8Array[] = [];
+  const reader = stream.readable.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.length; }
+  return btoa(Array.from(out, (b) => String.fromCharCode(b)).join(''));
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -87,11 +103,7 @@ export async function POST(req: NextRequest) {
     // 将数据转换为JSON字符串
     const jsonData = JSON.stringify(exportData);
 
-    // 先压缩数据
-    const compressedData = deflate(jsonData);
-
-    // 使用提供的密码加密压缩后的数据
-    const compressedBase64 = Buffer.from(compressedData).toString('base64');
+    const compressedBase64 = await deflateToBase64(jsonData);
     const encryptedData = SimpleCrypto.encrypt(compressedBase64, password);
 
     // 生成文件名

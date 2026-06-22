@@ -1,6 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
-import he from 'he';
 import Hls from 'hls.js';
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
 
 function getDoubanImageProxyConfig(): {
   proxyType:
@@ -228,8 +238,7 @@ export function cleanHtmlTags(text: string): string {
     .replace(/^\n+|\n+$/g, '') // 去掉首尾换行
     .trim(); // 去掉首尾空格
 
-  // 使用 he 库解码 HTML 实体
-  return he.decode(cleanedText);
+  return decodeHtmlEntities(cleanedText);
 }
 
 /**

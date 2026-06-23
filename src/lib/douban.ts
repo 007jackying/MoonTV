@@ -9,15 +9,16 @@ export async function fetchDoubanData<T>(url: string): Promise<T> {
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
   // 设置请求选项，包括信号和头部
-  const fetchOptions = {
-    signal: controller.signal,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      Referer: 'https://movie.douban.com/',
-      Accept: 'application/json, text/plain, */*',
-    },
+  const headers: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    Referer: 'https://movie.douban.com/',
+    Accept: 'application/json, text/plain, */*',
   };
+  const cookie = process.env.DOUBAN_COOKIE;
+  if (cookie) headers['Cookie'] = cookie;
+
+  const fetchOptions = { signal: controller.signal, headers };
 
   try {
     const response = await fetch(url, fetchOptions);

@@ -141,7 +141,7 @@ export default function ContinueWatching({ className, showAll = false, hideHeade
       
       {isClient && (simpleMode || showAll) ? (
         // 简洁模式：使用网格布局，类似收藏夹
-        <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+        <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
           {loading
             ? // 加载状态显示灰色占位数据
               Array.from({ length: 6 }).map((_, index) => (
@@ -188,7 +188,7 @@ export default function ContinueWatching({ className, showAll = false, hideHeade
               Array.from({ length: 6 }).map((_, index) => (
                 <div
                   key={index}
-                  className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                  className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                 >
                   <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                     <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
@@ -203,7 +203,7 @@ export default function ContinueWatching({ className, showAll = false, hideHeade
                 return (
                   <div
                     key={record.key}
-                    className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                    className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                   >
                     <VideoCard
                       id={id}

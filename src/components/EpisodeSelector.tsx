@@ -413,7 +413,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         <>
           {/* 分类标签 */}
           <div className='flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0'>
-            <div className='flex-1 overflow-x-auto scrollbar-hide' ref={categoryContainerRef}>
+            {/* 右侧渐隐：被裁切的分页标签才不会被误读成错误的集数区间（如 "51-1"） */}
+            <div
+              className='flex-1 overflow-x-auto scrollbar-hide [mask-image:linear-gradient(to_right,black_calc(100%-24px),transparent)]'
+              ref={categoryContainerRef}
+            >
               <div className='flex gap-2 min-w-max'>
                 {categories.map((label, idx) => {
                   const isActive = idx === displayPage;
@@ -424,7 +428,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                         buttonRefs.current[idx] = el;
                       }}
                       onClick={() => handleCategoryClick(idx)}
-                      className={`w-20 relative py-2 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 text-center 
+                      className={`px-3 relative py-2 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 text-center
                         ${
                           isActive
                             ? 'text-green-500 dark:text-green-400'

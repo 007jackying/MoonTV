@@ -131,12 +131,8 @@ export default async function RootLayout({
               
               {/* 页面内容 */}
               <div className='relative w-full'>
-                <main
-                  className='flex-1 mb-14 md:mb-0'
-                  style={{
-                    paddingBottom: 'calc(3.5rem + env(safe-area-inset-bottom))',
-                  }}
-                >
+                {/* 底部留白仅为移动端底部导航预留，md 以上该导航不存在 */}
+                <main className='flex-1 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0'>
                   {children}
                 </main>
               </div>

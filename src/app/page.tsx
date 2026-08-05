@@ -2,7 +2,7 @@
 
 'use client';
 
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
@@ -23,9 +23,9 @@ import { DoubanItem } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import { useNavigationLoading } from '@/components/NavigationLoadingProvider';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
-import { useNavigationLoading } from '@/components/NavigationLoadingProvider';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
 
@@ -211,7 +211,7 @@ function HomeClient() {
           />
         </div>
 
-        <div className='max-w-[95%] mx-auto'>
+        <div className='w-full max-w-screen-2xl mx-auto'>
           {activeTab === 'history' ? (
             // 历史视图 - 显示所有播放记录的网格布局
             <ContinueWatching showAll={true} />
@@ -251,7 +251,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -299,7 +299,7 @@ function HomeClient() {
                           Array.from({ length: 8 }).map((_, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                                 <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
@@ -311,7 +311,7 @@ function HomeClient() {
                           hotMovies.map((movie, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <VideoCard
                                 from='douban'
@@ -348,7 +348,7 @@ function HomeClient() {
                           Array.from({ length: 8 }).map((_, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                                 <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
@@ -360,7 +360,7 @@ function HomeClient() {
                           hotTvShows.map((show, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <VideoCard
                                 from='douban'
@@ -396,7 +396,7 @@ function HomeClient() {
                           Array.from({ length: 8 }).map((_, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                                 <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
@@ -428,7 +428,7 @@ function HomeClient() {
                             return todayAnimes.map((anime, index) => (
                               <div
                                 key={`${anime.id}-${index}`}
-                                className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                                className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                               >
                                 <VideoCard
                                   from='douban'
@@ -472,7 +472,7 @@ function HomeClient() {
                           Array.from({ length: 8 }).map((_, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
                                 <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
@@ -484,7 +484,7 @@ function HomeClient() {
                           hotVarietyShows.map((show, index) => (
                             <div
                               key={index}
-                              className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
                             >
                               <VideoCard
                                 from='douban'
@@ -506,7 +506,7 @@ function HomeClient() {
       </div>
       {announcement && showAnnouncement && (
         <div
-          className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm dark:bg-black/70 p-4 transition-opacity duration-300 ${
+          className={`fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm dark:bg-black/70 p-4 transition-opacity duration-300 ${
             showAnnouncement ? '' : 'opacity-0 pointer-events-none'
           }`}
         >
@@ -519,7 +519,9 @@ function HomeClient() {
                 onClick={() => handleCloseAnnouncement(announcement)}
                 className='text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-white transition-colors'
                 aria-label='关闭'
-              ></button>
+              >
+                <X className='w-5 h-5' />
+              </button>
             </div>
             <div className='mb-6'>
               <div className='relative overflow-hidden rounded-lg mb-4 bg-green-50 dark:bg-green-900/20'>

@@ -615,22 +615,22 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
 
 
         {/* 搜索结果 */}
-        <div className="max-w-[95%] mx-auto overflow-visible">
+        <div className="w-full max-w-screen-2xl mx-auto overflow-visible">
           {isLoading ? (
             <div className="flex justify-center items-center h-40">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
             </div>
           ) : showResults ? (
             <section className="mb-12">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-y-2">
               <div className="flex items-center gap-4">
-                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">搜索结果</h2>
+                <h2 className="text-xl font-bold whitespace-nowrap text-gray-800 dark:text-gray-200">搜索结果</h2>
                 <FailedSourcesDisplay failedSources={failedSources} />
               </div>
               <div className="flex items-center gap-4">
                 {/* 流式/聚合切换 */}
                 <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <span className="text-sm text-gray-700 dark:text-gray-300">流式</span>
+                  <span className="text-sm whitespace-nowrap text-gray-700 dark:text-gray-300">流式</span>
                   <div className="relative">
                     <input
                       type="checkbox"
@@ -643,7 +643,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                   </div>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <span className="text-sm text-gray-700 dark:text-gray-300">聚合</span>
+                  <span className="text-sm whitespace-nowrap text-gray-700 dark:text-gray-300">聚合</span>
                   <div className="relative">
                     <input
                       type="checkbox"
@@ -689,7 +689,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
             {/* 精确匹配结果 */}
             <div
               key={`search-results-${viewMode}`}
-              className="justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8"
+              className="justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8"
             >
               {displayedExactResults.map(([mapKey, group], index) => {
                 if (viewMode) {
@@ -748,7 +748,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
             {sortedAggregatedResults.others.length > 0 && (
               <div className="mt-8">
                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-7">更多结果</h2>
-                <div className="justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8">
+                <div className="justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8">
                   {displayedOthersResults.map(([mapKey, group], index) => {
                     if (viewMode) {
                       return (

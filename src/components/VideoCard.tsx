@@ -2,6 +2,7 @@
 
 import { ExternalLink, Heart, Link, PlayCircleIcon, Trash2 } from 'lucide-react';
 import Image from 'next/image';
+import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useMemo, useState } from 'react';
 
@@ -193,40 +194,39 @@ export default function VideoCard({
     [from, actualSource, actualId, onDelete]
   );
 
-  const handleClick = useCallback(() => {
-    // 点击时不再检查收藏状态
-    // 触发加载动画
-    startLoading();
-
+  // 播放链接：卡片整体是一个 <a>，因此支持新标签页打开、键盘访问与触屏点击
+  const href = useMemo(() => {
     if (from === 'douban') {
-      router.push(
-        `/play?title=${encodeURIComponent(actualTitle.trim())}${
-          actualYear ? `&year=${actualYear}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
-      );
-    } else if (actualSource && actualId) {
-      router.push(
-        `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
-          actualTitle
-        )}${actualYear ? `&year=${actualYear}` : ''}${
-          isAggregate ? '&prefer=true' : ''
-        }${
-          actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-        }${actualSearchType ? `&stype=${actualSearchType}` : ''}`
-      );
+      return `/play?title=${encodeURIComponent(actualTitle.trim())}${
+        actualYear ? `&year=${actualYear}` : ''
+      }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
     }
+    if (actualSource && actualId) {
+      return `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
+        actualTitle
+      )}${actualYear ? `&year=${actualYear}` : ''}${
+        isAggregate ? '&prefer=true' : ''
+      }${
+        actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
+      }${actualSearchType ? `&stype=${actualSearchType}` : ''}`;
+    }
+    return '';
   }, [
     from,
     actualSource,
     actualId,
-    router,
     actualTitle,
     actualYear,
     isAggregate,
     actualQuery,
     actualSearchType,
-    startLoading,
   ]);
+
+  const handleClick = useCallback(() => {
+    if (!href) return;
+    startLoading();
+    router.push(href);
+  }, [href, router, startLoading]);
 
   const config = useMemo(() => {
     const configs = {
@@ -290,6 +290,13 @@ export default function VideoCard({
         }, 500);
         setLongPressTimer(timerId);
       }}
+      onTouchMove={() => {
+        // 滚动时取消长按，避免滑动列表时误弹操作面板
+        if (longPressTimer) {
+          window.clearTimeout(longPressTimer);
+          setLongPressTimer(null);
+        }
+      }}
       onTouchEnd={() => {
         if (longPressTimer) {
           window.clearTimeout(longPressTimer);
@@ -314,6 +321,17 @@ export default function VideoCard({
         }
       }}
     >
+      <NextLink
+        href={href || '#'}
+        className='block'
+        onClick={(e) => {
+          if (!href) {
+            e.preventDefault();
+            return;
+          }
+          startLoading();
+        }}
+      >
       {/* 图片和播放按钮 */}
       <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
         {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
@@ -344,11 +362,7 @@ export default function VideoCard({
               <PlayCircleIcon
                 size={50}
                 strokeWidth={0.8}
-                className="text-white fill-transparent hover:fill-green-500 hover:scale-[1.1] transition"
-                onClick={(e) => {
-                  e.stopPropagation(); // 阻止冒泡
-                  handleClick();       // 只在点击按钮时触发播放
-                }}
+                className="text-white fill-transparent hover:fill-green-500 hover:scale-[1.1] transition pointer-events-none"
               />
             </div>
           )}
@@ -399,8 +413,9 @@ export default function VideoCard({
         {config.showDoubanLink && actualDoubanId && (
           <div
             onClick={(e) => {
-              e.stopPropagation(); // 阻止触发卡片点击
-              
+              e.preventDefault(); // 阻止卡片链接跳转
+              e.stopPropagation();
+
               if (isBangumi) {
                 // 动漫 → Bangumi
                 window.open(`https://bangumi.tv/subject/${actualDoubanId}`, "_blank");
@@ -443,6 +458,7 @@ export default function VideoCard({
       <div
         className="bg-gray-700 text-white text-xs sm:text-xs w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center shadow-md hover:bg-gray-600 hover:scale-[1.1] transition-all duration-300 ease-out cursor-pointer"
         onClick={(e) => {
+          e.preventDefault(); // 阻止卡片链接跳转
           e.stopPropagation();
           setShowSources((prev) => !prev); // 点击切换列表显示
         }}
@@ -506,6 +522,7 @@ export default function VideoCard({
           </span>
         )}
       </div>
+      </NextLink>
 
       {/* 右键 / 长按 操作面板 */}
       <MobileActionSheet
@@ -533,25 +550,7 @@ export default function VideoCard({
             icon: <ExternalLink size={20} />,
             color: 'default',
             onClick: () => {
-              if (from === 'douban') {
-                window.open(
-                  `/play?title=${encodeURIComponent(actualTitle.trim())}${
-                    actualYear ? `&year=${actualYear}` : ''
-                  }${actualSearchType ? `&stype=${actualSearchType}` : ''}`,
-                  '_blank'
-                );
-              } else if (actualSource && actualId) {
-                window.open(
-                  `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
-                    actualTitle
-                  )}${actualYear ? `&year=${actualYear}` : ''}${
-                    isAggregate ? '&prefer=true' : ''
-                  }${
-                    actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''
-                  }${actualSearchType ? `&stype=${actualSearchType}` : ''}`,
-                  '_blank'
-                );
-              }
+              if (href) window.open(href, '_blank');
             },
           },
           ...(from !== 'douban' && !(from === 'search' && isAggregate) && actualSource && actualId

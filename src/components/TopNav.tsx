@@ -443,7 +443,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
   return (
     <>
     <header className='hidden md:block sticky top-0 z-50 w-full bg-white/80 backdrop-blur-xl border-b border-gray-200/50 shadow-sm dark:bg-gray-900/80 dark:border-gray-700/50'>
-      <div className='mx-auto px-6 h-16 flex items-center justify-between gap-6'>
+      <div className='mx-auto px-6 h-16 flex items-center justify-between gap-3 lg:gap-6'>
         {/* Logo */}
         {simpleMode ? (
           <div className='absolute left-1/2 transform -translate-x-1/2'>
@@ -489,10 +489,12 @@ const TopNav = ({ activePath }: TopNavProps) => {
               setActive('/');
             }}
             data-active={active === '/'}
-            className='group flex items-center gap-2 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100/50 hover:text-green-600 data-[active=true]:bg-green-500/10 data-[active=true]:text-green-600 font-medium transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400'
+            title='首页'
+            className='group flex items-center gap-2 px-3 lg:px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100/50 hover:text-green-600 data-[active=true]:bg-green-500/10 data-[active=true]:text-green-600 font-medium transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400'
           >
             <Home className='h-4 w-4' />
-            <span>首页</span>
+            {/* 窄屏（md~lg）只留图标，否则右侧按钮组会被挤出视口 */}
+            <span className='hidden lg:inline'>首页</span>
           </Link>
         )}
 
@@ -517,10 +519,11 @@ const TopNav = ({ activePath }: TopNavProps) => {
                   setActive(item.href);
                 }}
                 data-active={isActive}
-                className='group flex items-center gap-2 px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100/50 hover:text-green-600 data-[active=true]:bg-green-500/10 data-[active=true]:text-green-600 font-medium transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400'
+                title={item.label}
+                className='group flex items-center gap-2 px-3 lg:px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100/50 hover:text-green-600 data-[active=true]:bg-green-500/10 data-[active=true]:text-green-600 font-medium transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400'
               >
                 <Icon className='h-4 w-4' />
-                <span>{item.label}</span>
+                <span className='hidden lg:inline'>{item.label}</span>
               </Link>
             );
           })}
@@ -536,7 +539,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
         </div>
 
         {/* 右侧按钮组 */}
-        <div className='flex items-center gap-2 flex-shrink-0 mr-9'>
+        <div className='flex items-center gap-2 flex-shrink-0'>
           <button
             onClick={() => {
               if (typeof window !== 'undefined') {

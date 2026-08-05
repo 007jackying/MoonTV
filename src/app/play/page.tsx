@@ -2437,10 +2437,10 @@ function PlayPageClient() {
           <div className='w-full'>
             <div className='p-6 flex flex-col min-h-0'>
               {/* 标题 */}
-              <h1 className='text-3xl font-bold mb-2 tracking-wide flex items-center flex-shrink-0 text-center md:text-left w-full'>
+              <h1 className='text-2xl md:text-3xl font-bold mb-2 tracking-wide flex flex-wrap items-center gap-y-2 flex-shrink-0 w-full'>
                 {videoTitle || '影片标题'}
                 {totalEpisodes > 1 && (
-                  <span className='text-gray-500 dark:text-gray-400 text-2xl ml-3'>
+                  <span className='text-gray-500 dark:text-gray-400 text-xl md:text-2xl ml-3'>
                     {detail?.episodes_titles?.[currentEpisodeIndex] ||
                       `第 ${currentEpisodeIndex + 1} 集`}
                   </span>

@@ -103,7 +103,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
         minHeight: 'calc(3.5rem + env(safe-area-inset-bottom))',
       }}
     >
-      <ul className='flex items-center overflow-x-auto scrollbar-hide'>
+      <ul className='flex items-center'>
         {navItems.map((item) => {
           const active = isActive(item.href);
           
@@ -117,18 +117,12 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
           }
 
           return (
-            <li
-              key={item.href}
-              className='flex-shrink-0'
-              style={{
-                width: simpleMode ? '50vw' : '20vw',
-                minWidth: simpleMode ? '50vw' : '20vw'
-              }}
-            >
+            // 均分宽度而非固定 20vw：多于 5 个入口时也不会溢出到需要横向滚动
+            <li key={item.href} className='flex-1 min-w-0'>
               <Link
                 href={item.href}
                 className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'
-                onClick={(e) => {
+                onClick={() => {
                   // 如果不是当前激活的链接，则触发加载动画
                   if (!active) {
                     startLoading();
@@ -142,11 +136,11 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                     }`}
                 />
                 <span
-                  className={
+                  className={`truncate max-w-full px-0.5 ${
                     active
                       ? 'text-green-600 dark:text-green-400'
                       : 'text-gray-600 dark:text-gray-300'
-                  }
+                  }`}
                 >
                   {item.label}
                 </span>

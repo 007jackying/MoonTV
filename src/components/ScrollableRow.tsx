@@ -100,9 +100,10 @@ export default function ScrollableRow({
       }}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* pb 只需容纳卡片 hover 时 1.05 的缩放溢出，不需要 3rem */}
       <div
         ref={containerRef}
-        className='flex space-x-6 overflow-x-auto scrollbar-hide py-1 sm:py-2 pb-12 sm:pb-14 px-4 sm:px-6'
+        className='flex space-x-3 sm:space-x-6 overflow-x-auto scrollbar-hide py-1 sm:py-2 pb-4 sm:pb-6 px-4 sm:px-6'
         onScroll={checkScroll}
       >
         {children}

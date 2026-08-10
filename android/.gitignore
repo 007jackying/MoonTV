@@ -1,0 +1,5 @@
+moontv-tv.keystore
+.gradle/
+build/
+local.properties
+app/build/

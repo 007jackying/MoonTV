@@ -19,6 +19,7 @@ import { processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import MobileActionSheet from '@/components/MobileActionSheet';
+import MoonPhase from '@/components/MoonPhase';
 import { useNavigationLoading } from '@/components/NavigationLoadingProvider';
 
 interface VideoCardProps {
@@ -68,6 +69,9 @@ export default function VideoCard({
   const [favoriteChecked, setFavoriteChecked] = useState(false); // 是否已经检查过收藏状态
   const [isActionOpen, setIsActionOpen] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState<number | null>(null);
+  // 长按已经弹出了操作面板，随后 touchend 合成的那次 click 不能再跳去播放页 ——
+  // 否则面板只闪一帧，手机上根本点不到收藏/删除。
+  const longPressedRef = React.useRef(false);
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -270,10 +274,35 @@ export default function VideoCard({
     return configs[from] || configs.search;
   }, [from, isAggregate, actualDoubanId, rate]);
 
+  // 鼠标悬停或遥控器聚焦时懒加载收藏状态
+  const revealCard = useCallback(() => {
+    if (from === 'favorite' && !favorited) {
+      // 收藏夹里的卡片直接默认已收藏，不检查数据库
+      setFavorited(true);
+      setFavoriteChecked(true);
+      return;
+    }
+    if (config.showHeart && !favoriteChecked) {
+      checkFavoriteStatus();
+    }
+  }, [from, favorited, config.showHeart, favoriteChecked, checkFavoriteStatus]);
+
   // 渲染
   return (
+    // focus-within mirrors every hover state so a TV remote sees what a mouse sees.
+    // scroll-mx keeps the focused card off the edge when a row auto-scrolls.
     <div
-      className="group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-[500]"
+      // data-tv-* 供 TvImmersiveBackdrop 读取：焦点落到这张卡时用它换背景和信息块
+      data-tv-card=''
+      data-tv-title={actualTitle}
+      data-tv-poster={processImageUrl(actualPoster)}
+      data-tv-year={actualYear || ''}
+      data-tv-rate={rate || ''}
+      data-tv-source={source_name || ''}
+      data-tv-progress={
+        config.showProgress && progress !== undefined ? String(progress) : ''
+      }
+      className="group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-[500] focus-within:scale-[1.05] focus-within:z-[500] scroll-mx-16 scroll-my-8"
       style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -285,7 +314,9 @@ export default function VideoCard({
         if (longPressTimer) {
           window.clearTimeout(longPressTimer);
         }
+        longPressedRef.current = false;
         const timerId = window.setTimeout(() => {
+          longPressedRef.current = true;
           setIsActionOpen(true);
         }, 500);
         setLongPressTimer(timerId);
@@ -309,31 +340,24 @@ export default function VideoCard({
           setLongPressTimer(null);
         }
       }}
-      onMouseEnter={() => {
-          // 收藏夹里的卡片直接默认已收藏，不检查数据库
-        if (from === 'favorite' && !favorited) {
-          setFavorited(true);
-          setFavoriteChecked(true);
-          return;
-        }
-        if (config.showHeart && !favoriteChecked) {
-          checkFavoriteStatus();
-        }
-      }}
+      onMouseEnter={revealCard}
+      // 遥控器没有 mouseenter，聚焦时同样要拉取收藏状态
+      onFocus={revealCard}
     >
       <NextLink
         href={href || '#'}
-        className='block'
+        className='block outline-none'
         onClick={(e) => {
-          if (!href) {
+          if (!href || longPressedRef.current) {
             e.preventDefault();
+            longPressedRef.current = false;
             return;
           }
           startLoading();
         }}
       >
       {/* 图片和播放按钮 */}
-      <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
+      <div className='tv-card-poster relative aspect-[2/3] overflow-hidden rounded-lg transition-shadow group-focus-within:ring-4 group-focus-within:ring-green-500'>
         {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
         <Image
           src={processImageUrl(actualPoster)}
@@ -354,21 +378,21 @@ export default function VideoCard({
           }}
         />
 
-        <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-black-20 to-transparent opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100' />
+        <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-black-20 to-transparent opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100 group-focus-within:opacity-100' />
 
       {/* 播放按钮 */}
       {config.showPlayButton && (
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition">
               <PlayCircleIcon
                 size={50}
                 strokeWidth={0.8}
-                className="text-white fill-transparent hover:fill-green-500 hover:scale-[1.1] transition pointer-events-none"
+                className="tv-card-play text-white fill-transparent hover:fill-green-500 hover:scale-[1.1] group-focus-within:fill-green-500 group-focus-within:scale-[1.1] transition pointer-events-none"
               />
             </div>
           )}
 
         {(config.showHeart || config.showCheckCircle) && (
-          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:translate-y-0'>
+          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-focus-within:opacity-100 group-hover:translate-y-0 group-focus-within:translate-y-0'>
             {config.showCheckCircle && (
               <Trash2
                 onClick={handleDeleteRecord}
@@ -393,7 +417,7 @@ export default function VideoCard({
         {/* ⭐ 评分显示（左上角小圆圈，可跳转豆瓣或 Bangumi） */}
         {config.showRating && rate && actualDoubanId && (
           <div
-            className="absolute top-2 left-2 bg-pink-500 text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full shadow-md cursor-pointer hover:bg-pink-600 transition"
+            className="tv-rate-badge absolute top-2 left-2 bg-pink-500 text-white text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full shadow-md cursor-pointer hover:bg-pink-600 transition"
           >
             {rate}
           </div>
@@ -424,7 +448,7 @@ export default function VideoCard({
                 window.open(`https://movie.douban.com/subject/${actualDoubanId}`, "_blank");
               }
             }}
-            className="absolute bottom-2 left-2 bg-green-500 text-white text-xs font-bold w-8 h-8 rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out opacity-0 group-hover:opacity-100 cursor-pointer"
+            className="tv-douban-link absolute bottom-2 left-2 bg-green-500 text-white text-xs font-bold w-8 h-8 rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 cursor-pointer"
             title={isBangumi ? "跳转到 Bangumi" : "跳转到豆瓣"}
           >
             <svg
@@ -443,9 +467,22 @@ export default function VideoCard({
           </div>
         )}
 
+        {/* 电视端观看进度：月相。
+            4dp 高的进度条在 3 米外看不见，月亮的形状可以，而且它不只靠颜色传达信息。
+            放左上角——有进度的卡片不会同时显示评分/年份徽章，不会打架。 */}
+        {config.showProgress && progress !== undefined && (
+          <div className='tv-only-moon absolute top-2 left-2 z-10 hidden'>
+            <MoonPhase
+              progress={progress / 100}
+              size={30}
+              className='text-[color:var(--tv-moonlight)] drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]'
+            />
+          </div>
+        )}
+
         {/* 集数 */}
         {actualEpisodes && actualEpisodes > 1 && (
-          <div className='absolute top-2 right-2 bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
+          <div className='tv-episode-badge absolute top-2 right-2 bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110 group-focus-within:scale-110'>
             {currentEpisode ? `${currentEpisode}/${actualEpisodes}` : actualEpisodes}
           </div>
         )}
@@ -468,7 +505,14 @@ export default function VideoCard({
 
 {/* 播放源列表弹窗 */}
 {showSources && (
-  <div className="absolute bottom-full mb-2 right-0 sm:right-0 z-50">
+  <div
+    className="absolute bottom-full mb-2 right-0 sm:right-0 z-50"
+    onClick={(e) => {
+      // 弹层在卡片链接内部，不拦住就会点一下源名直接跳去播放页
+      e.preventDefault();
+      e.stopPropagation();
+    }}
+  >
     <div className="bg-gray-800/90 backdrop-blur-sm text-white text-xs sm:text-xs rounded-lg shadow-xl border border-white/10 p-1 sm:p-1.5 min-w-[70px] sm:min-w-[90px] max-w-[120px] sm:max-w-[160px] max-h-20 sm:max-h-40 overflow-auto">
       <div className="space-y-0.5 sm:space-y-1">
         {items.map((item, idx) => (
@@ -496,17 +540,20 @@ export default function VideoCard({
       </div>
 
       {config.showProgress && progress !== undefined && (
-        <div className='mt-1 h-1 w-full bg-gray-200 rounded-full overflow-hidden'>
-          <div
-            className='h-full bg-green-500 transition-all duration-500 ease-out'
-            style={{ width: `${progress}%` }}
-          />
-        </div>
+        <>
+          {/* 桌面/手机：细进度条 */}
+          <div className='tv-hide-on-tv mt-1 h-1 w-full bg-gray-200 rounded-full overflow-hidden'>
+            <div
+              className='h-full bg-green-500 transition-all duration-500 ease-out'
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </>
       )}
 
       <div className='mt-2 text-center'>
         <div className='relative'>
-          <span className='block text-sm font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer'>
+          <span className='tv-card-title block text-sm font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 group-focus-within:text-green-600 dark:group-hover:text-green-400 dark:group-focus-within:text-green-400 peer'>
             {actualTitle}
           </span>
           <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible peer-hover:opacity-100 peer-hover:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap pointer-events-none'>
@@ -516,7 +563,7 @@ export default function VideoCard({
         </div>
         {config.showSourceName && source_name && (
           <span className='block text-xs text-gray-500 dark:text-gray-400 mt-1'>
-            <span className='inline-block border rounded px-2 py-0.5 border-gray-500/60 dark:border-gray-400/60 transition-all duration-300 ease-in-out group-hover:border-green-500/60 group-hover:text-green-600 dark:group-hover:text-green-400'>
+            <span className='tv-card-source inline-block border rounded px-2 py-0.5 border-gray-500/60 dark:border-gray-400/60 transition-all duration-300 ease-in-out group-hover:border-green-500/60 group-focus-within:border-green-500/60 group-hover:text-green-600 group-focus-within:text-green-600 dark:group-hover:text-green-400 dark:group-focus-within:text-green-400'>
               {source_name}
             </span>
           </span>

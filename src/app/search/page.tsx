@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any, no-console */
 'use client';
 
 import { ChevronUp, Search, X } from 'lucide-react';
@@ -139,7 +139,7 @@ function SearchPageClient() {
   // 用于筛选后的聚合结果，保证类型安全
   const filteredAggregatedResults: [string, SearchResult[]][] = useMemo(() => {
     return aggregatedResults
-      .filter(([key, group]) => {
+      .filter(([_key, group]) => {
         // 来源筛选：如果没有选择任何来源（filterSources.length === 0），默认显示全部；如果选择了来源，只保留包含至少一个选中来源的影片组
         const sourceMatch = filterSources.length === 0 ||
           group.some(item => filterSources.includes(item.source_name));
@@ -580,8 +580,10 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
   return (
     <PageLayout activePath="/search">
       <div className="px-4 sm:px-10 py-4 sm:py-8 overflow-visible mb-10">
-        {/* 移动端搜索框和搜索源选择器 */}
-        <div className="mb-7 max-w-2xl mx-auto md:hidden">
+        {/* 移动端搜索框和搜索源选择器。
+            电视端也要显示：桌面的搜索框在 TopNav 里，而电视用左侧导航取代了 TopNav，
+            如果这里还按 md:hidden 隐藏，电视上就完全没有地方输入关键词了。 */}
+        <div className="tv-search-box mb-7 max-w-2xl mx-auto md:hidden">
           <div className="flex items-center">
             {/* 搜索源选择器 - 在搜索框左侧，作为一个整体 */}
             <div className="flex-shrink-0">
@@ -689,7 +691,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
             {/* 精确匹配结果 */}
             <div
               key={`search-results-${viewMode}`}
-              className="justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8"
+              className="tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8"
             >
               {displayedExactResults.map(([mapKey, group], index) => {
                 if (viewMode) {
@@ -748,7 +750,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
             {sortedAggregatedResults.others.length > 0 && (
               <div className="mt-8">
                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-7">更多结果</h2>
-                <div className="justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8">
+                <div className="tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8">
                   {displayedOthersResults.map(([mapKey, group], index) => {
                     if (viewMode) {
                       return (

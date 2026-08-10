@@ -4,6 +4,7 @@
 
 import { ChevronRight, X } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
 
@@ -27,10 +28,17 @@ import { useNavigationLoading } from '@/components/NavigationLoadingProvider';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
+import TvImmersiveBackdrop from '@/components/TvImmersiveBackdrop';
 import VideoCard from '@/components/VideoCard';
 
 function HomeClient() {
   const [activeTab, setActiveTab] = useState<'home' | 'history' | 'favorites'>('home');
+  // 电视端「收藏 / 历史」在顶部导航里，用 ?tab= 切换；桌面仍然用页面中间的胶囊
+  const tabParam = useSearchParams().get('tab');
+  useEffect(() => {
+    if (tabParam === 'history' || tabParam === 'favorites') setActiveTab(tabParam);
+    else if (tabParam === null) setActiveTab('home');
+  }, [tabParam]);
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
@@ -59,6 +67,9 @@ function HomeClient() {
 
   // 检查公告弹窗状态
   useEffect(() => {
+    // 电视端不弹免责声明：这是自用的私人盒子，开机第一件事不该是拿遥控器
+    // 关掉一个法律弹窗。桌面/手机保持原样。
+    if (document.documentElement.classList.contains('tv')) return;
     if (typeof window !== 'undefined' && announcement) {
       const hasSeenAnnouncement = localStorage.getItem('hasSeenAnnouncement');
       if (hasSeenAnnouncement !== announcement) {
@@ -196,7 +207,7 @@ function HomeClient() {
     <PageLayout>
       <div className='px-2 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 顶部 Tab 切换 */}
-        <div className='mb-8 flex justify-center'>
+        <div className='tv-tabs-row mb-8 flex justify-center'>
           <CapsuleSwitch
             options={simpleMode ? [
               { label: '历史', value: 'history' },
@@ -210,6 +221,10 @@ function HomeClient() {
             onChange={(value) => setActiveTab(value as 'home' | 'history' | 'favorites')}
           />
         </div>
+
+        {/* 电视端沉浸式背景 + 信息块：跟随焦点切换（非电视端返回 null）。
+            放在 Tab 之后，让 Tab 留在屏幕顶部——指南里 Tab 是页面级导航，应该在最上方。 */}
+        <TvImmersiveBackdrop />
 
         <div className='w-full max-w-screen-2xl mx-auto'>
           {activeTab === 'history' ? (
@@ -251,7 +266,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
+              <div className='tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -263,8 +278,9 @@ function HomeClient() {
                   </div>
                 ))}
                 {favoriteItems.length === 0 && (
-                  <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
-                    暂无收藏内容
+                  // 空状态是一次引导，不是一句通知：告诉用户怎么往里加东西
+                  <div className='col-span-full py-8 text-left text-gray-500 dark:text-gray-400'>
+                    还没有收藏。在任意影片的播放页点一下 ♥，就会出现在这里。
                   </div>
                 )}
               </div>

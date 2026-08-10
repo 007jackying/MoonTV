@@ -110,7 +110,7 @@ export default function ContinueWatching({ className, showAll = false, hideHeade
           </h2>
           {!loading && playRecords.length > 0 && (
             <button
-              className='text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+              className='tv-hide-on-tv text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
               onClick={async () => {
                 const { isConfirmed } = await Swal.fire({
                   title: '确认清空',
@@ -141,7 +141,7 @@ export default function ContinueWatching({ className, showAll = false, hideHeade
       
       {isClient && (simpleMode || showAll) ? (
         // 简洁模式：使用网格布局，类似收藏夹
-        <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
+        <div className='tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
           {loading
             ? // 加载状态显示灰色占位数据
               Array.from({ length: 6 }).map((_, index) => (

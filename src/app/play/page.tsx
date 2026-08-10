@@ -166,6 +166,34 @@ function PlayPageClient() {
 
   }, []);
 
+  // 电视端：进入播放页先给一个可以用遥控器选的播放源列表，播起来之后才只剩画面。
+  // 原来那个「视频加载中」是个死界面 —— 源挂了就永远停在那，也没有别的选择。
+  const [isTvUi, setIsTvUi] = useState(false);
+  // 两个状态回答两个不同的问题，别合并：
+  //   tvPlaybackStarted —— "当前这条流播起来了没有"。换集也要清零，否则下一集
+  //     的源要是悄无声息地卡住，20 秒看门狗根本不会上膛（追剧时正好全程失效）。
+  //   tvNeedsSource     —— "这部片子还没有任何一条流成功过"。只有它控制选源面板，
+  //     所以换集时面板不会闪一下 —— 换集不是"没源"，只是换了一条地址。
+  const [tvPlaybackStarted, setTvPlaybackStarted] = useState(false);
+  const [tvNeedsSource, setTvNeedsSource] = useState(true);
+  // 电视端播放器菜单。
+  //
+  // 关键前提：ArtPlayer 的控制条是一排 <div>，没有 tabindex，而且默认是隐藏的
+  // （靠 .art-control-show 才显形）—— 遥控器既聚焦不到也点不着。原来挂在控制条上的
+  // 「换源」按钮实际上从来没被遥控器按到过。所以电视端不用它的控制条，
+  // 自己出一层真正能聚焦的 HTML 菜单：播放中按上/下键呼出，选完即走。
+  const [showTvMenu, setShowTvMenu] = useState(false);
+  const [showTvEpisodes, setShowTvEpisodes] = useState(false);
+  const [showTvSources, setShowTvSources] = useState(false);
+  const [tvPaused, setTvPaused] = useState(false);
+  useEffect(() => {
+    setIsTvUi(
+      typeof navigator !== 'undefined' &&
+        navigator.userAgent.includes('MoonTV-TV')
+    );
+  }, []);
+
+  const availableSourcesRef = useRef<SearchResult[]>([]);
   const currentSourceRef = useRef(currentSource);
   const currentIdRef = useRef(currentId);
   const videoTitleRef = useRef(videoTitle);
@@ -298,6 +326,13 @@ function PlayPageClient() {
 
   // 换源相关状态
   const [availableSources, setAvailableSources] = useState<SearchResult[]>([]);
+
+  // 单独同步：上面那个 ref 同步 effect 写在本行之前，没法把 availableSources 列进依赖。
+  // 之前它就挂在那个 effect 里而依赖漏了，于是 ref 停在流式搜索中途的那一版 ——
+  // 后到的源自动换源永远看不到，第一个源一挂就直接报「所有播放源都试过了」。
+  useEffect(() => {
+    availableSourcesRef.current = availableSources;
+  }, [availableSources]);
   const [sourceSearchLoading, setSourceSearchLoading] = useState(false);
   const [sourceSearchError, setSourceSearchError] = useState<string | null>(
     null
@@ -1173,6 +1208,8 @@ function PlayPageClient() {
     newTitle: string
   ) => {
     try {
+      setTvPlaybackStarted(false);
+      setTvNeedsSource(true); // 换源意味着上一个源没成，面板该回来
       // 显示换源加载状态
       setVideoLoadingStage('sourceChanging');
       setIsVideoLoading(true);
@@ -1261,6 +1298,99 @@ function PlayPageClient() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // 播放失败时自动换源
+  //
+  // 一个源播不动的时候，电视上用户能做的只有干等或者退出 —— 而"这个源挂了"和
+  // "这部片子没资源"在屏幕上长得一模一样。这里自动往下试，每个源只试一次；
+  // 一轮都试完还是不行，才把选源面板交回给用户。
+  // 成功播放会清空记录，下次再出问题时又是完整的一轮。
+  // ---------------------------------------------------------------------------
+  const triedSourcesRef = useRef<Set<string>>(new Set());
+  const tvHintShownRef = useRef(false);
+  const sourceKey = (s: string, i: string) => `${s}+${i}`;
+
+  const autoRetryNextSource = (reason: string): boolean => {
+    if (typeof navigator === 'undefined' || !navigator.userAgent.includes('MoonTV-TV')) {
+      return false;
+    }
+    triedSourcesRef.current.add(
+      sourceKey(currentSourceRef.current, currentIdRef.current)
+    );
+    const next = (availableSourcesRef.current || []).find(
+      (s) => !triedSourcesRef.current.has(sourceKey(s.source, s.id.toString()))
+    );
+    if (!next) {
+      if (artPlayerRef.current?.notice) {
+        artPlayerRef.current.notice.show = '所有播放源都试过了';
+      }
+      return false;
+    }
+    if (artPlayerRef.current?.notice) {
+      artPlayerRef.current.notice.show = `${reason}，换到 ${next.source_name}`;
+    }
+    handleSourceChange(next.source, next.id.toString(), next.title);
+    return true;
+  };
+
+  // 播放器是在 effect 里建的，里面的回调会捕获创建当时的闭包；用 ref 转发，
+  // 保证 hls 的错误回调调到的永远是最新一版。
+  const autoRetryRef = useRef(autoRetryNextSource);
+  autoRetryRef.current = autoRetryNextSource;
+
+  // hls.js 不一定会报 fatal —— 有的源就是一直不吐数据，连个错都不给。
+  // 选定一个源之后迟迟等不到 playing，就当它废了。
+  useEffect(() => {
+    if (!isTvUi || tvPlaybackStarted) return;
+    const timer = setTimeout(() => {
+      autoRetryRef.current('这个源没反应');
+    }, 20000);
+    return () => clearTimeout(timer);
+  }, [isTvUi, tvPlaybackStarted, currentSource, currentId, currentEpisodeIndex]);
+
+  // 面板一开就得把焦点搬进去，否则焦点还留在播放器上，方向键继续在快进快退，
+  // 用户看着一排按钮却按不动。关掉时把焦点还给播放器，左右键恢复成快进快退。
+  // 面板开着的时候，必须始终有一个按钮是焦点。
+  //
+  // 规则只有一条：焦点已经在面板里就别碰，不在就放到"当前项"（没有就第一项）上。
+  // 这一条同时挡住了两种坏情况：
+  //   - 抢焦点：搜索结果是流式回来的，列表会重排好几次，每次都抢的话用户刚按右键
+  //     选中的那一项会被拽回第一个，看起来就像方向键失灵；
+  //   - 丢焦点：测速结束后列表按速度重排，DOM 节点被换掉，焦点直接掉到 body 上，
+  //     整个面板变成按什么都没反应。
+  const sourceSignature = availableSources
+    .map((s) => `${s.source}-${s.id}`)
+    .join(',');
+  useEffect(() => {
+    if (!isTvUi) return;
+    const pickerOpen = showTvSources || tvNeedsSource || isVideoLoading;
+    if (!showTvMenu && !showTvEpisodes && !pickerOpen) {
+      artRef.current?.focus();
+      return;
+    }
+    const timer = setTimeout(() => {
+      const root = document.querySelector(
+        '.tv-player-menu, .tv-episode-picker, .tv-source-picker'
+      );
+      if (!root) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && root.contains(active)) return;
+      const target =
+        root.querySelector<HTMLElement>('[data-tv-nav="active"]') ||
+        root.querySelector<HTMLElement>('button:not([hidden]):not([disabled])');
+      target?.focus({ preventScroll: true });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [
+    isTvUi,
+    showTvMenu,
+    showTvEpisodes,
+    showTvSources,
+    tvNeedsSource,
+    isVideoLoading,
+    sourceSignature,
+  ]);
+
   useEffect(() => {
     document.addEventListener('keydown', handleKeyboardShortcuts);
     return () => {
@@ -1275,6 +1405,8 @@ function PlayPageClient() {
   const handleEpisodeChange = async (episodeNumber: number) => {
     if (episodeNumber === currentEpisodeIndexRef.current) return;
     if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
+      // 新的一集是一条新的流，看门狗要重新上膛
+      setTvPlaybackStarted(false);
       // 在更换集数前保存当前播放进度
       if (artPlayerRef.current && artPlayerRef.current.paused) {
         saveCurrentPlayProgress();
@@ -1305,6 +1437,7 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
+      setTvPlaybackStarted(false);
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
         saveCurrentPlayProgress();
       }
@@ -1321,6 +1454,7 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
+      setTvPlaybackStarted(false);
       if (artPlayerRef.current && !artPlayerRef.current.paused) {
         saveCurrentPlayProgress();
       }
@@ -1344,6 +1478,55 @@ function PlayPageClient() {
       (e.target as HTMLElement).tagName === 'TEXTAREA'
     )
       return;
+
+    // 遥控器：方向键既要控制播放器，又要能把焦点移到剧集列表。
+    // 规则：没有焦点（桌面默认）或焦点在播放器内 → 方向键控制播放器；
+    // 焦点在页面其他控件上 → 交给浏览器做方向导航。
+    const active = document.activeElement as HTMLElement | null;
+    const inPlayer = !!(active && artRef.current?.contains(active));
+    const noFocus =
+      !active || active === document.body || active === document.documentElement;
+    // 电视端（WebView 注入的 UA 标记）：焦点必须能离开播放器，否则遥控器会被困住。
+    // 上下键交给焦点导航，音量用电视遥控器自带的音量键。
+    const isTv =
+      typeof navigator !== 'undefined' && navigator.userAgent.includes('MoonTV-TV');
+    const playerOwnsArrows = inPlayer || (!isTv && noFocus);
+
+    // 媒体键无论焦点在哪都要响应
+    if (e.key === 'MediaPlayPause' || e.key === 'MediaPlay' || e.key === 'MediaPause') {
+      artPlayerRef.current?.toggle();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'MediaTrackNext') {
+      handleNextEpisode();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'MediaTrackPrevious') {
+      handlePreviousEpisode();
+      e.preventDefault();
+      return;
+    }
+
+    // 遥控器确认键（DPAD_CENTER 在 WebView 里就是 Enter）= 播放/暂停
+    if (e.key === 'Enter' && playerOwnsArrows) {
+      if (artPlayerRef.current) {
+        artPlayerRef.current.toggle();
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (!playerOwnsArrows && e.key.startsWith('Arrow')) return;
+
+    // 电视端：上/下键呼出播放器菜单。左右仍然是快进快退 —— 那是遥控器上最常用的两个键，
+    // 不该被菜单占走。ArtPlayer 自己的控制条遥控器聚焦不到，所以菜单是这里唯一的入口。
+    if (isTv && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      setShowTvMenu(true);
+      e.preventDefault();
+      return;
+    }
 
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
@@ -1382,8 +1565,8 @@ function PlayPageClient() {
       }
     }
 
-    // 上箭头 = 音量+
-    if (e.key === 'ArrowUp') {
+    // 上箭头 = 音量+（电视端跳过，让焦点可以移出播放器）
+    if (e.key === 'ArrowUp' && !isTv) {
       if (artPlayerRef.current && artPlayerRef.current.volume < 1) {
         artPlayerRef.current.volume =
           Math.round((artPlayerRef.current.volume + 0.1) * 10) / 10;
@@ -1394,8 +1577,8 @@ function PlayPageClient() {
       }
     }
 
-    // 下箭头 = 音量-
-    if (e.key === 'ArrowDown') {
+    // 下箭头 = 音量-（电视端跳过，让焦点可以移出播放器）
+    if (e.key === 'ArrowDown' && !isTv) {
       if (artPlayerRef.current && artPlayerRef.current.volume > 0) {
         artPlayerRef.current.volume =
           Math.round((artPlayerRef.current.volume - 0.1) * 10) / 10;
@@ -1703,6 +1886,11 @@ function PlayPageClient() {
         }
       }
 
+      // 电视端：只保留"播放/暂停 + 进度 + 换源"，其余一律关掉。
+      // 弹幕在电视上没人用，却要一直做碰撞计算和大量 DOM 绘制，是 TV 盒子上
+      // 最贵的一项开销；设置菜单也用不了，ArtPlayer 的菜单不支持方向键导航。
+      const isTvPlayer = navigator.userAgent.includes('MoonTV-TV');
+
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
@@ -1711,24 +1899,25 @@ function PlayPageClient() {
         isLive: false,
         muted: false,
         autoplay: true,
-        pip: true,
+        pip: !isTvPlayer,
         autoSize: false,
         autoMini: false,
         screenshot: false,
-        setting: true,
+        setting: !isTvPlayer,
         loop: false,
         flip: false,
-        playbackRate: true,
+        playbackRate: !isTvPlayer,
         aspectRatio: false,
         fullscreen: true,
-        fullscreenWeb: true,
+        fullscreenWeb: !isTvPlayer,
         subtitleOffset: false,
         miniProgressBar: false,
         mutex: true,
         playsInline: true,
         autoPlayback: false,
-        airplay: true,
-        theme: '#22c55e',
+        airplay: !isTvPlayer,
+        // 电视端整块界面只用月白和金色两种强调色，播放器的进度条也不该是绿的
+        theme: isTvPlayer ? '#f0eadc' : '#22c55e',
         lang: 'zh-cn',
         hotkey: false,
         fastForward: true,
@@ -1737,9 +1926,9 @@ function PlayPageClient() {
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
-        plugins: [
-          danmukuPluginRef.current(danmakuConfigRef.current),
-        ],
+        plugins: isTvPlayer
+          ? [] // 电视端不加载弹幕
+          : [danmukuPluginRef.current(danmakuConfigRef.current)],
         // HLS 支持配置
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
@@ -1773,11 +1962,28 @@ function PlayPageClient() {
 
             ensureVideoSource(video, url);
 
+            // 上游 m3u8 大多不带 CORS 头，浏览器会直接拦掉，播放器卡在「视频加载中」。
+            // 先直连（能直连的源不走代理，省带宽），确认被拦之后再整条切到 /api/hls。
+            let usingProxy = url.startsWith('/api/hls');
+            const switchToProxy = () => {
+              if (usingProxy) return false;
+              usingProxy = true;
+              const proxied = `/api/hls?url=${encodeURIComponent(url)}`;
+              console.log('直连被拦，改走代理:', proxied);
+              hls.loadSource(proxied);
+              hls.startLoad();
+              return true;
+            };
+
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               console.error('HLS Error:', event, data);
               if (data.fatal) {
                 switch (data.type) {
                   case Hls.ErrorTypes.NETWORK_ERROR:
+                    // 拉不到清单基本就是被 CORS 拦了，直接换代理，重试再多也没用
+                    if (switchToProxy()) break;
+                    // 代理也拉不动，这个源就是废的 —— 换下一个，别在这里空转重试
+                    if (autoRetryRef.current('这个源连不上')) break;
                     console.log('网络错误，尝试恢复...');
                     hls.startLoad();
                     break;
@@ -1786,6 +1992,7 @@ function PlayPageClient() {
                     hls.recoverMediaError();
                     break;
                   default:
+                    if (autoRetryRef.current('这个源播不了')) break;
                     console.log('无法恢复的错误');
                     hls.destroy();
                     break;
@@ -1906,6 +2113,9 @@ function PlayPageClient() {
         ],
         // 控制栏配置
         controls: [
+          // 电视端：换源做成控制条上的一个按钮，按一下切下一个源。
+          // 不做下拉菜单 —— ArtPlayer 的菜单不支持方向键，遥控器点不进去；
+          // 循环切换一个键就够，也符合"播放器里只留播放/暂停和换源"的要求。
           {
             position: 'left',
             index: 13,
@@ -1921,6 +2131,11 @@ function PlayPageClient() {
       // 监听播放器事件
       artPlayerRef.current.on('ready', () => {
         setError(null);
+
+        // 电视端：播放器就绪后自动获得焦点，左右键可以直接快进快退
+        if (navigator.userAgent.includes('MoonTV-TV')) {
+          artRef.current?.focus();
+        }
 
         // 捕获弹幕插件实例
         if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
@@ -1982,6 +2197,29 @@ function PlayPageClient() {
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
+      artPlayerRef.current.on('video:playing', () => {
+        setTvPlaybackStarted(true);
+        setTvNeedsSource(false);
+        setTvPaused(false);
+        // 播起来了，之前那轮失败作废，下次再出问题重新一轮完整的尝试
+        triedSourcesRef.current.clear();
+
+        // 菜单藏在方向键后面，不说一句就没人找得到。每次进播放页提示一次。
+        // 延后一点：canplay 里有一个 setTimeout(0) 会把 notice 清空。
+        if (isTvPlayer && !tvHintShownRef.current) {
+          tvHintShownRef.current = true;
+          setTimeout(() => {
+            if (artPlayerRef.current?.notice) {
+              artPlayerRef.current.notice.show =
+                '按 ▲ ▼ 打开菜单：选集 / 换源 / 返回首页';
+            }
+          }, 800);
+        }
+      });
+      // 用 video: 前缀的代理事件，和这个文件里其余监听保持一致
+      artPlayerRef.current.on('video:pause', () => setTvPaused(true));
+      artPlayerRef.current.on('video:play', () => setTvPaused(false));
+
       artPlayerRef.current.on('video:canplay', () => {
         // 若存在需要恢复的播放进度，则跳转
         if (resumeTimeRef.current && resumeTimeRef.current > 0) {
@@ -1993,6 +2231,15 @@ function PlayPageClient() {
             }
             artPlayerRef.current.currentTime = target;
             console.log('成功恢复播放进度到:', resumeTimeRef.current);
+            // 跳转会打断 autoplay：实测从「继续观看」进来的片子恢复到进度点后
+            // 就停在那儿不动了，画面中间挂着一个大播放键等人来按。
+            // 电视上这是死局的开头 —— 补一次 play()。桌面不动，那边浏览器
+            // 常常会因为没有用户手势直接拒绝，反而多一条报错。
+            if (isTvPlayer) {
+              Promise.resolve(artPlayerRef.current.play?.()).catch(() => {
+                /* 浏览器拒绝自动播放时保持暂停，用户按确认键即可 */
+              });
+            }
           } catch (err) {
             console.warn('恢复播放进度失败:', err);
           }
@@ -2149,9 +2396,158 @@ function PlayPageClient() {
     };
   }, []);
 
+  // 电视端选源界面：代替原来那个走不出去的「视频加载中」。
+  // 条件用「还没播起来 或 正在加载」，因为 video:playing 可能在一个随后就卡死的源上
+  // 触发过一次 —— 只看 tvPlaybackStarted 会又退回到干等的spinner。
+  const tvSourcePicker =
+    isTvUi && (showTvSources || tvNeedsSource || isVideoLoading) ? (
+          <div className='tv-source-picker'>
+            {/* 播放中主动打开的才可以关掉；还没播起来时关掉只会留下一块黑屏 */}
+            {showTvSources && !tvNeedsSource && (
+              <button
+                data-tv-dismiss=''
+                hidden
+                onClick={() => setShowTvSources(false)}
+              />
+            )}
+            <h1 className='tv-source-picker-title'>{videoTitle || '选择播放源'}</h1>
+            <p className='tv-source-picker-hint'>
+              {availableSources.length > 0
+                ? '按确认键选择一个播放源'
+                : '正在查找可用的播放源…'}
+            </p>
+            <div className='tv-source-picker-list'>
+              {availableSources.map((s) => {
+                const active =
+                  s.source === currentSource && s.id.toString() === currentId;
+                return (
+                  <button
+                    key={`${s.source}-${s.id}`}
+                    data-tv-nav={active ? 'active' : undefined}
+                    className='tv-source-option'
+                    onClick={() => {
+                      setShowTvSources(false);
+                      // 手动挑的源要能覆盖自动重试的黑名单，否则试过一轮之后
+                      // 用户自己选回来的那个会被当成"已经试过"直接跳掉
+                      triedSourcesRef.current.clear();
+                      handleSourceChange(s.source, s.id.toString(), s.title);
+                    }}
+                  >
+                    <span className='tv-source-option-name'>{s.source_name}</span>
+                    <span className='tv-source-option-meta tv-data'>
+                      {s.episodes?.length > 1 ? `${s.episodes.length} 集` : '电影'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+    ) : null;
+
+  // 电视端播放器菜单：播放中按上/下呼出，横排大按钮，选完即走。
+  // 这是遥控器唯一能操作播放器的地方 —— ArtPlayer 的控制条聚焦不到。
+  const tvPlayerMenu =
+    isTvUi && showTvMenu ? (
+      <div className='tv-player-menu'>
+        <button data-tv-dismiss='' hidden onClick={() => setShowTvMenu(false)} />
+        <div className='tv-player-menu-bar'>
+          <button
+            className='tv-player-menu-item'
+            onClick={() => {
+              artPlayerRef.current?.toggle();
+              setShowTvMenu(false);
+            }}
+          >
+            {tvPaused ? '播放' : '暂停'}
+          </button>
+          {totalEpisodes > 1 && (
+            <>
+              <button
+                className='tv-player-menu-item'
+                disabled={currentEpisodeIndex <= 0}
+                onClick={() => {
+                  setShowTvMenu(false);
+                  handlePreviousEpisode();
+                }}
+              >
+                上一集
+              </button>
+              <button
+                className='tv-player-menu-item'
+                disabled={currentEpisodeIndex >= totalEpisodes - 1}
+                onClick={() => {
+                  setShowTvMenu(false);
+                  handleNextEpisode();
+                }}
+              >
+                下一集
+              </button>
+              <button
+                className='tv-player-menu-item'
+                onClick={() => {
+                  setShowTvMenu(false);
+                  setShowTvEpisodes(true);
+                }}
+              >
+                选集
+              </button>
+            </>
+          )}
+          <button
+            className='tv-player-menu-item'
+            onClick={() => {
+              setShowTvMenu(false);
+              setShowTvSources(true);
+            }}
+          >
+            换源
+          </button>
+          <button
+            className='tv-player-menu-item'
+            onClick={() => {
+              setShowTvMenu(false);
+              router.push('/');
+            }}
+          >
+            返回首页
+          </button>
+        </div>
+      </div>
+    ) : null;
+
+  // 电视端选集面板：从控制条的「选集」进来，选完就消失，画面上不留常驻控件。
+  // 只显示集号 —— 三米外一格数字比一行剧集标题好认得多。
+  const tvEpisodePicker =
+    isTvUi && showTvEpisodes && totalEpisodes > 1 ? (
+      <div className='tv-source-picker tv-episode-picker'>
+        {/* 遥控器的返回键被 Activity 吃掉，收不到 keydown；由注入的 __tvBack 代按这个按钮 */}
+        <button data-tv-dismiss='' hidden onClick={() => setShowTvEpisodes(false)} />
+        <h1 className='tv-source-picker-title'>选集</h1>
+        <p className='tv-source-picker-hint'>
+          共 {totalEpisodes} 集，当前第 {currentEpisodeIndex + 1} 集
+        </p>
+        <div className='tv-episode-grid'>
+          {Array.from({ length: totalEpisodes }, (_, i) => (
+            <button
+              key={i}
+              data-tv-nav={i === currentEpisodeIndex ? 'active' : undefined}
+              className='tv-source-option tv-episode-option tv-data'
+              onClick={() => {
+                setShowTvEpisodes(false);
+                handleEpisodeChange(i);
+              }}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null;
+
   if (loading) {
     return (
       <PageLayout activePath='/play'>
+        {tvSourcePicker}
         <div className='flex items-center justify-center min-h-screen bg-transparent'>
           <div className='text-center max-w-md mx-auto px-6'>
             {/* 动画影院图标 */}
@@ -2285,22 +2681,27 @@ function PlayPageClient() {
 
             {/* 操作按钮 */}
             <div className='space-y-3'>
+              {/* 有片名时这是"去找别的源"，是个前进动作，电视上保留；
+                  没有片名时它退化成单纯的返回键，和遥控器重复 —— 指南要求不要在
+                  画面上再画一个返回按钮，所以电视端隐藏。 */}
               <button
                 onClick={() =>
                   videoTitle
                     ? router.push(`/search?q=${encodeURIComponent(videoTitle)}`)
                     : router.back()
                 }
-                className='w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl'
+                className={`tv-action-primary w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl ${
+                  videoTitle ? '' : 'tv-hide-on-tv'
+                }`}
               >
-                {videoTitle ? '🔍 返回搜索' : '← 返回上页'}
+                {videoTitle ? '搜索其他来源' : '返回上页'}
               </button>
 
               <button
                 onClick={() => window.location.reload()}
-                className='w-full px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200'
+                className='tv-action-secondary w-full px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200'
               >
-                🔄 重新尝试
+                重新加载
               </button>
             </div>
           </div>
@@ -2311,16 +2712,25 @@ function PlayPageClient() {
 
   return (
     <PageLayout activePath='/play'>
-      <div className='flex flex-col px-0 lg:px-[5rem] 2xl:px-32'>
+      <div
+        className='tv-play-root flex flex-col px-0 lg:px-[5rem] 2xl:px-32'
+        data-tv-started={isTvUi && tvPlaybackStarted ? '' : undefined}
+      >
+        {tvSourcePicker}
+        {tvEpisodePicker}
+        {tvPlayerMenu}
+
         {/* 播放器和选集 */}
-        <div>
-          <div className='grid lg:h-[500px] xl:h-[650px] 2xl:h-[750px] grid-cols-1 md:grid-cols-4 md:gap-0'>
+        <div className='tv-play-stage-wrap'>
+          <div className='tv-player-stage grid lg:h-[500px] xl:h-[650px] 2xl:h-[750px] grid-cols-1 md:grid-cols-4 md:gap-0'>
             {/* 播放器 */}
-            <div className='h-full border-0 md:border-t md:border-b md:border-l md:border-white/0 md:dark:border-white/30 md:col-span-3'>
-              <div className='relative w-full h-[300px] lg:h-full'>
+            <div className='tv-player-main h-full border-0 md:border-t md:border-b md:border-l md:border-white/0 md:dark:border-white/30 md:col-span-3'>
+              <div className='tv-player-frame relative w-full h-[300px] lg:h-full'>
+                {/* tabIndex 让遥控器可以把焦点移回播放器，方向键才会重新控制播放 */}
                 <div
                   ref={artRef}
-                  className='bg-black w-full h-full overflow-hidden shadow-lg'
+                  tabIndex={0}
+                  className='tv-player-surface bg-black w-full h-full overflow-hidden shadow-lg outline-none focus-visible:ring-4 focus-visible:ring-green-500'
                 ></div>
 
                 {/* 弹幕选择器 */}
@@ -2458,7 +2868,7 @@ function PlayPageClient() {
                 {videoUrl && (
                   <button
                     onClick={() => setShowAddDownload(true)}
-                    className='ml-3 flex-shrink-0 bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 hover:scale-[1.1] transition-all duration-300 ease-out shadow-md'
+                    className='tv-hide-on-tv ml-3 flex-shrink-0 bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 hover:scale-[1.1] transition-all duration-300 ease-out shadow-md'
                     title='下载视频'
                   >
                     <Download className='h-4 w-4' />
@@ -2470,7 +2880,7 @@ function PlayPageClient() {
                     href={`https://movie.douban.com/subject/${videoDoubanId.toString()}`}
                     target='_blank'
                     rel='noopener noreferrer'
-                    className='ml-3 flex-shrink-0'
+                    className='tv-hide-on-tv ml-3 flex-shrink-0'
                   >
                     <div className='bg-green-500 text-white text-xs font-bold w-8 h-8 rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out'>
                       <svg
@@ -2494,7 +2904,7 @@ function PlayPageClient() {
               {/* 关键信息行 */}
               <div className='flex flex-wrap items-center gap-3 text-base mb-4 opacity-80 flex-shrink-0'>
                 {detail?.class && (
-                  <span className='text-green-600 font-semibold'>
+                  <span className='tv-genre text-green-600 font-semibold'>
                     {detail.class}
                   </span>
                 )}

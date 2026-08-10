@@ -754,7 +754,7 @@ function DoubanPageClient() {
         {/* 内容展示区域 */}
         <div className='w-full max-w-screen-2xl mx-auto mt-8 overflow-visible'>
           {/* 内容网格 */}
-          <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-x-8 sm:gap-y-12'>
+          <div className='tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-x-8 sm:gap-y-12'>
             {loading || !selectorsReady
               ? // 显示骨架屏
               skeletonData.map((index) => <DoubanCardSkeleton key={index} />)

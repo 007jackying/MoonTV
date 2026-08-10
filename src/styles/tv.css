@@ -1,0 +1,859 @@
+/*
+ * 电视端样式层 —— 依据 Android TV Design 指南
+ * https://developer.android.com/design/ui/tv
+ *
+ * 只在 <html class="tv"> 时生效（WebView 的 UA 带 MoonTV-TV 标记，由 layout.tsx 判断）。
+ * 桌面和手机完全不受影响。
+ *
+ * 关键前提：指南要求按 960×540dp 设计。我们的 WebView 视口正好是 960 CSS px
+ * （1920 物理像素 / dpr 2），所以 1 CSS px = 1 dp，指南里的 dp 数值可以直接照抄。
+ *
+ * 字号不在这里放大：WebView 已设 textZoom=130（见 MainActivity.kt），
+ * 再叠一层 CSS 会把固定宽度的胶囊挤到换行。
+ */
+
+.tv {
+  /* --- 栅格：12 列 × 52dp，20dp 间距，两侧 58dp 安全边距，合计 960dp --- */
+  --tv-safe-x: 58px; /* 左右过扫描安全边距 */
+  --tv-safe-y: 27px; /* 上下过扫描安全边距 */
+  --tv-gutter: 20px; /* 列间距 */
+  --tv-nav-h: 60px; /* 顶部导航高度 */
+  --tv-card: 124px; /* 海报卡宽度：6 × 124 + 5 × 20 = 844dp，正好铺满内容区 */
+
+  /* --- 颜色：月光，不是霓虹 ---
+     产品叫 MoonTV，界面却是纯黑加荧光绿，和"月亮"毫无关系。
+     改成深夜蓝底 + 暖月白，对比度依然很高（月白/夜底 ≈ 15:1），
+     在暗房间里溢出的光也比黑配荧光绿柔和。全部为 sRGB 纯色。 */
+  --tv-night: #0a0e1a; /* 背景 */
+  --tv-surface: #141b2b; /* 抬升表面：卡片、chip */
+  --tv-moonlight: #f0eadc; /* 正文 + 焦点描边（暖月白） */
+  --tv-halo: #94a3bc; /* 次要文字、未选中图标 */
+  --tv-lune: #e3b457; /* 只用于"当前选中"，低空月亮的金色 */
+
+  /* 指南要求按键后"即时且明确"的反馈，300ms 在电视上太拖沓 */
+  --tv-dur: 120ms;
+
+  background-color: var(--tv-night);
+  color: var(--tv-moonlight);
+}
+
+.tv body {
+  background-color: var(--tv-night);
+  color: var(--tv-moonlight);
+}
+
+/*
+ * 让整个文档正常滚动。
+ *
+ * globals.css 里有 `html, body { height: 100%; overflow-x: hidden }`。两条加在一起的后果是：
+ * body 被钉死在一屏高，而 overflow-x:hidden 会把 overflow-y 从 visible 提升成 auto ——
+ * 于是**真正的滚动容器变成了 <body>**，而不是视口。
+ *
+ * 浏览器和遥控器都只会去滚视口（window.scrollBy / scrollY / documentElement），
+ * 而视口这边 scrollHeight === clientHeight === 540，根本没有可滚动的余量。
+ * 实测：body 内容 1806px，视口报 540/540，方向键按 13 次画面一动不动 ——
+ * 导航看着像吸顶，其实是整页压根没滚过。
+ *
+ * 改成 auto + min-height 之后 body 会长到内容高度，不再自己形成滚动容器，
+ * 页面回到正常的文档流滚动，导航也就跟着一起滚上去了。
+ */
+.tv,
+.tv body {
+  height: auto;
+  min-height: 100%;
+}
+
+/* 左右留出过扫描安全区；上方的安全边距由流内的导航自己带 */
+.tv main {
+  padding-left: var(--tv-safe-x);
+  padding-right: var(--tv-safe-x);
+  padding-top: 8px; /* 导航在流内，这里只留一点呼吸空间 */
+  padding-bottom: var(--tv-safe-y);
+  position: relative;
+  z-index: 1;
+}
+
+/* 页面自己的内边距在电视上是多余的：过扫描安全区已经由 main 负责。
+   纵向：540dp 高的屏幕再叠 64dp 会把第一行卡片挤出画面。
+   横向：页面带着 sm:px-10（40dp），叠在 main 的 58dp 上变成 98dp，
+   于是内容比导航栏往右缩了 40dp，可用宽度也从 844 掉到 764 ——
+   一行放不下 6 张卡（6×124+5×20=844），实测只剩 5 张。两个方向都要清掉。 */
+.tv main > div {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* 焦点滚动时留出呼吸空间，卡片不会贴着屏幕边缘。
+   只给可聚焦元素加 —— 通配符会连 html/body/播放器容器一起改，
+   影响滚动锚定，收益却只在焦点上。 */
+.tv a,
+.tv button,
+.tv [tabindex] {
+  scroll-margin: 96px;
+}
+
+/* 电视上没有指针，滚动条只是噪音 */
+.tv ::-webkit-scrollbar {
+  display: none;
+}
+
+/* textZoom 放大后，固定宽度的胶囊/徽章会换行。
+   只点名这几个真正定宽的元素，不要用 .rounded-full 这种全站工具类扫射。 */
+.tv .tv-tab,
+.tv .tv-rate-badge,
+.tv .tv-card-source {
+  white-space: nowrap;
+}
+
+/* =====================================================================
+   焦点系统
+   指南：焦点靠 缩放 / 描边 / 辉光 / 变色 组合表达，且不能只靠颜色区分。
+   这里统一成两种含义分明的状态：
+     焦点 (focused)  = 月白描边 + 放大 + 辉光   —— 遥控器现在在哪
+     选中 (selected) = 实心填充 / 金色指示条    —— 你当前在哪个分类
+   两者形状不同，色盲用户也能区分。
+   ===================================================================== */
+
+/*
+ * 焦点不是"画一个白框"，是"月光打在边缘上"。
+ * 三层叠出来：贴边的月白细线 + 外扩的金色余晖（和"选中"用的是同一种金）
+ * + 抬起来的投影。全部走 box-shadow，不占布局，不会把元素挤动一像素。
+ */
+.tv {
+  --tv-focus-edge: 0 0 0 2px var(--tv-moonlight);
+  --tv-focus-bloom: 0 0 0 5px rgba(227, 180, 87, 0.26);
+  --tv-focus-lift: 0 12px 30px -10px rgba(0, 0, 0, 0.85);
+  --tv-focus-glow: 0 0 26px rgba(240, 234, 220, 0.2);
+}
+
+.tv a:focus-visible,
+.tv button:focus-visible,
+.tv [tabindex]:focus-visible {
+  outline: none;
+  border-radius: 8px;
+  box-shadow: var(--tv-focus-edge), var(--tv-focus-bloom), var(--tv-focus-lift),
+    var(--tv-focus-glow);
+}
+
+/* =====================================================================
+   顶部导航
+   Netflix / Prime / Disney+ 都把导航放在顶部一行，遥控器用户对这个位置有预期。
+   纯色背景（指南提醒渐变在低色深面板上会出条带）。
+   ===================================================================== */
+.tv-nav {
+  /* 随页面滚动，不吸顶 —— 往下浏览时导航让位给内容，和 Netflix / Prime 一致。
+     需要 relative + z-index：main 是 z-index:1 的层叠上下文，沉浸式背景在它内部，
+     不给导航一个更高的层级就会被那张背景图盖住。 */
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: calc(var(--tv-safe-y) + var(--tv-nav-h));
+  padding: var(--tv-safe-y) var(--tv-safe-x) 0;
+  background-color: var(--tv-night);
+}
+
+.tv-nav-brand {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--tv-moonlight);
+  white-space: nowrap;
+}
+
+.tv-nav-items {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tv-nav-utils {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.tv-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--tv-halo);
+  white-space: nowrap;
+  outline: none;
+  transition:
+    background-color var(--tv-dur) ease-out,
+    color var(--tv-dur) ease-out;
+}
+
+.tv-nav-icon {
+  padding: 0 12px;
+}
+
+/* 选中：金色文字 + 下划线（形状与聚焦完全不同，不只靠颜色区分） */
+.tv-nav-item[data-tv-nav='active'] {
+  color: var(--tv-lune);
+}
+
+.tv-nav-item[data-tv-nav='active']::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 2px;
+  height: 3px;
+  border-radius: 2px;
+  background-color: var(--tv-lune);
+}
+
+/* 聚焦：实心月白胶囊 + 同一套辉光，和卡片是同一种"被照亮"的语言 */
+.tv-nav-item:focus-visible {
+  outline: none;
+  background-color: var(--tv-moonlight);
+  color: var(--tv-night);
+  box-shadow: var(--tv-focus-bloom), var(--tv-focus-glow);
+}
+
+.tv-nav-item:focus-visible::after {
+  background-color: var(--tv-night);
+}
+
+/* 电视端把首页那排胶囊藏起来：收藏/历史 已经并进顶部导航，
+   页面中间再放一排切换会多出一个奇怪的焦点落点。 */
+.tv .tv-tabs-row {
+  display: none;
+}
+
+/* 电视端才显示月相进度，桌面继续用细进度条 */
+.tv .tv-only-moon {
+  display: block;
+}
+
+/* =====================================================================
+   卡片焦点：缩放 + 描边 + 辉光（指南推荐的三件套组合）
+   辉光用月光色 —— 名字叫 MoonTV，焦点就该像月光洒在卡片上。
+   ===================================================================== */
+.tv [data-tv-card] {
+  transition:
+    transform var(--tv-dur) ease-out,
+    box-shadow var(--tv-dur) ease-out;
+}
+
+/* 描边和辉光只加在海报上，不要圈住标题——否则整张卡看起来像贴了张奶油色卡纸 */
+.tv .tv-card-poster {
+  transition: box-shadow var(--tv-dur) ease-out;
+}
+
+.tv [data-tv-card]:focus-within .tv-card-poster {
+  box-shadow: var(--tv-focus-edge), var(--tv-focus-bloom),
+    0 20px 46px -12px rgba(0, 0, 0, 0.9), 0 0 34px rgba(240, 234, 220, 0.22);
+}
+
+/*
+ * 高光：一道斜掠过卡片上沿的反光，像月光落在玻璃上。
+ * 这层才是"亮"和"发光"的区别 —— 只加辉光会糊成一团，加了这道边缘反光，
+ * 卡片才像被照亮的实体，而不是背后点了盏灯。
+ * 用 ::after 而不是再叠 box-shadow：box-shadow 只能糊在外面，做不出方向感。
+ */
+.tv .tv-card-poster::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--tv-dur) ease-out;
+  background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.32) 0%,
+      rgba(255, 255, 255, 0.07) 12%,
+      rgba(255, 255, 255, 0) 38%
+    ),
+    linear-gradient(
+      204deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0) 30%
+    );
+}
+
+.tv [data-tv-card]:focus-within .tv-card-poster::after {
+  opacity: 1;
+}
+
+/* Tailwind 的 ring 颜色改成月光色，绿色是旧品牌残留 */
+.tv [data-tv-card] {
+  --tw-ring-color: var(--tv-moonlight);
+}
+
+/* 焦点态的播放按钮和标题也不要再用绿色 */
+.tv [data-tv-card]:focus-within .tv-card-play {
+  fill: var(--tv-moonlight);
+  color: var(--tv-night);
+}
+
+.tv .tv-card-title {
+  color: var(--tv-halo);
+}
+
+.tv [data-tv-card]:focus-within .tv-card-title {
+  color: var(--tv-moonlight) !important;
+}
+
+/* 卡片内部的链接自己不再画描边，避免和卡片描边重复 */
+/* 卡片内部的链接自己不画焦点：整张卡的焦点由海报上的 .tv-card-poster 表达。
+   box-shadow 也要一起清掉 —— 只清 outline 的话，通用焦点规则会在整张卡
+   （海报 + 标题 + 来源徽章）外面套一圈金框，比原来那条白边还要碍眼。 */
+.tv [data-tv-card] a:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* =====================================================================
+   Tabs（首页 / 历史 / 收藏夹）
+   指南要求三种状态分明：默认、聚焦、选中。原来只有"选中"，
+   聚焦时没有任何反馈，遥控器用户不知道自己停在哪。
+   选中 = 描边胶囊；聚焦 = 实心月白胶囊（形状不同，不只靠颜色）。
+   ===================================================================== */
+/* Tab 靠左，和内容左边线对齐；居中在电视上会和沉浸式背景的主体撞在一起 */
+.tv .tv-tabs-row {
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+
+.tv .tv-tab {
+  transition:
+    background-color var(--tv-dur) ease-out,
+    color var(--tv-dur) ease-out;
+}
+
+.tv .tv-tab:focus-visible {
+  outline: none;
+  background-color: var(--tv-moonlight) !important;
+  color: var(--tv-night) !important;
+  box-shadow: var(--tv-focus-bloom), var(--tv-focus-glow);
+}
+
+/* =====================================================================
+   数字用等宽字体
+   评分、年份、集数、码率是数据，不是正文 —— 用等宽把它们和标题区分开，
+   顺便在 3 米外对齐得更整齐。
+   ===================================================================== */
+.tv .tv-data {
+  font-family: var(--font-mono, ui-monospace), monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* =====================================================================
+   海报行：一行 6 张（6 × 124dp + 5 × 20dp = 844dp，正好铺满内容区）
+   ===================================================================== */
+/* 只针对海报行本身。
+   .scrollbar-hide 是全局工具类，播放页的选集条、剧集列表、简介区都在用它 ——
+   之前按工具类选择，把每个选集按钮都撑成了 140dp 宽。 */
+.tv .tv-rail-row {
+  gap: var(--tv-gutter);
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.tv .tv-rail-row > * {
+  /* 卡片外层带着 sm:min-w-[180px]，min-width 会压过 width —— 三个都要写死，
+     否则设了 width 也不生效，一行还是只放得下 4 张。 */
+  flex: 0 0 var(--tv-card);
+  width: var(--tv-card) !important;
+  min-width: var(--tv-card) !important;
+  max-width: var(--tv-card) !important;
+  margin-left: 0 !important; /* 覆盖 space-x-*，改用 gap */
+}
+
+/* =====================================================================
+   播放页：电视上画面优先
+   桌面是「播放器 3 栏 + 换源面板 1 栏」并排，在 960dp 的电视视口下播放器
+   只有 300dp 高。电视上改成单栏：画面铺满一屏，换源/选集落到下方。
+   ===================================================================== */
+.tv .tv-player-stage {
+  display: block;
+  height: auto;
+  /* 负 margin 抵消 main 的 padding，画面真正出血到屏幕边缘。
+     没用 :has() —— 旧机器上的 WebView 不一定支持。 */
+  margin-left: calc(-1 * var(--tv-safe-x));
+  margin-right: calc(-1 * var(--tv-safe-x));
+  margin-top: -8px;
+}
+
+.tv .tv-player-main {
+  width: 100%;
+}
+
+.tv .tv-player-frame {
+  height: 100vh;
+}
+
+/* 指南：不要在屏幕上画返回按钮，遥控器有返回键 */
+.tv .tv-hide-on-tv {
+  display: none !important;
+}
+
+/* =====================================================================
+   沉浸式列表 (Immersive list)
+   焦点移到哪张卡，背景就换成那部片子的图，并在上方显示标题/信息块。
+   ===================================================================== */
+
+.tv-immersive-bg {
+  position: fixed;
+  inset: 0;
+  /* -1 而不是 0：main 是 z-index:1 的层叠上下文，负层级会落在它自己的内容之下、
+     但仍在 body 背景之上。用 0 的话，这个定位元素会盖住所有普通流内容
+     （小标题、胶囊背景都会被吃掉），只有显式 z-index 的元素幸存。 */
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--tv-night);
+}
+
+/* 主体靠右上，符合指南的构图建议（不要整屏裁切压住文字） */
+.tv-immersive-bg img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 68%;
+  width: 58%;
+  object-fit: cover;
+  object-position: center 22%;
+  opacity: 0;
+  transition: opacity 420ms ease;
+}
+
+.tv-immersive-bg img.is-shown {
+  opacity: 1;
+}
+
+/*
+ * 电影感遮罩 (cinematic scrim)。
+ * 指南同时警告渐变会在低色深面板上产生条带，所以这里用多个停靠点让过渡更缓，
+ * 并且只压暗、不改变色相。
+ */
+.tv-immersive-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.tv-immersive-scrim::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    var(--tv-night) 0%,
+    var(--tv-night) 26%,
+    rgba(10, 14, 26, 0.94) 38%,
+    rgba(10, 14, 26, 0.78) 50%,
+    rgba(10, 14, 26, 0.52) 64%,
+    rgba(10, 14, 26, 0.28) 80%,
+    rgba(10, 14, 26, 0.16) 100%
+  );
+}
+
+.tv-immersive-scrim::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(10, 14, 26, 0) 0%,
+    rgba(10, 14, 26, 0.1) 34%,
+    rgba(10, 14, 26, 0.4) 56%,
+    rgba(10, 14, 26, 0.78) 74%,
+    var(--tv-night) 92%
+  );
+}
+
+/* 信息块：占内容区左侧，指南建议的"内容块"位置 */
+.tv-immersive-block[data-empty] {
+  min-height: 0;
+}
+
+.tv-immersive-block {
+  /* 必须是定位元素：.tv-immersive-bg 是 position:fixed + z-index:0，
+     按 CSS 绘制顺序，定位元素会盖在普通流内容之上，不管 DOM 先后。
+     页面上其他元素恰好都带 relative，所以只有这块被背景吃掉了。 */
+  position: relative;
+  z-index: 1;
+  /* 540dp 的竖向预算很紧，信息块只能拿这么多：
+     安全边 27 + 页面内边距 32 + Tab 60 + 信息块 132 + 小标题 50 + 卡片 240 ≈ 541，
+     刚好让第一行卡片完整露出来。 */
+  min-height: 110px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: 20px;
+}
+
+.tv-immersive-title {
+  font-size: 40px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--tv-moonlight);
+  /* 不要用 -webkit-box + line-clamp：压缩器会丢掉 -webkit-box-orient，
+     元素会塌成 0 高度整块消失。标题本来就短，让它自然折行即可。 */
+  overflow: hidden;
+  max-height: 2.2em;
+}
+
+.tv-immersive-meta {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--tv-halo);
+  font-size: 15px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-immersive-bg img {
+    transition: none;
+  }
+}
+
+/* 来源徽章：焦点态也不要再出现旧品牌的绿色 */
+.tv .tv-card-source {
+  color: var(--tv-halo);
+  border-color: rgba(148, 163, 188, 0.5);
+}
+
+.tv [data-tv-card]:focus-within .tv-card-source {
+  color: var(--tv-moonlight) !important;
+  border-color: rgba(240, 234, 220, 0.6) !important;
+}
+
+/* 集数徽章：最后一处漏掉的品牌绿。它是数据（3/12），不是强调色，
+   压成暗片 + 等宽数字，和评分徽章统一。 */
+.tv .tv-episode-badge {
+  background-color: rgba(10, 14, 26, 0.82) !important;
+  color: var(--tv-moonlight) !important;
+  border: 1px solid rgba(240, 234, 220, 0.28);
+  font-family: var(--font-mono, ui-monospace), monospace;
+  font-variant-numeric: tabular-nums;
+  box-shadow: none !important;
+  white-space: nowrap;
+}
+
+/* 标题在 124dp 卡宽 + textZoom 130 下几乎必被 truncate 砍掉。
+   放开成两行：不用 -webkit-box/line-clamp（压缩器会丢掉 box-orient，整块塌成 0 高），
+   改用固定高度截断，效果一样而且不会突然消失。 */
+.tv .tv-card-title {
+  white-space: normal !important;
+  overflow: hidden;
+  /* 两行的高度必须比 2 × line-height 略宽一点：卡在正好 2.6em 时，第二行会被
+     从中间削掉一截（字形的下缘超出行盒）。留一点余量，宁可多 3px 空白。 */
+  line-height: 1.3;
+  height: 2.85em;
+}
+
+/* 豆瓣跳转按钮在电视上是死的：WebView 只有一个窗口，window.open 打不开新标签页。
+   一个点不动的控件不该占着画面，顺手也带走了最后一处旧品牌绿。 */
+.tv .tv-douban-link {
+  display: none;
+}
+
+/* 评分是数据，不是标签：暗色薄片 + 等宽数字，让画面只剩月白和金色两种强调色。
+   原来的亮粉色徽章在一屏五张海报时会先于内容抢走视线。 */
+.tv .tv-rate-badge {
+  background-color: rgba(10, 14, 26, 0.82) !important;
+  color: var(--tv-moonlight) !important;
+  font-family: var(--font-mono, ui-monospace), monospace;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(240, 234, 220, 0.28);
+  box-shadow: none !important;
+}
+
+/* =====================================================================
+   动效降级
+   前面给焦点、导航展开、背景切换都加了过渡。系统开启"减少动态效果"时，
+   这些都应该立刻到位而不是滑过去 —— 焦点反馈本身必须保留，只去掉动画。
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .tv *,
+  .tv *::before,
+  .tv *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =====================================================================
+   出错页的动作按钮
+   桌面用的是绿色渐变。电视上换成实色：一来渐变在低色深面板上会出条带，
+   二来这块界面只该有月白和金色两种强调色。
+   ===================================================================== */
+.tv .tv-action-primary {
+  background-image: none !important;
+  background-color: var(--tv-moonlight) !important;
+  color: var(--tv-night) !important;
+  box-shadow: none !important;
+}
+
+.tv .tv-action-secondary {
+  background-color: var(--tv-surface) !important;
+  color: var(--tv-moonlight) !important;
+}
+
+/* 播放页残留的旧品牌绿。
+   注意：测速的绿/橙/红是有含义的信号（快/一般/失败），不能一起刷掉——
+   这里只改装饰性的绿，不动传达数据的颜色。 */
+.tv .tv-player-surface {
+  --tw-ring-color: var(--tv-moonlight);
+}
+
+.tv .tv-genre {
+  color: var(--tv-halo) !important;
+}
+
+/* =====================================================================
+   搜索页
+   桌面把搜索框放在 TopNav 里，页面自己那个搜索框是 md:hidden 的移动端专用件。
+   电视用左侧导航取代了 TopNav —— 不把它放出来，电视上就没有任何输入入口。
+   ===================================================================== */
+.tv .tv-search-box {
+  display: block !important;
+  margin-left: 0; /* 靠左，和内容网格对齐，不要居中 */
+  max-width: 560px;
+}
+
+/* 输入框按夜色配色重画：原样式是浅底 + 绿色聚焦环 */
+.tv #searchInput {
+  height: 56px;
+  background-color: var(--tv-surface) !important;
+  color: var(--tv-moonlight) !important;
+  border-color: rgba(240, 234, 220, 0.22) !important;
+  font-size: 18px;
+}
+
+.tv #searchInput::placeholder {
+  color: var(--tv-halo) !important;
+}
+
+.tv #searchInput:focus {
+  outline: none;
+  box-shadow: var(--tv-focus-edge), var(--tv-focus-bloom), var(--tv-focus-glow);
+  --tw-ring-color: transparent;
+}
+
+/* =====================================================================
+   海报网格：一行 6 张
+   6 × 124dp + 5 × 20dp = 844dp，正好等于内容区宽度（960 − 58 × 2），
+   也就是指南 12 栏网格的完整宽度。电视屏幕够大，一行 5 张是浪费。
+   ===================================================================== */
+.tv .tv-poster-grid {
+  grid-template-columns: repeat(6, var(--tv-card)) !important;
+  column-gap: var(--tv-gutter) !important;
+  row-gap: 28px !important;
+  justify-content: start;
+}
+
+/* =====================================================================
+   播放页：电视上只剩画面
+   换源已经做进播放器控制条，播放/暂停本来就在里面 —— 页面上的换源面板、
+   选集列表、简介、收藏按钮在遥控器下都是噪音，全部隐藏。
+   ===================================================================== */
+/* 必须放过 .tv-source-picker：它也是 .tv-play-root 的直接子元素，而下面那条
+   display:none !important 会压过它自己的 display:flex（!important 不看书写顺序）。
+   结果是 loading 结束、源却始终没播起来时，选源面板被藏掉，屏幕上什么都不剩 ——
+   正好是这块界面被造出来要消灭的那个死界面。 */
+.tv .tv-play-root > *:not(.tv-play-stage-wrap):not(.tv-source-picker):not(.tv-player-menu) {
+  display: none !important;
+}
+
+/* 播放器所在的那层里，也只留播放器本身（同层还有换源面板等） */
+.tv .tv-play-stage-wrap > *:not(.tv-player-stage) {
+  display: none !important;
+}
+
+.tv .tv-player-stage > *:not(.tv-player-main) {
+  display: none !important;
+}
+
+/* =====================================================================
+   电视端选源界面
+   代替原来的「视频加载中」死界面：源还没起来时给一个能用遥控器选的列表，
+   播起来之后整块消失，屏幕上只剩画面。
+   ===================================================================== */
+.tv .tv-source-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--tv-safe-y) var(--tv-safe-x);
+  background-color: var(--tv-night);
+}
+
+.tv .tv-source-picker-title {
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--tv-moonlight);
+}
+
+.tv .tv-source-picker-hint {
+  margin-top: 8px;
+  margin-bottom: 24px;
+  font-size: 17px;
+  color: var(--tv-halo);
+}
+
+.tv .tv-source-picker-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--tv-gutter);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.tv .tv-source-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 64px;
+  padding: 0 20px;
+  border-radius: 10px;
+  background-color: var(--tv-surface);
+  color: var(--tv-moonlight);
+  font-size: 19px;
+  text-align: left;
+  outline: none;
+  transition:
+    background-color var(--tv-dur) ease-out,
+    color var(--tv-dur) ease-out;
+}
+
+/* 长源名（「TV-电影天堂资源」）会折行，把那一格撑高，整行跟着错位。
+   名字截断、集数不折行 —— 一排格子等高比看全每个字重要。 */
+.tv .tv-source-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tv .tv-source-option-meta {
+  color: var(--tv-halo);
+  font-size: 15px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 当前正在用的源：金色（和导航的"选中"是同一套语义） */
+.tv .tv-source-option[data-tv-nav='active'] {
+  color: var(--tv-lune);
+}
+
+/* 聚焦：实心月白（形状/填充都不同，不只靠颜色） */
+.tv .tv-source-option:focus-visible {
+  outline: none;
+  background-color: var(--tv-moonlight);
+  color: var(--tv-night);
+  box-shadow: var(--tv-focus-bloom), var(--tv-focus-lift), var(--tv-focus-glow);
+}
+
+.tv .tv-source-option:focus-visible .tv-source-option-meta {
+  color: var(--tv-night);
+}
+
+/* =====================================================================
+   电视端选集面板
+   从控制条的「选集」进来，盖在正在播放的画面上，选完即走。
+   半透明底色而不是纯色：让用户知道自己还在这部片子里，没有跳去别的页面。
+   ===================================================================== */
+.tv .tv-episode-picker {
+  background-color: rgba(10, 14, 26, 0.94);
+  justify-content: flex-start;
+  padding-top: 64px;
+}
+
+/* 一行 10 格：只放集号，三米外一格数字远比一行剧集标题好认。
+   10 × 64 + 9 × 20 = 820dp，落在 844dp 的内容区里。 */
+.tv .tv-episode-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 64px);
+  gap: var(--tv-gutter);
+  margin-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.tv .tv-episode-option {
+  justify-content: center;
+  height: 56px;
+  padding: 0;
+  font-size: 20px;
+}
+
+/* =====================================================================
+   电视端播放器菜单
+   播放中按上/下呼出。停在画面底部并压一层由下往上的暗角，字才读得出来，
+   同时上面 2/3 的画面保持可见 —— 用户知道自己还在片子里，没跳去别的页面。
+   ===================================================================== */
+.tv .tv-player-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 710;
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none; /* 只有按钮接事件，其余部分让画面透出来 */
+  background: linear-gradient(
+    to bottom,
+    rgba(10, 14, 26, 0) 45%,
+    rgba(10, 14, 26, 0.55) 70%,
+    rgba(10, 14, 26, 0.92) 100%
+  );
+}
+
+.tv .tv-player-menu-bar {
+  pointer-events: auto;
+  display: flex;
+  gap: var(--tv-gutter);
+  padding: 0 var(--tv-safe-x) var(--tv-safe-y);
+  width: 100%;
+}
+
+.tv .tv-player-menu-item {
+  height: 56px;
+  padding: 0 24px;
+  border-radius: 10px;
+  background-color: var(--tv-surface);
+  color: var(--tv-moonlight);
+  font-size: 19px;
+  white-space: nowrap;
+  outline: none;
+  transition:
+    background-color var(--tv-dur) ease-out,
+    color var(--tv-dur) ease-out;
+}
+
+.tv .tv-player-menu-item:focus-visible {
+  outline: none;
+  background-color: var(--tv-moonlight);
+  color: var(--tv-night);
+  box-shadow: var(--tv-focus-bloom), var(--tv-focus-lift), var(--tv-focus-glow);
+}
+
+/* 到头的上一集/下一集：留在原地发灰，而不是整个消失 —— 按钮位置不跳，
+   用户对这排东西的肌肉记忆才立得住。禁用态本来就聚焦不到，遥控器会自动跳过。 */
+.tv .tv-player-menu-item:disabled {
+  opacity: 0.35;
+}

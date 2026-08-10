@@ -1,4 +1,4 @@
-# MoonTV(Branch)
+# DreamTV(Branch)
 
 原项目地址https://github.com/MoonTechLab/LunaTV
 
@@ -6,7 +6,7 @@
   <img src="public/logo.png" alt="LibreTV Logo" width="120">
 </div>
 
-> 🎬 **MoonTV** 是一个开箱即用的、跨平台的影视聚合播放器。它基于 **Next.js 14** + **Tailwind&nbsp;CSS** + **TypeScript** 构建，支持多资源搜索、在线播放、收藏同步、播放记录、本地/云端存储，让你可以随时随地畅享海量免费影视内容。
+> 🎬 **DreamTV** 是一个开箱即用的、跨平台的影视聚合播放器。它基于 **Next.js 14** + **Tailwind&nbsp;CSS** + **TypeScript** 构建，支持多资源搜索、在线播放、收藏同步、播放记录、本地/云端存储，让你可以随时随地畅享海量免费影视内容。
 
 <div align="center">
 
@@ -29,6 +29,8 @@
 - ❤️ **收藏 + 继续观看**：支持 Redis/Upstash 存储，多端同步进度。
 - 📱 **PWA**：离线缓存、安装到桌面/主屏，移动端原生体验。
 - 🌗 **响应式布局**：桌面侧边栏 + 移动底部导航，自适应各种屏幕尺寸。
+- 📺 **Android TV 客户端**：仓库自带（`android/`），遥控器方向键导航、免登录、播放器菜单、
+  失效自动换源，详见 [Android TV / Google TV](#android-tv--google-tv)。
 - 🚀 **极简部署**：一条 Docker 命令即可将完整服务跑起来，或免费部署到 Vercel、Netlify、cloudflare。
 - 👿 **智能去广告**：自动跳过视频中的切片广告（实验性）
 - 💬 **弹幕支持**：以[danmu_api](https://github.com/huangxd-/danmu_api)为后端, 需自行部署
@@ -42,7 +44,7 @@
 
 ## 🗺 目录
 
-- [MoonTV(Branch)](#moontvbranch)
+- [DreamTV(Branch)](#dreamtvbranch)
   - [✨ 功能特性](#-功能特性)
     - [注意：部署后项目为空壳项目，无内置播放源，需要自行收集，需要弹幕请自行部署后端](#注意部署后项目为空壳项目无内置播放源需要自行收集需要弹幕请自行部署后端)
   - [🗺 目录](#-目录)
@@ -67,7 +69,12 @@
   - [环境变量](#环境变量)
   - [配置说明](#配置说明)
   - [管理员配置](#管理员配置)
-  - [AndroidTV 使用](#androidtv-使用)
+  - [Android TV / Google TV](#android-tv--google-tv)
+    - [安装](#安装)
+    - [首次启动](#首次启动)
+    - [遥控器操作](#遥控器操作)
+    - [常见问题](#常见问题)
+    - [其他 TV 方案](#其他-tv-方案)
   - [TVBox 对接](#tvbox-对接)
     - [本地存储(localstorage)模式](#本地存储localstorage模式)
   - [Selene 使用](#selene-使用)
@@ -295,7 +302,7 @@ services:
 | ----------------------------------- | -------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | USERNAME                            | 非 localstorage 部署时的管理员账号           | 任意字符串                       | （空）                                                                                                                     |
 | PASSWORD                            | 非 localstorage 部署时为管理员密码           | 任意字符串                       | （空）                                                                                                                     |
-| NEXT_PUBLIC_SITE_NAME               | 站点名称                                     | 任意字符串                       | MoonTV                                                                                                                     |
+| NEXT_PUBLIC_SITE_NAME               | 站点名称                                     | 任意字符串                       | DreamTV                                                                                                                    |
 | ANNOUNCEMENT                        | 站点公告                                     | 任意字符串                       | 本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。 |
 | NEXT_PUBLIC_STORAGE_TYPE            | 播放记录/收藏的存储方式                      | localstorage、redis、d1、upstash | localstorage                                                                                                               |
 | REDIS_URL                           | redis 连接 url                               | 连接 url                         | 空                                                                                                                         |
@@ -308,7 +315,7 @@ services:
 | NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE | 豆瓣图片代理类型                             | 见下方                           | direct                                                                                                                     |
 | NEXT_PUBLIC_DOUBAN_IMAGE_PROXY      | 自定义豆瓣图片代理 URL                       | url prefix                       | (空)                                                                                                                       |
 | NEXT_PUBLIC_DISABLE_YELLOW_FILTER   | 关闭色情内容过滤                             | true/false                       | false                                                                                                                      |
-| NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址                             | 接口地址                       | (空)                                                                                                                      |
+| NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址                                 | 接口地址                         | (空)                                                                                                                       |
 
 NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 
@@ -372,7 +379,7 @@ custom_category 支持的自定义分类已知如下：
 
 也可输入如 "哈利波特" 效果等同于豆瓣搜索
 
-MoonTV 支持标准的苹果 CMS V10 API 格式。
+DreamTV 支持标准的苹果 CMS V10 API 格式。
 
 修改后 **无需重新构建**，服务会在启动时读取一次。
 
@@ -386,9 +393,89 @@ MoonTV 支持标准的苹果 CMS V10 API 格式。
 
 站长或管理员访问 `/admin` 即可进行管理员配置
 
-## AndroidTV 使用
+## Android TV / Google TV
 
-目前该项目可以配合 [OrionTV](https://github.com/zimplexing/OrionTV) 在 Android TV 上使用，可以直接作为 OrionTV 后端
+本仓库自带一个 Android TV 客户端（`android/` 目录）：一个指向你自己 DreamTV 实例的 WebView 壳子。
+所有逻辑仍在网页端，装了它只是为了在电视桌面上有个图标、记住登录状态、让遥控器能用。
+
+网页端会通过 UA 里的 `MoonTV-TV` 标记自动切换到电视布局：顶部导航、一行 6 张海报卡、
+月光配色、方向键空间导航、播放页只留画面。手机和桌面完全不受影响。
+
+### 安装
+
+APK 需要自己构建（仓库不提供预编译包）。构建需要 **JDK 17**（JDK 23 会被 AGP 拒绝）
+和 Android SDK：
+
+```sh
+cd android
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew assembleRelease
+# 产物：android/app/build/outputs/apk/release/app-release.apk
+```
+
+然后选一种方式装到电视上：
+
+**方式一：adb 局域网安装（自己用，最快）**
+
+先在电视上打开开发者选项：设置 → 系统 → 关于 → 连点「版本号」7 次，
+然后在 设置 → 系统 → 开发者选项 里打开「USB 调试 / 网络调试」，并记下电视的 IP。
+
+```sh
+adb connect <电视IP>:5555
+adb install -r app-release.apk
+```
+
+**方式二：Downloader 侧载（给朋友装）**
+
+把 APK 放到任意可下载的地址，电视上装 **Downloader** 应用，输入该地址下载后安装。
+需要先在 设置 → 系统 → 开发者选项 里，允许 Downloader 安装未知来源应用。
+
+**方式三：U 盘**
+
+把 APK 拷到 U 盘，插到电视上，用任意文件管理器打开安装。
+
+> 签名用的 `android/moontv-tv.keystore` 已被 gitignore，**请务必自行备份**。
+> 丢了这个文件之后构建出来的包签名不同，无法覆盖安装，朋友必须先卸载旧版才能更新。
+
+### 首次启动
+
+第一次打开会要求填两项：
+
+| 字段       | 说明                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------- |
+| 服务器地址 | 你的 DreamTV 地址，例如 `https://dreamtv.example.com`。不写协议默认按 `https://` 处理 |
+| 站点密码   | 即环境变量 `PASSWORD`。填了之后电视端不再出现登录页                                   |
+
+密码保存在电视本机（SharedPreferences），应用会在遇到登录页时自动调用 `/api/login` 完成登录，
+**服务端的密码保护不受任何影响** —— 只是这台电视记住了密码，公网访问仍然需要登录。
+电视端也不会再弹免责声明。
+
+之后随时按遥控器 **MENU** 键可以改这两项；地址填错导致加载失败时，也会退回这个界面。
+
+### 遥控器操作
+
+| 按键   | 列表页                               | 播放页                                    |
+| ------ | ------------------------------------ | ----------------------------------------- |
+| 方向键 | 移动焦点，内容跟着滚动               | ◀ ▶ 快退 / 快进 10 秒；▲ ▼ 打开播放器菜单 |
+| 确认键 | 打开当前项                           | 播放 / 暂停                               |
+| 返回键 | 焦点回到顶部导航；焦点已在导航时退出 | 关闭已打开的菜单或面板；否则返回上一页    |
+| MENU   | 修改服务器地址和密码                 | 同左                                      |
+
+播放器菜单里有：播放/暂停、上一集、下一集、选集、换源、返回首页。
+播放中不显示任何常驻控件，菜单选完即消失。
+
+播放源失效时会自动换到下一个源（每个源只自动试一次），一轮都失败才会弹出选源列表。
+
+### 常见问题
+
+- **文字在我的电视上太小/太大**：改 `android/app/src/main/java/com/moontv/tv/MainActivity.kt`
+  里的 `TEXT_ZOOM`（默认 130），重新构建即可，不需要动网页端 CSS。
+- **一直卡在「视频加载中」**：多半是该源没有 CORS 头。项目已内置 `/api/hls` 代理，
+  直连失败会自动转代理；仍然不行就换源。注意走代理时视频流量会经过你的服务器。
+- **HTTP（非 HTTPS）地址能用吗**：可以，manifest 已开启 `usesCleartextTraffic`。
+
+### 其他 TV 方案
+
+本项目也可以配合 [OrionTV](https://github.com/zimplexing/OrionTV) 使用，直接作为 OrionTV 后端。
 
 ## TVBox 对接
 
@@ -434,7 +521,7 @@ MoonTV 支持标准的苹果 CMS V10 API 格式。
 
 ## License
 
-[MIT](LICENSE) © 2025 MoonTV & Contributors
+[MIT](LICENSE) © 2025 DreamTV & Contributors
 
 ## 致谢
 

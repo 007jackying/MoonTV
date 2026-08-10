@@ -1,3 +1,4 @@
+/* eslint-disable no-console, @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -195,6 +196,9 @@ export default function SearchSuggestions({
       ref={containerRef}
       className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 max-h-80 overflow-y-auto"
     >
+      {/* 电视端返回键的落点：Android 把返回键吃掉了，页面收不到 keydown，
+          由注入的 __tvBack 代按这个按钮，先收起联想词再退出搜索页。 */}
+      <button data-tv-dismiss='' hidden onClick={onClose} />
       {suggestions.map((suggestion, index) => (
         <button
           key={`suggestion-${suggestion.text}-${index}`}

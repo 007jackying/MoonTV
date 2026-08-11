@@ -107,22 +107,60 @@ const val TV_NAV_JS = """
     return r.top < innerHeight && r.bottom > 0 && r.left < innerWidth && r.right > 0;
   }
 
-  // An element is reachable if it is rendered and nothing is painted on top of it.
-  // The hit test is what makes modals work: everything behind the overlay fails it,
-  // so the remote can only reach the dialog's own buttons.
-  function reachable(el) {
-    var r = rectOf(el);
-    if (r.width === 0 || r.height === 0) return false;
-    var s = getComputedStyle(el);
-    if (s.visibility === 'hidden' || s.display === 'none' || s.opacity === '0') return false;
-    if (!onScreen(r)) return true; // offscreen: can't hit-test, allow so we can scroll to it
-    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    var hit = document.elementFromPoint(cx, cy);
-    return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
-  }
+  // 覆盖层选择器。任何一个存在，就意味着屏幕上有东西盖着页面，
+  // 这时才需要逐个做命中测试来判断"够不够得着"。
+  var OVERLAYS = '.tv-source-picker, .tv-player-menu, .swal2-container, [data-tv-overlay]';
 
+  /*
+   * An element is reachable if it is rendered and nothing is painted on top of it.
+   * The hit test is what makes modals work: everything behind the overlay fails it,
+   * so the remote can only reach the dialog's own buttons.
+   *
+   * 但 elementFromPoint 每调一次都要强制一次命中测试，而首页一屏有 100 多个可聚焦元素 ——
+   * 每按一次方向键就是 100 多次命中测试，在 2GB 的盒子上就是那种"按下去过半拍才动"的迟滞。
+   * 没有覆盖层的时候根本不存在"被盖住"这回事，整轮命中测试可以直接跳过。
+   */
+  var hitTest = false;
+
+  /*
+   * 候选集：一趟扫完，顺手把每个元素的矩形一起带出来。
+   *
+   * 之前这里有两笔开销，都是按"每个可聚焦元素"计价的，而首页现在有十几行海报，
+   * 一屏能有两三百个可聚焦元素：
+   *
+   *  1) getComputedStyle(el) —— 每调一次就要为那个元素解析一遍层叠样式。
+   *     它挡的是 display:none / visibility:hidden / opacity:0，可 display:none 的元素
+   *     矩形本来就是 0×0，上面那行已经滤掉了；剩下两种在这个页面里没有真实用例
+   *     （ScrollableRow 那两个 opacity-0 的箭头按钮它其实也挡不住 —— 透明的是父元素，
+   *     按钮自己的 opacity 是 1，那两个已经改成电视端 display:none 了）。
+   *     纯亏，删掉。
+   *
+   *  2) 矩形算了两遍以上：这里一遍，pick() 里每个候选再算一遍，而 pick() 一次移动
+   *     要跑两轮（先同行、再放宽）。改成扫描时算一次，装进 {el, r} 一路带下去。
+   *
+   * 剩下的 elementFromPoint 只在屏幕上真有覆盖层时才跑（hitTest），
+   * 那种时候候选也就十来个。
+   */
   function candidates() {
-    return Array.prototype.filter.call(document.querySelectorAll(FOCUSABLE), reachable);
+    hitTest = !!document.querySelector(OVERLAYS);
+    var all = document.querySelectorAll(FOCUSABLE);
+    var out = [];
+    // 只看视口上下各两屏。一次方向键最多跨一行，两屏外的元素不可能是这一步的目标，
+    // 但首页滚到底之后它们能占到候选集的九成 —— 每按一次键都白量一遍布局。
+    var near = innerHeight * 2;
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (r.bottom < -near || r.top > innerHeight + near) continue;
+      if (hitTest && onScreen(r)) {
+        // offscreen 的够不着也测不了，放行，好让上面能滚过去
+        var hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (!(hit && (hit === el || el.contains(hit) || hit.contains(el)))) continue;
+      }
+      out.push({ el: el, r: r });
+    }
+    return out;
   }
 
   /* 两个矩形在某个轴上是否有重叠 —— 用来判断"是不是同一行/同一列" */
@@ -134,6 +172,22 @@ const val TV_NAV_JS = """
     for (var p = el.parentElement; p; p = p.parentElement) {
       var s = getComputedStyle(p);
       if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && p.scrollWidth > p.clientWidth) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  /*
+   * 最近的可纵向滚动的祖先（选源列表、选集网格这类内部滚动容器）。
+   * 没有这个的话，上下键在一个 30 项的列表里照样能把焦点移下去，但滚的是 window ——
+   * 而覆盖层是 fixed 的，window 根本没得滚，于是列表永远停在第一屏，
+   * 焦点已经跑到看不见的地方去了。
+   */
+  function scrollerY(el) {
+    for (var p = el.parentElement; p; p = p.parentElement) {
+      var s = getComputedStyle(p);
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && p.scrollHeight > p.clientHeight) {
         return p;
       }
     }
@@ -161,6 +215,21 @@ const val TV_NAV_JS = """
       }
     }
 
+    /*
+     * 内部纵向滚动容器优先。这里不用视口的舒适区（18%–52%）—— 那是给整页算的，
+     * 一个 400dp 高的列表套进去，区间比容器还高，永远判定为"要滚"，列表会抖。
+     * 容器里就按"焦点整行留在容器内，边上留 8dp"来滚。
+     */
+    var col = scrollerY(el);
+    if (col) {
+      var cr = rectOf(col);
+      var top = r.top - cr.top;
+      var bottom = r.bottom - cr.top;
+      if (bottom > cr.height - 8) col.scrollBy({ top: bottom - cr.height + 8, behavior: behavior });
+      else if (top < 8) col.scrollBy({ top: top - 8, behavior: behavior });
+      return;
+    }
+
     var lo = innerHeight * BAND_TOP;
     var hi = innerHeight * BAND_BOTTOM;
     if (r.top > hi) scrollBy({ top: r.top - hi, behavior: behavior });
@@ -175,12 +244,12 @@ const val TV_NAV_JS = """
   function focusFirstContent(strict) {
     var list = candidates();
     if (!list.length) return false;
-    var visible = list.filter(function (el) { return onScreen(rectOf(el)); });
-    var content = visible.filter(function (el) { return !el.closest('.tv-nav'); });
+    var visible = list.filter(function (c) { return onScreen(c.r); });
+    var content = visible.filter(function (c) { return !c.el.closest('.tv-nav'); });
     var first = content[0] || (strict ? null : (visible[0] || list[0]));
     if (!first) return false;
-    focusEl(first);
-    keepInView(first, 'down');
+    focusEl(first.el);
+    keepInView(first.el, 'down');
     return true;
   }
 
@@ -209,10 +278,21 @@ const val TV_NAV_JS = """
       return focusFirstContent(false);
     }
 
-    // 先只在"同一行/同一列"里找，找不到再放宽 —— 这样右键永远沿着当前行走，
-    // 不会莫名其妙跳到上面的"查看更多"。
+    // 先只在"同一行/同一列"里找。
     var best = pick(list, cur, c, dir, true);
-    if (!best) best = pick(list, cur, c, dir, false);
+
+    /*
+     * 找不到就放宽 —— 但只对上下放宽，左右不放。
+     *
+     * 左右放宽的后果：走到一行的最后一张再按右，同行已经没人了，放宽之后评分函数
+     * 会挑中"右上方最近的那个"，也就是这一行标题旁边的「查看更多」——
+     * 焦点从屏幕中间的海报一下子飞到右上角。用户按的是"再往右一张"，
+     * 得到的是"跳去了另一个东西"，这正是"在电视上导航感觉很怪"的那个瞬间。
+     *
+     * 主流流媒体应用里，横向永远被锁死在当前这一行：走到头就是不动。
+     * 要离开这一行只有上下键，而上下键必须能放宽（不然从海报上不去「查看更多」）。
+     */
+    if (!best && (dir === 'up' || dir === 'down')) best = pick(list, cur, c, dir, false);
     if (!best) return false;
 
     focusEl(best);
@@ -226,9 +306,9 @@ const val TV_NAV_JS = """
     var best = null, bestScore = Infinity;
 
     for (var i = 0; i < list.length; i++) {
-      var el = list[i];
+      var el = list[i].el;
       if (el === cur) continue;
-      var r = rectOf(el);
+      var r = list[i].r;
 
       if (sameLine) {
         if ((dir === 'left' || dir === 'right') && !overlapsY(c, r)) continue;

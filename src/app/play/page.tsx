@@ -169,13 +169,19 @@ function PlayPageClient() {
   // 电视端：进入播放页先给一个可以用遥控器选的播放源列表，播起来之后才只剩画面。
   // 原来那个「视频加载中」是个死界面 —— 源挂了就永远停在那，也没有别的选择。
   const [isTvUi, setIsTvUi] = useState(false);
-  // 两个状态回答两个不同的问题，别合并：
-  //   tvPlaybackStarted —— "当前这条流播起来了没有"。换集也要清零，否则下一集
-  //     的源要是悄无声息地卡住，20 秒看门狗根本不会上膛（追剧时正好全程失效）。
-  //   tvNeedsSource     —— "这部片子还没有任何一条流成功过"。只有它控制选源面板，
-  //     所以换集时面板不会闪一下 —— 换集不是"没源"，只是换了一条地址。
+  // tvPlaybackStarted —— "当前这条流播起来了没有"。换集也要清零，否则下一集
+  //   的源要是悄无声息地卡住，20 秒看门狗根本不会上膛（追剧时正好全程失效）。
   const [tvPlaybackStarted, setTvPlaybackStarted] = useState(false);
-  const [tvNeedsSource, setTvNeedsSource] = useState(true);
+  /*
+   * 选源面板只在两种情况下出现：用户从播放器菜单点了「换源」，或者自动挑源
+   * 一路试到底、一条都没播起来（tvAllSourcesFailed）。
+   *
+   * 以前它还兼任"加载中"的界面 —— 按下一部片子，第一眼看到的是一张 30 行的源列表。
+   * 那是把机器的实现细节摆到用户面前：自动选源本来就会挑一条能用的，绝大多数时候
+   * 用户根本不需要知道有这一步。现在这段时间显示的是「Loading your dream…」，
+   * 只有真的全军覆没时，列表才作为最后的出口出现。
+   */
+  const [tvAllSourcesFailed, setTvAllSourcesFailed] = useState(false);
   // 电视端播放器菜单。
   //
   // 关键前提：ArtPlayer 的控制条是一排 <div>，没有 tabindex，而且默认是隐藏的
@@ -1249,7 +1255,7 @@ function PlayPageClient() {
   ) => {
     try {
       setTvPlaybackStarted(false);
-      setTvNeedsSource(true); // 换源意味着上一个源没成，面板该回来
+      setTvAllSourcesFailed(false); // 又有一条在试了，先把"全挂了"的结论收回
       // 显示换源加载状态
       setVideoLoadingStage('sourceChanging');
       setIsVideoLoading(true);
@@ -1373,6 +1379,8 @@ function PlayPageClient() {
       if (artPlayerRef.current?.notice) {
         artPlayerRef.current.notice.show = '所有播放源都试过了';
       }
+      // 自动挑源走到头了，这才把列表交给用户 —— 屏幕上必须留一条出路
+      setTvAllSourcesFailed(true);
       return false;
     }
     if (artPlayerRef.current?.notice) {
@@ -1412,7 +1420,7 @@ function PlayPageClient() {
     .join(',');
   useEffect(() => {
     if (!isTvUi) return;
-    const pickerOpen = showTvSources || tvNeedsSource || isVideoLoading;
+    const pickerOpen = showTvSources || tvAllSourcesFailed;
     if (!showTvMenu && !showTvEpisodes && !pickerOpen) {
       artRef.current?.focus();
       return;
@@ -1435,8 +1443,7 @@ function PlayPageClient() {
     showTvMenu,
     showTvEpisodes,
     showTvSources,
-    tvNeedsSource,
-    isVideoLoading,
+    tvAllSourcesFailed,
     sourceSignature,
   ]);
 
@@ -2250,18 +2257,17 @@ function PlayPageClient() {
       // 监听视频可播放事件，这时恢复播放进度更可靠
       artPlayerRef.current.on('video:playing', () => {
         setTvPlaybackStarted(true);
-        setTvNeedsSource(false);
+        setTvAllSourcesFailed(false);
         setTvPaused(false);
 
         /*
-         * 画面一起来就进全屏。这是 best-effort：requestFullscreen 要求用户手势，
-         * 而从"按下确认键"到"视频真的播起来"往往超过手势的有效期，浏览器会拒。
-         * 拒了也无所谓 —— 满屏是 .tv-player-frame 的 fixed inset:0 保证的，
-         * 这里只是顺手把 WebView 外面那层系统边框也一起收掉。
+         * 这里**不**自动调 requestFullscreen。满屏由 .tv .tv-player-frame 的
+         * fixed inset:0 保证，加载完就是整块屏幕，不需要 API。
+         * 而自动调有两处会咬人：一是它要求用户手势，从按下确认键到视频真的播起来
+         * 早过了有效期，多半直接被拒；二是 WebView 会把全屏元素交给
+         * onShowCustomView 单独提到 decorView 上，万一那台盒子给的是一张黑视图，
+         * 用户会对着黑屏而且没有任何退出的入口。手动的「全屏」在菜单里，能进能出。
          */
-        if (isTvPlayer && !document.fullscreenElement) {
-          document.documentElement.requestFullscreen?.().catch(() => undefined);
-        }
         // 播起来了，之前那轮失败作废，下次再出问题重新一轮完整的尝试
         triedSourcesRef.current.clear();
 
@@ -2483,20 +2489,24 @@ function PlayPageClient() {
     measuredSources.length > 0 ? measuredSources : availableSources;
 
   const tvSourcePicker =
-    isTvUi && (showTvSources || tvNeedsSource || isVideoLoading) ? (
+    isTvUi && (showTvSources || tvAllSourcesFailed) ? (
       <div className='tv-source-picker'>
-        {showTvSources && !tvNeedsSource && (
+        {/* 用户主动打开的才可以按返回键关掉；全挂了那次不给关，
+            关掉之后屏幕上是一片黑，没有任何入口能再叫它回来。 */}
+        {showTvSources && !tvAllSourcesFailed && (
           <button
             data-tv-dismiss=''
             hidden
             onClick={() => setShowTvSources(false)}
           />
         )}
-        <h1 className='tv-source-picker-title'>{videoTitle || '选择播放源'}</h1>
+        <h1 className='tv-source-picker-title'>
+          {tvAllSourcesFailed ? '这些源都没能播起来' : videoTitle || '选择播放源'}
+        </h1>
         <p className='tv-source-picker-hint'>
-          {listedSources.length > 0
-            ? `${listedSources.length} 个可用播放源，按确认键切换`
-            : '正在测试可用的播放源…'}
+          {tvAllSourcesFailed
+            ? `自动挑源试完了 ${listedSources.length} 个，都没成。手动选一个试试`
+            : `${listedSources.length} 个可用播放源，按确认键切换`}
         </p>
         <div className='tv-source-picker-list'>
           {listedSources.map((s2) => {
@@ -2873,12 +2883,16 @@ function PlayPageClient() {
                   />
                 )}
 
-                {/* 换源加载蒙层 */}
+                {/* 换源加载蒙层。电视端这块现在是"正在试源"的唯一反馈 ——
+                    选源列表不再兼任加载界面，所以这里必须有个转的东西，
+                    否则按下确认后只有一块黑屏和一行字，分不清是在等还是卡死了。 */}
                 {isVideoLoading && (
                   <div className='absolute inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-[500] transition-all duration-300'>
                     <div className='text-center max-w-md mx-auto px-6'>
-                      {/* 动画影院图标 */}
-                      <div className='relative mb-8'>
+                      {/* 电视端的转圈：月白细环，和这套配色一致（桌面端不显示） */}
+                      <span className='tv-spinner' aria-hidden='true'></span>
+                      {/* 动画影院图标（电视端隐藏：绿色渐变方块 + 浮动粒子不属于这套配色） */}
+                      <div className='tv-hide-on-tv relative mb-8'>
                         <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
                           <div className='text-white text-4xl'>🎬</div>
                           {/* 旋转光环 */}

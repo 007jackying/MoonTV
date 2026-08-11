@@ -292,16 +292,9 @@ export default function VideoCard({
     // focus-within mirrors every hover state so a TV remote sees what a mouse sees.
     // scroll-mx keeps the focused card off the edge when a row auto-scrolls.
     <div
-      // data-tv-* 供 TvImmersiveBackdrop 读取：焦点落到这张卡时用它换背景和信息块
+      // 电视端的样式钩子（焦点缩放、辉光、关掉 hover 命中测试）。
+      // 另外六个 data-tv-* 是给沉浸式背景读的，那块界面已经删了，属性跟着删。
       data-tv-card=''
-      data-tv-title={actualTitle}
-      data-tv-poster={processImageUrl(actualPoster)}
-      data-tv-year={actualYear || ''}
-      data-tv-rate={rate || ''}
-      data-tv-source={source_name || ''}
-      data-tv-progress={
-        config.showProgress && progress !== undefined ? String(progress) : ''
-      }
       className="group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-[500] focus-within:scale-[1.05] focus-within:z-[500] scroll-mx-16 scroll-my-8"
       style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
       onContextMenu={(e) => {

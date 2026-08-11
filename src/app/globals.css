@@ -157,3 +157,76 @@ div[data-media-provider] video {
     display: none !important;
   }
 }
+
+/* 「Loading your dream…」的三个点依次亮起。
+   取代了原来那组旋转图标 + 浮动粒子：一句话说清在等什么，动效只留一处。 */
+.tv-loading-dots span {
+  animation: tv-loading-dot 1.4s infinite;
+  opacity: 0.2;
+}
+
+.tv-loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.tv-loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes tv-loading-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-loading-dots span {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* 骨架屏的微光：一道高光从左扫到右，表示"内容正在来的路上"。
+   整块 pulse 闪烁更像出错或警告，扫光才有方向感。 */
+.tv-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(148, 163, 188, 0.13);
+}
+
+.tv-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(240, 234, 220, 0.13) 50%,
+    transparent 100%
+  );
+  animation: tv-shimmer 1.6s infinite;
+}
+
+@keyframes tv-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 骨架屏里不该有任何可聚焦的东西，遥控器要直接跳过整块 */
+.tv-skeleton,
+.tv-skeleton * {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-shimmer::after {
+    animation: none;
+  }
+}

@@ -33,6 +33,54 @@ const val TV_NAV_JS = """
   var BAND_TOP = 0.18;
   var BAND_BOTTOM = 0.52;
 
+  /*
+   * 导航音效。用 WebAudio 现场合成，不带音频文件 —— 省掉一个二进制资源和一次请求，
+   * 也不会在网络慢的时候延迟到听不见。
+   *
+   * 调子刻意压得很轻：暗房间里的电视，界面音大一点就变成噪音。
+   * 移动是一记短促的高音"嗒"，确认是两声下行的柔和音，两者音色不同，
+   * 不用看屏幕也能分辨"我移动了"和"我选中了"。
+   */
+  var actx = null;
+  var lastTick = 0;
+
+  function tone(freq, dur, peak, type, delay) {
+    try {
+      if (!actx) {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        actx = new AC();
+      }
+      if (actx.state === 'suspended') actx.resume();
+      var t0 = actx.currentTime + (delay || 0);
+      var osc = actx.createOscillator();
+      var gain = actx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      // 指数衰减，不要方波般的硬起停，否则在电视喇叭上会"啪"一声
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    } catch (e) { /* 没有音频设备就当没这回事 */ }
+  }
+
+  function soundMove() {
+    // 长按时按时间节流，否则一路按下去会变成机关枪
+    var now = Date.now();
+    if (now - lastTick < 70) return;
+    lastTick = now;
+    tone(880, 0.045, 0.025, 'sine', 0);
+  }
+
+  function soundSelect() {
+    tone(660, 0.09, 0.05, 'triangle', 0);
+    tone(440, 0.16, 0.04, 'triangle', 0.06);
+  }
+
   function rectOf(el) { return el.getBoundingClientRect(); }
 
   /*
@@ -43,7 +91,15 @@ const val TV_NAV_JS = """
   var lastRect = null;
   function focusEl(el) { el.focus({ preventScroll: true }); lastRect = rectOf(el); }
 
+  /*
+   * 按住方向键不放时必须瞬间滚动。
+   * 平滑滚动是异步动画：长按的重复事件来得比动画结束快，下一次按键量到的是
+   * 动画中途的坐标，于是又发一次平滑滚动去纠正，两个动画互相打架 ——
+   * 表现出来就是选择框在原地上下弹，像被重置回起点又弹回去。
+   */
+  var repeating = false;
   function smooth() {
+    if (repeating) return 'auto';
     return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
   }
 
@@ -134,7 +190,12 @@ const val TV_NAV_JS = """
 
     var cur = document.activeElement;
     var c;
-    if (cur && cur !== document.body && cur !== document.documentElement && reachable(cur)) {
+    if (
+      cur && cur !== document.body && cur !== document.documentElement &&
+      document.contains(cur) && rectOf(cur).width > 0
+    ) {
+      // 只要它还在文档里就以它为起点，不做命中测试 —— 候选集已经过滤过了，
+      // 焦点不可能跳到被遮住的元素上，起点没必要再测一次。
       c = rectOf(cur);
     } else if (lastRect) {
       /*
@@ -156,6 +217,7 @@ const val TV_NAV_JS = """
 
     focusEl(best);
     keepInView(best, dir);
+    soundMove();
     return true;
   }
 
@@ -250,7 +312,23 @@ const val TV_NAV_JS = """
   addEventListener('popstate', function () { autoFocus(0); });
   autoFocus(0);
 
+  /*
+   * 确认键的音效。这里不能 preventDefault —— 点击事件还得照常派发出去。
+   * 播放页在播放时会自己吃掉 Enter（播放/暂停），那种情况下 defaultPrevented
+   * 为真，下面直接返回，正片进行中不会有界面音。
+   */
+  addEventListener('keydown', function (e) {
+    if (e.defaultPrevented) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var a = document.activeElement;
+    if (!a || a === document.body) return;
+    if (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable) return;
+    soundSelect();
+  }, false);
+
   var DIRS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+
+  addEventListener('keyup', function () { repeating = false; }, false);
 
   addEventListener('keydown', function (e) {
     if (e.defaultPrevented) return;           // the page already handled it (e.g. player seek)
@@ -261,6 +339,7 @@ const val TV_NAV_JS = """
     var t = e.target;
     var editing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
     if (editing && (dir === 'left' || dir === 'right')) return;
+    repeating = !!e.repeat;
     if (move(dir)) e.preventDefault();        // otherwise fall through and let the page scroll
   }, false);
 })();

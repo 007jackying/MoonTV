@@ -335,13 +335,25 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
   useEffect(() => {
     getSearchHistory().then(setSearchHistory);
     const unsubscribe = subscribeToDataUpdates('searchHistoryUpdated', setSearchHistory);
+    /*
+     * 滚动容器有两种可能：globals.css 的 html,body{height:100%} 会让 <body> 变成
+     * 滚动容器，而电视端把它改回了正常的文档滚动（见 tv.css）。只听 body 的话，
+     * 电视上这个按钮永远不出现。两个都听，取实际滚动的那个。
+     */
     const handleScroll = () => {
-      setShowBackToTop((document.body.scrollTop || 0) > 300);
+      const top = Math.max(
+        document.body.scrollTop || 0,
+        document.documentElement.scrollTop || 0,
+        window.scrollY || 0
+      );
+      setShowBackToTop(top > 300);
     };
     document.body.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       unsubscribe();
       document.body.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', handleScroll);
     };
   }, []);
 
@@ -362,9 +374,10 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
           setDisplayedExactCount((prev) => prev + 20);
         }
       },
-      { 
-        threshold: 0.1,
-        rootMargin: '200px' // 提前200px开始加载，提供更流畅的体验
+      {
+        threshold: 0,
+        // 提前一屏多开始加载：等真滚到底再拉，中间一定会露出一段空白
+        rootMargin: '600px 0px',
       }
     );
 
@@ -396,9 +409,10 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
           setDisplayedOthersCount((prev) => prev + 20);
         }
       },
-      { 
-        threshold: 0.1,
-        rootMargin: '200px' // 提前200px开始加载，提供更流畅的体验
+      {
+        threshold: 0,
+        // 提前一屏多开始加载：等真滚到底再拉，中间一定会露出一段空白
+        rootMargin: '600px 0px',
       }
     );
 
@@ -560,10 +574,13 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
   };
 
   const scrollToTop = () => {
+    // 同上：滚动容器可能是 body，也可能是文档本身，两个都归零最省事
     try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       document.body.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
     }
   };
 

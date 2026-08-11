@@ -186,6 +186,19 @@ function PlayPageClient() {
   const [showTvEpisodes, setShowTvEpisodes] = useState(false);
   const [showTvSources, setShowTvSources] = useState(false);
   const [tvPaused, setTvPaused] = useState(false);
+  // 进度只在菜单打开时轮询：video:timeupdate 每秒好几次，挂 state 上会让
+  // 整个播放页跟着重渲染，2GB 的盒子上得不偿失。
+  const [tvClock, setTvClock] = useState({ cur: 0, dur: 0 });
+
+  // 快进/快退的唯一实现，左右键和覆盖层上的按钮都走这里
+  const tvSeekRef = useRef<(d: number) => void>(() => undefined);
+  const tvSeek = (delta: number) => {
+    const p = artPlayerRef.current;
+    if (!p || !p.duration) return;
+    p.currentTime = Math.max(0, Math.min(p.duration - 1, (p.currentTime || 0) + delta));
+    setTvClock({ cur: p.currentTime || 0, dur: p.duration || 0 });
+  };
+  tvSeekRef.current = tvSeek;
   useEffect(() => {
     setIsTvUi(
       typeof navigator !== 'undefined' &&
@@ -978,6 +991,9 @@ function PlayPageClient() {
       // 从 localStorage 读取是否启用优选播放源（避免状态延迟）
       const enablePreferBestSourceFromStorage = (() => {
         if (typeof window === 'undefined') return false;
+        // 电视端强制开启优选。遥控器用户没法像鼠标用户那样"点开一个不行再点下一个"，
+        // 进来就该落在一个能播的源上；测速顺带给出 ping/速度，换源面板直接复用。
+        if (navigator.userAgent.includes('MoonTV-TV')) return true;
         const saved = localStorage.getItem('enablePreferBestSource');
         if (saved === null) return false;
         try {
@@ -1307,11 +1323,20 @@ function PlayPageClient() {
   // 成功播放会清空记录，下次再出问题时又是完整的一轮。
   // ---------------------------------------------------------------------------
   const triedSourcesRef = useRef<Set<string>>(new Set());
+  // 用户自己选的源不许被自动换源顶掉。否则表现就是"我选了第 5 个，它却从第 1 个
+  // 开始一个个试" —— 自动重试是给"系统自己挑的源"兜底的，不是来推翻人的决定。
+  const manualSourceRef = useRef(false);
   const tvHintShownRef = useRef(false);
   const sourceKey = (s: string, i: string) => `${s}+${i}`;
 
   const autoRetryNextSource = (reason: string): boolean => {
     if (typeof navigator === 'undefined' || !navigator.userAgent.includes('MoonTV-TV')) {
+      return false;
+    }
+    if (manualSourceRef.current) {
+      if (artPlayerRef.current?.notice) {
+        artPlayerRef.current.notice.show = `${reason}，按 ▼ 可以换个源`;
+      }
       return false;
     }
     triedSourcesRef.current.add(
@@ -1390,6 +1415,18 @@ function PlayPageClient() {
     isVideoLoading,
     sourceSignature,
   ]);
+
+  useEffect(() => {
+    if (!isTvUi || !showTvMenu) return;
+    const read = () => {
+      const p = artPlayerRef.current;
+      if (!p) return;
+      setTvClock({ cur: p.currentTime || 0, dur: p.duration || 0 });
+    };
+    read();
+    const timer = setInterval(read, 500);
+    return () => clearInterval(timer);
+  }, [isTvUi, showTvMenu]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyboardShortcuts);
@@ -1546,21 +1583,10 @@ function PlayPageClient() {
       }
     }
 
-    // 左箭头 = 快退
-    if (!e.altKey && e.key === 'ArrowLeft') {
-      if (artPlayerRef.current && artPlayerRef.current.currentTime > 5) {
-        artPlayerRef.current.currentTime -= 10;
-        e.preventDefault();
-      }
-    }
-
-    // 右箭头 = 快进
-    if (!e.altKey && e.key === 'ArrowRight') {
-      if (
-        artPlayerRef.current &&
-        artPlayerRef.current.currentTime < artPlayerRef.current.duration - 5
-      ) {
-        artPlayerRef.current.currentTime += 10;
+    // 左右箭头 = 快退 / 快进，和覆盖层上的按钮共用同一个实现
+    if (!e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      if (artPlayerRef.current) {
+        tvSeekRef.current(e.key === 'ArrowLeft' ? -10 : 10);
         e.preventDefault();
       }
     }
@@ -1908,7 +1934,7 @@ function PlayPageClient() {
         flip: false,
         playbackRate: !isTvPlayer,
         aspectRatio: false,
-        fullscreen: true,
+        fullscreen: !isTvPlayer, // 电视上本来就满屏；进原生全屏会把同级的覆盖层挡掉
         fullscreenWeb: !isTvPlayer,
         subtitleOffset: false,
         miniProgressBar: false,
@@ -1922,7 +1948,7 @@ function PlayPageClient() {
         hotkey: false,
         fastForward: true,
         autoOrientation: true,
-        lock: true,
+        lock: !isTvPlayer, // 锁屏浮标遥控器点不到，只是噪音
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
@@ -2112,10 +2138,11 @@ function PlayPageClient() {
           },
         ],
         // 控制栏配置
-        controls: [
-          // 电视端：换源做成控制条上的一个按钮，按一下切下一个源。
-          // 不做下拉菜单 —— ArtPlayer 的菜单不支持方向键，遥控器点不进去；
-          // 循环切换一个键就够，也符合"播放器里只留播放/暂停和换源"的要求。
+        // 电视端一个自带控件都不要：整个播放器的操作面全部收到覆盖层里，
+        // 播放器只负责出画面。留着的控件遥控器也点不到，只会挡住画面下沿。
+        controls: isTvPlayer
+          ? []
+          : [
           {
             position: 'left',
             index: 13,
@@ -2217,7 +2244,12 @@ function PlayPageClient() {
         }
       });
       // 用 video: 前缀的代理事件，和这个文件里其余监听保持一致
-      artPlayerRef.current.on('video:pause', () => setTvPaused(true));
+      artPlayerRef.current.on('video:pause', () => {
+        setTvPaused(true);
+        // 播放器自己的中央播放键在电视上是隐藏的，暂停后画面上不会有任何提示。
+        // 直接把覆盖层顶出来：状态和控件都在这一层，用户不用猜。
+        if (isTvPlayer) setShowTvMenu(true);
+      });
       artPlayerRef.current.on('video:play', () => setTvPaused(false));
 
       artPlayerRef.current.on('video:canplay', () => {
@@ -2399,128 +2431,80 @@ function PlayPageClient() {
   // 电视端选源界面：代替原来那个走不出去的「视频加载中」。
   // 条件用「还没播起来 或 正在加载」，因为 video:playing 可能在一个随后就卡死的源上
   // 触发过一次 —— 只看 tvPlaybackStarted 会又退回到干等的spinner。
+  /*
+   * 换源面板。
+   *
+   * 只列"测出过速度的源"。precomputedVideoInfo 里只会写入测速成功的条目 ——
+   * 拿不到 ping 的源等于连清单都读不下来，列出来只是让人白按一次。
+   * 一条都没测过时（优选被关掉或整轮失败）退回显示全部，总比空面板强。
+   *
+   * 单列而不是三列：遥控器在一维列表里只需要上下走，三列网格还要判断左右，
+   * 每次换源都得在脑子里做一次二维定位。
+   */
+  const sourceKeyOf = (s2: SearchResult) => `${s2.source}-${s2.id}`;
+  const measuredSources = availableSources.filter((s2) =>
+    precomputedVideoInfo.has(sourceKeyOf(s2))
+  );
+  const listedSources =
+    measuredSources.length > 0 ? measuredSources : availableSources;
+
   const tvSourcePicker =
     isTvUi && (showTvSources || tvNeedsSource || isVideoLoading) ? (
-          <div className='tv-source-picker'>
-            {/* 播放中主动打开的才可以关掉；还没播起来时关掉只会留下一块黑屏 */}
-            {showTvSources && !tvNeedsSource && (
-              <button
-                data-tv-dismiss=''
-                hidden
-                onClick={() => setShowTvSources(false)}
-              />
-            )}
-            <h1 className='tv-source-picker-title'>{videoTitle || '选择播放源'}</h1>
-            <p className='tv-source-picker-hint'>
-              {availableSources.length > 0
-                ? '按确认键选择一个播放源'
-                : '正在查找可用的播放源…'}
-            </p>
-            <div className='tv-source-picker-list'>
-              {availableSources.map((s) => {
-                const active =
-                  s.source === currentSource && s.id.toString() === currentId;
-                return (
-                  <button
-                    key={`${s.source}-${s.id}`}
-                    data-tv-nav={active ? 'active' : undefined}
-                    className='tv-source-option'
-                    onClick={() => {
-                      setShowTvSources(false);
-                      // 手动挑的源要能覆盖自动重试的黑名单，否则试过一轮之后
-                      // 用户自己选回来的那个会被当成"已经试过"直接跳掉
-                      triedSourcesRef.current.clear();
-                      handleSourceChange(s.source, s.id.toString(), s.title);
-                    }}
-                  >
-                    <span className='tv-source-option-name'>{s.source_name}</span>
-                    <span className='tv-source-option-meta tv-data'>
-                      {s.episodes?.length > 1 ? `${s.episodes.length} 集` : '电影'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-    ) : null;
-
-  // 电视端播放器菜单：播放中按上/下呼出，横排大按钮，选完即走。
-  // 这是遥控器唯一能操作播放器的地方 —— ArtPlayer 的控制条聚焦不到。
-  const tvPlayerMenu =
-    isTvUi && showTvMenu ? (
-      <div className='tv-player-menu'>
-        <button data-tv-dismiss='' hidden onClick={() => setShowTvMenu(false)} />
-        <div className='tv-player-menu-bar'>
+      <div className='tv-source-picker'>
+        {showTvSources && !tvNeedsSource && (
           <button
-            className='tv-player-menu-item'
-            onClick={() => {
-              artPlayerRef.current?.toggle();
-              setShowTvMenu(false);
-            }}
-          >
-            {tvPaused ? '播放' : '暂停'}
-          </button>
-          {totalEpisodes > 1 && (
-            <>
+            data-tv-dismiss=''
+            hidden
+            onClick={() => setShowTvSources(false)}
+          />
+        )}
+        <h1 className='tv-source-picker-title'>{videoTitle || '选择播放源'}</h1>
+        <p className='tv-source-picker-hint'>
+          {listedSources.length > 0
+            ? `${listedSources.length} 个可用播放源，按确认键切换`
+            : '正在测试可用的播放源…'}
+        </p>
+        <div className='tv-source-picker-list'>
+          {listedSources.map((s2) => {
+            const active =
+              s2.source === currentSource && s2.id.toString() === currentId;
+            const info = precomputedVideoInfo.get(sourceKeyOf(s2));
+            return (
               <button
-                className='tv-player-menu-item'
-                disabled={currentEpisodeIndex <= 0}
+                key={sourceKeyOf(s2)}
+                data-tv-nav={active ? 'active' : undefined}
+                className='tv-source-option'
                 onClick={() => {
-                  setShowTvMenu(false);
-                  handlePreviousEpisode();
+                  setShowTvSources(false);
+                  triedSourcesRef.current.clear();
+                  manualSourceRef.current = true; // 这是人选的，别再自动跳走
+                  handleSourceChange(s2.source, s2.id.toString(), s2.title);
                 }}
               >
-                上一集
+                <span className='tv-source-option-name'>{s2.source_name}</span>
+                <span className='tv-source-option-meta tv-data'>
+                  {info?.quality && <span>{info.quality}</span>}
+                  {info?.loadSpeed && <span>{info.loadSpeed}</span>}
+                  {typeof info?.pingTime === 'number' && info.pingTime > 0 && (
+                    <span>{Math.round(info.pingTime)} ms</span>
+                  )}
+                  <span>
+                    {s2.episodes?.length > 1 ? `${s2.episodes.length} 集` : '电影'}
+                  </span>
+                </span>
               </button>
-              <button
-                className='tv-player-menu-item'
-                disabled={currentEpisodeIndex >= totalEpisodes - 1}
-                onClick={() => {
-                  setShowTvMenu(false);
-                  handleNextEpisode();
-                }}
-              >
-                下一集
-              </button>
-              <button
-                className='tv-player-menu-item'
-                onClick={() => {
-                  setShowTvMenu(false);
-                  setShowTvEpisodes(true);
-                }}
-              >
-                选集
-              </button>
-            </>
-          )}
-          <button
-            className='tv-player-menu-item'
-            onClick={() => {
-              setShowTvMenu(false);
-              setShowTvSources(true);
-            }}
-          >
-            换源
-          </button>
-          <button
-            className='tv-player-menu-item'
-            onClick={() => {
-              setShowTvMenu(false);
-              router.push('/');
-            }}
-          >
-            返回首页
-          </button>
+            );
+          })}
         </div>
       </div>
     ) : null;
 
-  // 电视端选集面板：从控制条的「选集」进来，选完就消失，画面上不留常驻控件。
+  // 电视端选集面板：从播放器控制层的「选集」进来，选完就消失。
   // 只显示集号 —— 三米外一格数字比一行剧集标题好认得多。
   const tvEpisodePicker =
     isTvUi && showTvEpisodes && totalEpisodes > 1 ? (
       <div className='tv-source-picker tv-episode-picker'>
-        {/* 遥控器的返回键被 Activity 吃掉，收不到 keydown；由注入的 __tvBack 代按这个按钮 */}
+        {/* 遥控器的返回键被 Activity 吃掉，收不到 keydown；由注入的 __tvBack 代按 */}
         <button data-tv-dismiss='' hidden onClick={() => setShowTvEpisodes(false)} />
         <h1 className='tv-source-picker-title'>选集</h1>
         <p className='tv-source-picker-hint'>
@@ -2544,37 +2528,113 @@ function PlayPageClient() {
       </div>
     ) : null;
 
+  /*
+   * 电视端播放器控制层 —— 页面上唯一的一层。
+   *
+   * ArtPlayer 自带的控制条已经在 tv.css 里整条关掉了：它是一排没有 tabindex 的 div，
+   * 遥控器聚焦不到也点不着，留着就变成"看得见摸不着"的第二层，还盖住画面。
+   * 播放/暂停、全屏、换源、返回全部收进这一层，进度和时间也一并由它显示。
+   *
+   * 分区按遥控器的手感来：返回放左上角（离开的动作在角上），其余落在左下，
+   * 手指从下方向键上来第一个够到的就是它们。
+   */
+  const tvPlayerMenu =
+    isTvUi && showTvMenu ? (
+      <div className='tv-player-menu'>
+        <button data-tv-dismiss='' hidden onClick={() => setShowTvMenu(false)} />
+
+        <div className='tv-player-menu-top'>
+          <button
+            className='tv-player-menu-item'
+            onClick={() => {
+              setShowTvMenu(false);
+              router.push('/');
+            }}
+          >
+            返回首页
+          </button>
+        </div>
+
+        <div className='tv-player-menu-bottom'>
+          <div className='tv-player-scrub'>
+            <div className='tv-player-scrub-track'>
+              <span
+                style={{
+                  width: tvClock.dur
+                    ? `${Math.min(100, (tvClock.cur / tvClock.dur) * 100)}%`
+                    : '0%',
+                }}
+              />
+            </div>
+            <span className='tv-player-scrub-time tv-data'>
+              {formatTime(tvClock.cur)} / {formatTime(tvClock.dur)}
+            </span>
+          </div>
+
+          <div className='tv-player-menu-bar'>
+            <button
+              className='tv-player-menu-item'
+              onClick={() => {
+                artPlayerRef.current?.toggle();
+                setShowTvMenu(false);
+              }}
+            >
+              {tvPaused ? '播放' : '暂停'}
+            </button>
+            <button
+              className='tv-player-menu-item'
+              onClick={() => tvSeek(-10)}
+            >
+              后退 10 秒
+            </button>
+            <button
+              className='tv-player-menu-item'
+              onClick={() => tvSeek(10)}
+            >
+              前进 10 秒
+            </button>
+            <button
+              className='tv-player-menu-item'
+              onClick={() => {
+                setShowTvMenu(false);
+                setShowTvSources(true);
+              }}
+            >
+              换源
+            </button>
+            {totalEpisodes > 1 && (
+              <button
+                className='tv-player-menu-item'
+                onClick={() => {
+                  setShowTvMenu(false);
+                  setShowTvEpisodes(true);
+                }}
+              >
+                选集
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    ) : null;
+
   if (loading) {
     return (
       <PageLayout activePath='/play'>
         {tvSourcePicker}
         <div className='flex items-center justify-center min-h-screen bg-transparent'>
           <div className='text-center max-w-md mx-auto px-6'>
-            {/* 动画影院图标 */}
-            <div className='relative mb-8'>
-              <div className='relative mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl shadow-2xl flex items-center justify-center transform hover:scale-105 transition-transform duration-300'>
-                <div className='text-white text-4xl'>
-                  {loadingStage === 'searching' && '🔍'}
-                  {loadingStage === 'preferring' && '⚡'}
-                  {loadingStage === 'fetching' && '🎬'}
-                  {loadingStage === 'ready' && '✨'}
-                </div>
-                {/* 旋转光环 */}
-                <div className='absolute -inset-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl opacity-20 animate-spin'></div>
-              </div>
-
-              {/* 浮动粒子效果 */}
-              <div className='absolute top-0 left-0 w-full h-full pointer-events-none'>
-                <div className='absolute top-2 left-2 w-2 h-2 bg-green-400 rounded-full animate-bounce'></div>
-                <div
-                  className='absolute top-4 right-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '0.5s' }}
-                ></div>
-                <div
-                  className='absolute bottom-3 left-6 w-1 h-1 bg-lime-400 rounded-full animate-bounce'
-                  style={{ animationDelay: '1s' }}
-                ></div>
-              </div>
+            {/* 「Loading your dream…」——取代原来那组转圈的绿色影院图标和浮动粒子。
+                一句话比一堆动效更能说明现在在等什么，绿色也不属于这套配色。 */}
+            <div className='mb-8'>
+              <p className='tv-loading-line text-3xl font-semibold tracking-tight text-gray-800 dark:text-gray-100'>
+                Loading your dream
+                <span className='tv-loading-dots' aria-hidden='true'>
+                  <span>.</span>
+                  <span>.</span>
+                  <span>.</span>
+                </span>
+              </p>
             </div>
 
             {/* 进度指示器 */}

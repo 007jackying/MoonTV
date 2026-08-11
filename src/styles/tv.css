@@ -568,6 +568,15 @@
 
 /* 评分是数据，不是标签：暗色薄片 + 等宽数字，让画面只剩月白和金色两种强调色。
    原来的亮粉色徽章在一屏五张海报时会先于内容抢走视线。 */
+/* 评分只是数据，不是控件。桌面端那套 cursor-pointer / hover 是误导，
+   电视上更要彻底断掉：pointer-events:none 让它连命中测试都不参与 ——
+   遥控器的可达性判断走 elementFromPoint，任何盖在卡片上的小块都可能把
+   整张卡判成"被挡住"。 */
+.tv .tv-rate-badge {
+  pointer-events: none;
+  cursor: default !important;
+}
+
 .tv .tv-rate-badge {
   background-color: rgba(10, 14, 26, 0.82) !important;
   color: var(--tv-moonlight) !important;
@@ -715,11 +724,14 @@
   color: var(--tv-halo);
 }
 
+/* 单列：遥控器在一维列表里只用上下走，三列网格每次都要重新做二维定位。
+   行高放大到 68px，一屏刚好 5 行，滚动时不会一次跳掉半屏。 */
 .tv .tv-source-picker-list {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--tv-gutter);
-  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+  max-height: 340px;
   overflow-y: auto;
 }
 
@@ -728,8 +740,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 64px;
-  padding: 0 20px;
+  height: 68px;
+  padding: 0 24px;
+  flex: 0 0 auto;
   border-radius: 10px;
   background-color: var(--tv-surface);
   color: var(--tv-moonlight);
@@ -750,7 +763,11 @@
   min-width: 0;
 }
 
+/* 画质 / 速度 / ping / 集数 横排，等宽数字对齐，三米外一眼能比出快慢 */
 .tv .tv-source-option-meta {
+  display: flex;
+  align-items: center;
+  gap: 18px;
   color: var(--tv-halo);
   font-size: 15px;
   white-space: nowrap;
@@ -804,31 +821,86 @@
 }
 
 /* =====================================================================
-   电视端播放器菜单
-   播放中按上/下呼出。停在画面底部并压一层由下往上的暗角，字才读得出来，
-   同时上面 2/3 的画面保持可见 —— 用户知道自己还在片子里，没跳去别的页面。
+   电视端播放器控制层
+   ArtPlayer 自带的控制条在电视上整条关掉 —— 它是一排没有 tabindex 的 div，
+   遥控器聚焦不到，留着就是"看得见摸不着"的第二层，还挡住画面下沿。
+   播放/暂停、全屏、换源、返回，连同进度和时间，全部由这一层负责。
    ===================================================================== */
+.tv .art-video-player .art-bottom,
+.tv .art-video-player .art-layer-lock,
+.tv .art-video-player .art-mask {
+  display: none !important;
+}
+
 .tv .tv-player-menu {
   position: fixed;
   inset: 0;
   z-index: 710;
   display: flex;
-  align-items: flex-end;
-  pointer-events: none; /* 只有按钮接事件，其余部分让画面透出来 */
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none; /* 只有按钮接事件，画面继续透出来 */
+  /* 上下各压一道暗角，字才读得出来，中间那 2/3 的画面保持干净 */
   background: linear-gradient(
-    to bottom,
-    rgba(10, 14, 26, 0) 45%,
-    rgba(10, 14, 26, 0.55) 70%,
-    rgba(10, 14, 26, 0.92) 100%
-  );
+      to bottom,
+      rgba(10, 14, 26, 0.85) 0%,
+      rgba(10, 14, 26, 0) 22%
+    ),
+    linear-gradient(
+      to top,
+      rgba(10, 14, 26, 0.92) 0%,
+      rgba(10, 14, 26, 0.55) 18%,
+      rgba(10, 14, 26, 0) 42%
+    );
+}
+
+/* 返回放左上角：离开的动作待在角上，不和播放控件混在一起 */
+.tv .tv-player-menu-top {
+  pointer-events: auto;
+  display: flex;
+  padding: var(--tv-safe-y) var(--tv-safe-x) 0;
+}
+
+.tv .tv-player-menu-bottom {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 var(--tv-safe-x) var(--tv-safe-y);
+}
+
+/* 进度条本身不可聚焦：快进快退用左右键，这里只做读数 */
+.tv .tv-player-scrub {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tv .tv-player-scrub-track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background-color: rgba(240, 234, 220, 0.22);
+  overflow: hidden;
+}
+
+.tv .tv-player-scrub-track span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background-color: var(--tv-moonlight);
+}
+
+.tv .tv-player-scrub-time {
+  font-size: 16px;
+  color: var(--tv-halo);
+  white-space: nowrap;
 }
 
 .tv .tv-player-menu-bar {
-  pointer-events: auto;
   display: flex;
   gap: var(--tv-gutter);
-  padding: 0 var(--tv-safe-x) var(--tv-safe-y);
-  width: 100%;
 }
 
 .tv .tv-player-menu-item {
@@ -852,8 +924,3 @@
   box-shadow: var(--tv-focus-bloom), var(--tv-focus-lift), var(--tv-focus-glow);
 }
 
-/* 到头的上一集/下一集：留在原地发灰，而不是整个消失 —— 按钮位置不跳，
-   用户对这排东西的肌肉记忆才立得住。禁用态本来就聚焦不到，遥控器会自动跳过。 */
-.tv .tv-player-menu-item:disabled {
-  opacity: 0.35;
-}

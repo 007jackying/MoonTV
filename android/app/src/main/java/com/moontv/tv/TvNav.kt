@@ -169,7 +169,8 @@ const val TV_NAV_JS = """
 
   /* 最近的可横向滚动的祖先（海报行） */
   function scrollerX(el) {
-    for (var p = el.parentElement; p; p = p.parentElement) {
+    var body = document.body, root = document.documentElement;
+    for (var p = el.parentElement; p && p !== body && p !== root; p = p.parentElement) {
       var s = getComputedStyle(p);
       if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && p.scrollWidth > p.clientWidth) {
         return p;
@@ -183,9 +184,26 @@ const val TV_NAV_JS = """
    * 没有这个的话，上下键在一个 30 项的列表里照样能把焦点移下去，但滚的是 window ——
    * 而覆盖层是 fixed 的，window 根本没得滚，于是列表永远停在第一屏，
    * 焦点已经跑到看不见的地方去了。
+   *
+   * **必须在 <body>/<html> 之前停下。** 这两个不是"内部容器"，它们就是页面本身。
+   *
+   * globals.css 有 `html, body { overflow-x: hidden }`，而按规范，overflow-x 一旦不是
+   * visible，overflow-y 就从 visible 提升成 auto —— 所以 getComputedStyle(html).overflowY
+   * 是 'auto'。再加上根元素的 clientHeight 按定义返回的是**视口高度**，而 scrollHeight
+   * 是整篇文档的高度，于是"页面比一屏长"就恒等于 `scrollHeight > clientHeight` 成立，
+   * 循环每次都在 <html> 上命中。
+   *
+   * 命中之后 keepInView 会走"容器分支"，而它量的是 col.getBoundingClientRect()：
+   * <html> 的这个矩形高度是整篇文档（比如 8000px），于是
+   * `bottom > cr.height - 8` 永远不成立、`top < 8` 也永远不成立 —— 一次都不滚，
+   * 然后 return，页面级的那段舒适区逻辑根本轮不到执行。
+   *
+   * 表现就是：方向键能把焦点移到下一行，但画面纹丝不动，焦点走出屏幕就再也找不回来。
+   * 页面的滚动本来就该交给下面那段 18%–52% 舒适区的代码。
    */
   function scrollerY(el) {
-    for (var p = el.parentElement; p; p = p.parentElement) {
+    var body = document.body, root = document.documentElement;
+    for (var p = el.parentElement; p && p !== body && p !== root; p = p.parentElement) {
       var s = getComputedStyle(p);
       if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && p.scrollHeight > p.clientHeight) {
         return p;

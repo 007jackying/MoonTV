@@ -184,7 +184,10 @@ const FilterOptions: React.FC<FilterOptionsProps> = ({
   );
 
   return (
-    <div className="flex w-full border rounded-lg overflow-hidden shadow-sm dark:border-gray-700 flex-col">
+    // tv-filter 是给 tv.css 的作用域钩子。这个组件整块都是 Tailwind 的行内颜色类，
+    // 与其给十几处分别加语义类，不如圈一个范围，在范围内按工具类改色 ——
+    // 只在这一个组件里生效，不会像全局改 .bg-green-500 那样误伤别处（比如测速的红绿橙）。
+    <div className="tv-filter flex w-full border rounded-lg overflow-hidden shadow-sm dark:border-gray-700 flex-col">
       {/* Tab 栏 + 排序按钮 */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
         <div className="flex gap-4">

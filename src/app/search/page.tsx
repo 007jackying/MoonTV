@@ -637,7 +637,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
         <div className="w-full max-w-screen-2xl mx-auto overflow-visible">
           {isLoading ? (
             <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+              <div className="tv-brand-spin animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
             </div>
           ) : showResults ? (
             <section className="mb-12">
@@ -657,7 +657,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       checked={streamEnabled}
                       onChange={() => setStreamEnabled(!streamEnabled)}
                     />
-                    <div className="w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
+                    <div className="tv-switch w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
                     <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
                   </div>
                 </label>
@@ -670,7 +670,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       checked={viewMode} // true 表示聚合
                       onChange={() => setViewMode(!viewMode)}
                     />
-                    <div className="w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
+                    <div className="tv-switch w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
                     <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
                   </div>
                 </label>
@@ -756,7 +756,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                   className="col-span-full flex justify-center py-8"
                 >
                   <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
+                    <div className="tv-brand-spin animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
                     <span className="text-sm">加载中...</span>
                   </div>
                 </div>
@@ -808,7 +808,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       className="col-span-full flex justify-center py-8"
                     >
                       <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
+                        <div className="tv-brand-spin animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
                         <span className="text-sm">加载中...</span>
                       </div>
                     </div>
@@ -846,9 +846,9 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       setSelectedHistoryItem(item);
                     }
                   }}
-                  className={`px-4 py-2 rounded-full text-sm transition-colors duration-200 ${
+                  className={`tv-history-chip px-4 py-2 rounded-full text-sm transition-colors duration-200 ${
                     selectedHistoryItem === item
-                      ? 'bg-green-500/20 text-green-600 dark:bg-green-600/30 dark:text-green-300'
+                      ? 'tv-history-chip-on bg-green-500/20 text-green-600 dark:bg-green-600/30 dark:text-green-300'
                       : 'bg-gray-500/10 hover:bg-gray-300 text-gray-700 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-300'
                   }`}
                 >
@@ -890,9 +890,11 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
         </div>
       </div>
 
+      {/* tv-hide-on-tv：遥控器上「回到顶部」就是按住上键，不需要悬浮按钮。
+          留着反而有害 —— 它是个真的 button，方向键会走到这个飘在画面角上的绿圆点。 */}
       <button
         onClick={scrollToTop}
-        className={`fixed bottom-20 md:bottom-6 right-6 z-[500] w-12 h-12 bg-green-500/90 hover:bg-green-500 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out flex items-center justify-center group ${
+        className={`tv-hide-on-tv fixed bottom-20 md:bottom-6 right-6 z-[500] w-12 h-12 bg-green-500/90 hover:bg-green-500 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out flex items-center justify-center group ${
           showBackToTop ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'
         }`}
         aria-label="返回顶部"

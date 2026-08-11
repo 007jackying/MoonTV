@@ -230,3 +230,49 @@ div[data-media-provider] video {
     animation: none;
   }
 }
+
+/* 海报骨架屏。原来这段是 ImagePlaceholder 组件里的内联 <style>，
+   每张卡片复制一份 —— 首页一屏两百张卡就是两百个一模一样的 <style> 节点，
+   每个都要解析一遍再往全局样式表里塞一份重复规则。挪到这里，全站只解析一次。 */
+:root {
+  --skeleton-color: #f0f0f0;
+  --skeleton-highlight: #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --skeleton-color: #2d2d2d;
+    --skeleton-highlight: #3d3d3d;
+  }
+}
+
+.dark {
+  --skeleton-color: #2d2d2d;
+  --skeleton-highlight: #3d3d3d;
+}
+
+.skeleton-shine {
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-color) 25%,
+    var(--skeleton-highlight) 50%,
+    var(--skeleton-color) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.5s linear infinite;
+}
+
+@keyframes skeleton-shine {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shine {
+    animation: none;
+  }
+}

@@ -1027,3 +1027,126 @@
 .tv .tv-rail-more {
   display: none;
 }
+
+/* =====================================================================
+   搜索页：把最后一批旧品牌绿刷成月光配色
+
+   这块界面是整站唯一还在用荧光绿的地方：筛选面板的选中态、流式/聚合开关、
+   加载转圈、搜索历史里被选中的那颗胶囊。在深夜蓝底上，饱和绿是画面里最亮的
+   东西，比海报还抢眼 —— 而它们表达的只是"选中"和"正在加载"。
+
+   语义沿用全站那两条：
+     选中 = 金色（--tv-lune），和导航的当前项、选源列表的当前源是同一种金；
+     聚焦 = 月白（由通用的 :focus-visible 规则统一给出），形状和选中不同。
+   ===================================================================== */
+
+/* 标题在夜底上按月白走。桌面用的 gray-800/gray-200 偏灰。 */
+.tv main h2 {
+  color: var(--tv-moonlight);
+}
+
+/* --- 流式 / 聚合 开关 -------------------------------------------------
+   轨道的选中色来自 peer-checked: 变体，选择器是 `.peer:checked ~ .xxx`
+   （三个类，比这里的 .tv .tv-switch 高），所以必须写 !important。 */
+.tv .tv-switch {
+  background-color: rgba(240, 234, 220, 0.22) !important;
+}
+
+.tv .peer:checked ~ .tv-switch {
+  background-color: var(--tv-lune) !important;
+}
+
+/* --- 加载转圈 --------------------------------------------------------- */
+.tv .tv-brand-spin {
+  border-bottom-color: var(--tv-moonlight) !important;
+}
+
+/* --- 搜索历史胶囊 ----------------------------------------------------- */
+.tv .tv-history-chip {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: var(--tv-halo) !important;
+}
+
+.tv .tv-history-chip-on {
+  background-color: rgba(227, 180, 87, 0.14) !important;
+  color: var(--tv-lune) !important;
+}
+
+/* =====================================================================
+   筛选 / 排序面板（FilterOptions）
+
+   组件里全是 Tailwind 行内颜色类，所以这里按工具类改色，但整段都锁在
+   .tv-filter 这个作用域里 —— 全局改 .bg-green-500 会顺手把播放页那套
+   绿/橙/红的测速读数也刷掉，而那三种颜色是在传达数据，不是装饰。
+   ===================================================================== */
+.tv .tv-filter {
+  border-color: rgba(240, 234, 220, 0.16) !important;
+  background-color: var(--tv-night);
+}
+
+/* 顶栏、左侧分类列、右侧内容区：三层背景压成夜底 + 抬升面 */
+.tv .tv-filter .bg-gray-50,
+.tv .tv-filter .dark\:bg-gray-800,
+.tv .tv-filter .bg-gray-100 {
+  background-color: var(--tv-surface) !important;
+}
+
+.tv .tv-filter .bg-white,
+.tv .tv-filter .dark\:bg-gray-900 {
+  background-color: var(--tv-night) !important;
+}
+
+/* Tailwind 的 preflight 给所有元素一个默认 border-color（gray-200），
+   而面板里有几个按钮只写了 `border` 不写颜色 —— 在夜底上那就是一道亮白框。
+   这条兜底管住整个作用域；下面点名绿色边框的规则更具体，不受影响。 */
+.tv .tv-filter * {
+  border-color: rgba(240, 234, 220, 0.16);
+}
+
+.tv .tv-filter .border-gray-200,
+.tv .tv-filter .dark\:border-gray-700,
+.tv .tv-filter .border-gray-300,
+.tv .tv-filter .dark\:border-gray-600 {
+  border-color: rgba(240, 234, 220, 0.16) !important;
+}
+
+/* 未选中的文字：次要层级 */
+.tv .tv-filter .text-gray-700,
+.tv .tv-filter .dark\:text-gray-300,
+.tv .tv-filter .text-gray-400 {
+  color: var(--tv-halo) !important;
+}
+
+/*
+ * 选中态一律金色。
+ * 这里一次点掉三种写法：实心绿（Tab、左侧分类）、浅绿底深绿字（选项胶囊），
+ * 以及它们各自的 dark: 变体。
+ */
+.tv .tv-filter .bg-green-500,
+.tv .tv-filter .bg-green-100,
+.tv .tv-filter .dark\:bg-green-900\/30 {
+  background-color: rgba(227, 180, 87, 0.14) !important;
+  box-shadow: inset 0 0 0 1px rgba(227, 180, 87, 0.4);
+}
+
+.tv .tv-filter .text-white,
+.tv .tv-filter .text-green-700,
+.tv .tv-filter .dark\:text-green-400 {
+  color: var(--tv-lune) !important;
+}
+
+.tv .tv-filter .border-green-300,
+.tv .tv-filter .dark\:border-green-700 {
+  border-color: rgba(227, 180, 87, 0.4) !important;
+}
+
+/* 「清空筛选」是个动作，不是链接：蓝色在这套配色里没有任何位置 */
+.tv .tv-filter .text-blue-600,
+.tv .tv-filter .dark\:text-blue-400 {
+  color: var(--tv-halo) !important;
+}
+
+/* 遥控器上目标要够大。桌面的 py-1 / py-2 在三米外只有几毫米高。 */
+.tv .tv-filter button {
+  min-height: 44px;
+}

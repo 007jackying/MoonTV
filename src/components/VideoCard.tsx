@@ -346,6 +346,9 @@ export default function VideoCard({
     >
       <NextLink
         href={href || '#'}
+        // ponytail: 一屏 25 张卡 = 25 次 /play RSC 预取，每次都是一个 edge invocation。
+        // /play 本来就要在客户端解析播放源，预取省不了什么。
+        prefetch={false}
         className='block outline-none'
         onClick={(e) => {
           if (!href || longPressedRef.current) {

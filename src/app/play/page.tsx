@@ -199,6 +199,30 @@ function PlayPageClient() {
     setTvClock({ cur: p.currentTime || 0, dur: p.duration || 0 });
   };
   tvSeekRef.current = tvSeek;
+
+  /*
+   * 电视端的「全屏」= 整个文档进全屏，不是播放器容器进全屏。
+   * ArtPlayer 的 fullscreen 只把 <video> 的容器提上去，同级的控制层、选源、选集
+   * 全留在下面那一层 —— 画面是满的，但遥控器再也叫不出任何界面。
+   * 提 documentElement 的话整棵树都在里面，覆盖层照常工作。
+   *
+   * 画面本身不依赖这个开关：.tv .tv-player-frame 是 fixed inset:0，加载完就满屏。
+   * 这里管的是浏览器/WebView 自己那层外框（地址栏、系统条）。
+   */
+  const [tvFullscreen, setTvFullscreen] = useState(false);
+  const toggleTvFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+    } else {
+      document.documentElement.requestFullscreen?.().catch(() => undefined);
+    }
+  };
+  useEffect(() => {
+    const sync = () => setTvFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+
   useEffect(() => {
     setIsTvUi(
       typeof navigator !== 'undefined' &&
@@ -2228,6 +2252,16 @@ function PlayPageClient() {
         setTvPlaybackStarted(true);
         setTvNeedsSource(false);
         setTvPaused(false);
+
+        /*
+         * 画面一起来就进全屏。这是 best-effort：requestFullscreen 要求用户手势，
+         * 而从"按下确认键"到"视频真的播起来"往往超过手势的有效期，浏览器会拒。
+         * 拒了也无所谓 —— 满屏是 .tv-player-frame 的 fixed inset:0 保证的，
+         * 这里只是顺手把 WebView 外面那层系统边框也一起收掉。
+         */
+        if (isTvPlayer && !document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.().catch(() => undefined);
+        }
         // 播起来了，之前那轮失败作废，下次再出问题重新一轮完整的尝试
         triedSourcesRef.current.clear();
 
@@ -2597,6 +2631,15 @@ function PlayPageClient() {
               className='tv-player-menu-item'
               onClick={() => {
                 setShowTvMenu(false);
+                toggleTvFullscreen();
+              }}
+            >
+              {tvFullscreen ? '退出全屏' : '全屏'}
+            </button>
+            <button
+              className='tv-player-menu-item'
+              onClick={() => {
+                setShowTvMenu(false);
                 setShowTvSources(true);
               }}
             >
@@ -2786,11 +2829,14 @@ function PlayPageClient() {
             {/* 播放器 */}
             <div className='tv-player-main h-full border-0 md:border-t md:border-b md:border-l md:border-white/0 md:dark:border-white/30 md:col-span-3'>
               <div className='tv-player-frame relative w-full h-[300px] lg:h-full'>
-                {/* tabIndex 让遥控器可以把焦点移回播放器，方向键才会重新控制播放 */}
+                {/* tabIndex 让遥控器可以把焦点移回播放器，方向键才会重新控制播放。
+                    不画焦点框：正片进行中，画面四周一圈高亮就是干扰，而且电视上
+                    播放器是唯一的落点，不需要"我在这儿"的提示。焦点样式在
+                    tv.css 的 .tv-player-surface:focus-visible 里一并关掉。 */}
                 <div
                   ref={artRef}
                   tabIndex={0}
-                  className='tv-player-surface bg-black w-full h-full overflow-hidden shadow-lg outline-none focus-visible:ring-4 focus-visible:ring-green-500'
+                  className='tv-player-surface bg-black w-full h-full overflow-hidden shadow-lg outline-none'
                 ></div>
 
                 {/* 弹幕选择器 */}

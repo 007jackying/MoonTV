@@ -248,6 +248,19 @@
     box-shadow var(--tv-dur) ease-out;
 }
 
+/*
+ * 幽灵 hover。电视上没有鼠标，但 WebView 始终记着一个指针坐标，
+ * 它下面的元素就一直是 :hover。卡片上那套 hover: 和 focus-within: 长得一模一样
+ * （VideoCard 特意让它们对齐），于是换行时页面一滚，新一行有张卡正好滑到那个
+ * 坐标下面，凭空亮起来 —— 看上去就是"每行的第一张自己选中了"。
+ *
+ * 关掉卡片的命中测试，:hover 就永远匹配不上，焦点成为唯一的高亮来源。
+ * 遥控器的确认键走的是元素自身的激活行为，不经过命中测试，不受影响。
+ */
+.tv [data-tv-card] {
+  pointer-events: none;
+}
+
 /* 描边和辉光只加在海报上，不要圈住标题——否则整张卡看起来像贴了张奶油色卡纸 */
 .tv .tv-card-poster {
   transition: box-shadow var(--tv-dur) ease-out;
@@ -394,8 +407,20 @@
   width: 100%;
 }
 
+/*
+ * 电视上播放器永远铺满整块屏幕 —— 不靠 Fullscreen API，靠定位。
+ *
+ * 用 API 有两个坑：requestFullscreen 需要用户手势，而"视频加载完"这个时机
+ * 早就过了手势的有效期，浏览器会直接拒掉；而且 WebView 走 onShowCustomView
+ * 把全屏元素单独提到 decorView 上，同级的控制层/选源/选集会被留在下面那层。
+ * fixed inset:0 没有这些问题：加载完就是满屏，覆盖层照样叠在上面（它们 z-index 700）。
+ */
 .tv .tv-player-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   height: 100vh;
+  background-color: #000;
 }
 
 /* 指南：不要在屏幕上画返回按钮，遥控器有返回键 */
@@ -622,8 +647,16 @@
 /* 播放页残留的旧品牌绿。
    注意：测速的绿/橙/红是有含义的信号（快/一般/失败），不能一起刷掉——
    这里只改装饰性的绿，不动传达数据的颜色。 */
-.tv .tv-player-surface {
-  --tw-ring-color: var(--tv-moonlight);
+/*
+ * 播放器不画焦点框。
+ * 它带 tabindex 只是为了让方向键回到播放器（见 play/page.tsx 的 playerOwnsArrows），
+ * 不是一个"可选项"。上面那条通用的 .tv [tabindex]:focus-visible 会给它套一圈月白描边，
+ * 于是正片放着放着，画面四周挂着一道亮边 —— 电视上没有第二个落点，这个提示纯属干扰。
+ */
+.tv .tv-player-surface:focus,
+.tv .tv-player-surface:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .tv .tv-genre {
@@ -699,6 +732,11 @@
    代替原来的「视频加载中」死界面：源还没起来时给一个能用遥控器选的列表，
    播起来之后整块消失，屏幕上只剩画面。
    ===================================================================== */
+/*
+ * 居中的单栏。之前是靠左的：一台 40 寸电视上，右边三分之二全是空的，
+ * 而标题被挤到屏幕最上沿、列表又从下沿切出去 —— 两头顶边，中间空一大片。
+ * 居中之后视线只需要落在一个地方，这也是所有电视端选择器的通用做法。
+ */
 .tv .tv-source-picker {
   position: fixed;
   inset: 0;
@@ -706,51 +744,90 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   padding: var(--tv-safe-y) var(--tv-safe-x);
-  background-color: var(--tv-night);
+  /* 纯色底上再叠一层从中心散开的微光，避免 40 寸的大平面看起来像死机蓝屏 */
+  background:
+    radial-gradient(
+      120% 90% at 50% 42%,
+      rgba(60, 78, 122, 0.5) 0%,
+      rgba(10, 14, 26, 0) 68%
+    ),
+    var(--tv-night);
+  animation: tv-picker-in var(--tv-dur) ease-out;
+}
+
+@keyframes tv-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv .tv-source-picker {
+    animation: none;
+  }
 }
 
 .tv .tv-source-picker-title {
-  font-size: 38px;
+  font-size: 42px;
   font-weight: 700;
   line-height: 1.15;
+  letter-spacing: -0.5px;
+  text-align: center;
   color: var(--tv-moonlight);
 }
 
 .tv .tv-source-picker-hint {
-  margin-top: 8px;
-  margin-bottom: 24px;
+  margin-top: 10px;
+  margin-bottom: 28px;
   font-size: 17px;
+  text-align: center;
   color: var(--tv-halo);
 }
 
 /* 单列：遥控器在一维列表里只用上下走，三列网格每次都要重新做二维定位。
-   行高放大到 68px，一屏刚好 5 行，滚动时不会一次跳掉半屏。 */
+   行高 68px，高度按视口算 —— 写死 340px 在 540dp 的面板上会从下沿切出去，
+   正好是照片里那条被截掉的行。留 5 行，第 6 行露出半截当"下面还有"的提示。 */
 .tv .tv-source-picker-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-width: 720px;
-  max-height: 340px;
+  width: min(720px, 100%);
+  max-height: min(46vh, 400px);
   overflow-y: auto;
+  /* 滚动时上下两端渐隐，比硬切一刀更像"还有内容"而不是"排版坏了" */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
 }
 
 .tv .tv-source-option {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   height: 68px;
-  padding: 0 24px;
+  padding: 0 26px;
   flex: 0 0 auto;
-  border-radius: 10px;
-  background-color: var(--tv-surface);
+  border-radius: 14px;
+  /* 半透明 + 一道内描边：实色块在电视的低色深面板上会糊成一片，
+     发丝边把每一行的边界交代清楚，暗场里也数得出有几行。 */
+  background-color: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(240, 234, 220, 0.08);
   color: var(--tv-moonlight);
   font-size: 19px;
   text-align: left;
   outline: none;
   transition:
     background-color var(--tv-dur) ease-out,
+    box-shadow var(--tv-dur) ease-out,
     color var(--tv-dur) ease-out;
 }
 
@@ -774,9 +851,13 @@
   flex-shrink: 0;
 }
 
-/* 当前正在用的源：金色（和导航的"选中"是同一套语义） */
+/* 当前正在用的源：金色（和导航的"选中"是同一套语义），再加一道左侧金条。
+   "选中"和"聚焦"必须靠形状分开 —— 只换颜色的话，焦点走过去时两者会撞在一起。 */
 .tv .tv-source-option[data-tv-nav='active'] {
   color: var(--tv-lune);
+  box-shadow: inset 3px 0 0 0 var(--tv-lune),
+    inset 0 0 0 1px rgba(227, 180, 87, 0.22);
+  background-color: rgba(227, 180, 87, 0.08);
 }
 
 /* 聚焦：实心月白（形状/填充都不同，不只靠颜色） */
@@ -797,9 +878,7 @@
    半透明底色而不是纯色：让用户知道自己还在这部片子里，没有跳去别的页面。
    ===================================================================== */
 .tv .tv-episode-picker {
-  background-color: rgba(10, 14, 26, 0.94);
-  justify-content: flex-start;
-  padding-top: 64px;
+  background: rgba(10, 14, 26, 0.94);
 }
 
 /* 一行 10 格：只放集号，三米外一格数字远比一行剧集标题好认。
@@ -809,7 +888,7 @@
   grid-template-columns: repeat(10, 64px);
   gap: var(--tv-gutter);
   margin-top: 8px;
-  max-height: 320px;
+  max-height: min(46vh, 400px);
   overflow-y: auto;
 }
 

@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { getCustomCategories } from '@/lib/config.client';
 
 import { useNavigationLoading } from './NavigationLoadingProvider';
+import TvDoubanSource from './TvDoubanSource';
 
 /**
  * 电视端顶部导航。
@@ -83,9 +84,10 @@ export default function TvSidebar() {
       </div>
 
       {/* 搜索靠右，和内容目的地分开。
-          这里不放「设置」：后台是一套密集的表单，遥控器根本填不了，
+          这里不放通用「设置」：后台是一套密集的表单，遥控器根本填不了，
           而且在 localstorage 模式下打开就直接报「不支持本地存储进行管理员配置」，
-          等于给电视用户留了一个死胡同。要改配置请用手机或电脑打开同一个地址。 */}
+          等于给电视用户留了一个死胡同。要改配置请用手机或电脑打开同一个地址。
+          唯一的例外是豆瓣数据源 —— 选错了整个首页就是空的，电视上必须能自己改。 */}
       <div className='tv-nav-utils'>
         <Link
           href='/search'
@@ -96,6 +98,7 @@ export default function TvSidebar() {
         >
           <Search size={24} strokeWidth={2} />
         </Link>
+        <TvDoubanSource />
       </div>
     </nav>
   );

@@ -47,8 +47,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val url = prefs.getString(KEY_URL, null)
-        if (url.isNullOrBlank()) showSetup(null) else showWeb(url)
+        val url = prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_URL
+        showWeb(url)
     }
 
     // ---------------------------------------------------------------- setup screen
@@ -61,7 +61,7 @@ class MainActivity : Activity() {
         val input = EditText(this).apply {
             inputType = InputType.TYPE_TEXT_VARIATION_URI
             setSingleLine()
-            setText(prefill ?: prefs.getString(KEY_URL, "") ?: "")
+            setText(prefill ?: prefs.getString(KEY_URL, null) ?: DEFAULT_URL)
             hint = "https://dreamtv.example.com"
             // The stock EditText background is light, so the text must be dark to be readable.
             setTextColor(Color.BLACK)
@@ -163,8 +163,7 @@ class MainActivity : Activity() {
                 (view.parent as? ViewGroup)?.removeView(view)
                 view.destroy()
                 if (web === view) {
-                    val saved = prefs.getString(KEY_URL, null)
-                    if (saved.isNullOrBlank()) showSetup(null) else showWeb(saved)
+                    showWeb(prefs.getString(KEY_URL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_URL)
                 }
                 return true
             }
@@ -250,7 +249,7 @@ class MainActivity : Activity() {
                 }
             }
             KeyEvent.KEYCODE_MENU -> {
-                showSetup(prefs.getString(KEY_URL, null)); return true
+                showSetup(prefs.getString(KEY_URL, null) ?: DEFAULT_URL); return true
             }
         }
         return super.onKeyDown(keyCode, event)
@@ -297,6 +296,13 @@ class MainActivity : Activity() {
         private const val PREFS = "moontv"
         private const val KEY_URL = "url"
         private const val KEY_PASS = "password"
+
+        /**
+         * Where the app goes on a fresh install. Typing a URL on a remote is miserable and
+         * this build only ever points at one instance, so first run goes straight to it.
+         * The setup screen is still reachable via MENU and still shows up when a load fails.
+         */
+        private const val DEFAULT_URL = "https://movies.recursivedreamlabs.com"
         private const val TEXT_ZOOM = 130
     }
 }

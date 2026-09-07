@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any, no-console */
 'use client';
 
 import { ChevronUp, Search, X } from 'lucide-react';
@@ -139,7 +139,7 @@ function SearchPageClient() {
   // 用于筛选后的聚合结果，保证类型安全
   const filteredAggregatedResults: [string, SearchResult[]][] = useMemo(() => {
     return aggregatedResults
-      .filter(([key, group]) => {
+      .filter(([_key, group]) => {
         // 来源筛选：如果没有选择任何来源（filterSources.length === 0），默认显示全部；如果选择了来源，只保留包含至少一个选中来源的影片组
         const sourceMatch = filterSources.length === 0 ||
           group.some(item => filterSources.includes(item.source_name));
@@ -335,13 +335,25 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
   useEffect(() => {
     getSearchHistory().then(setSearchHistory);
     const unsubscribe = subscribeToDataUpdates('searchHistoryUpdated', setSearchHistory);
+    /*
+     * 滚动容器有两种可能：globals.css 的 html,body{height:100%} 会让 <body> 变成
+     * 滚动容器，而电视端把它改回了正常的文档滚动（见 tv.css）。只听 body 的话，
+     * 电视上这个按钮永远不出现。两个都听，取实际滚动的那个。
+     */
     const handleScroll = () => {
-      setShowBackToTop((document.body.scrollTop || 0) > 300);
+      const top = Math.max(
+        document.body.scrollTop || 0,
+        document.documentElement.scrollTop || 0,
+        window.scrollY || 0
+      );
+      setShowBackToTop(top > 300);
     };
     document.body.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       unsubscribe();
       document.body.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', handleScroll);
     };
   }, []);
 
@@ -362,9 +374,10 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
           setDisplayedExactCount((prev) => prev + 20);
         }
       },
-      { 
-        threshold: 0.1,
-        rootMargin: '200px' // 提前200px开始加载，提供更流畅的体验
+      {
+        threshold: 0,
+        // 提前一屏多开始加载：等真滚到底再拉，中间一定会露出一段空白
+        rootMargin: '600px 0px',
       }
     );
 
@@ -396,9 +409,10 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
           setDisplayedOthersCount((prev) => prev + 20);
         }
       },
-      { 
-        threshold: 0.1,
-        rootMargin: '200px' // 提前200px开始加载，提供更流畅的体验
+      {
+        threshold: 0,
+        // 提前一屏多开始加载：等真滚到底再拉，中间一定会露出一段空白
+        rootMargin: '600px 0px',
       }
     );
 
@@ -560,10 +574,13 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
   };
 
   const scrollToTop = () => {
+    // 同上：滚动容器可能是 body，也可能是文档本身，两个都归零最省事
     try {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       document.body.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
       document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
     }
   };
 
@@ -580,8 +597,10 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
   return (
     <PageLayout activePath="/search">
       <div className="px-4 sm:px-10 py-4 sm:py-8 overflow-visible mb-10">
-        {/* 移动端搜索框和搜索源选择器 */}
-        <div className="mb-7 max-w-2xl mx-auto md:hidden">
+        {/* 移动端搜索框和搜索源选择器。
+            电视端也要显示：桌面的搜索框在 TopNav 里，而电视用左侧导航取代了 TopNav，
+            如果这里还按 md:hidden 隐藏，电视上就完全没有地方输入关键词了。 */}
+        <div className="tv-search-box mb-7 max-w-2xl mx-auto md:hidden">
           <div className="flex items-center">
             {/* 搜索源选择器 - 在搜索框左侧，作为一个整体 */}
             <div className="flex-shrink-0">
@@ -618,7 +637,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
         <div className="w-full max-w-screen-2xl mx-auto overflow-visible">
           {isLoading ? (
             <div className="flex justify-center items-center h-40">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+              <div className="tv-brand-spin animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
             </div>
           ) : showResults ? (
             <section className="mb-12">
@@ -638,7 +657,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       checked={streamEnabled}
                       onChange={() => setStreamEnabled(!streamEnabled)}
                     />
-                    <div className="w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
+                    <div className="tv-switch w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
                     <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
                   </div>
                 </label>
@@ -651,7 +670,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       checked={viewMode} // true 表示聚合
                       onChange={() => setViewMode(!viewMode)}
                     />
-                    <div className="w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
+                    <div className="tv-switch w-9 h-5 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600"></div>
                     <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
                   </div>
                 </label>
@@ -689,7 +708,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
             {/* 精确匹配结果 */}
             <div
               key={`search-results-${viewMode}`}
-              className="justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8"
+              className="tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8"
             >
               {displayedExactResults.map(([mapKey, group], index) => {
                 if (viewMode) {
@@ -737,7 +756,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                   className="col-span-full flex justify-center py-8"
                 >
                   <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
+                    <div className="tv-brand-spin animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
                     <span className="text-sm">加载中...</span>
                   </div>
                 </div>
@@ -748,7 +767,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
             {sortedAggregatedResults.others.length > 0 && (
               <div className="mt-8">
                 <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-7">更多结果</h2>
-                <div className="justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8">
+                <div className="tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8">
                   {displayedOthersResults.map(([mapKey, group], index) => {
                     if (viewMode) {
                       return (
@@ -789,7 +808,7 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       className="col-span-full flex justify-center py-8"
                     >
                       <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
+                        <div className="tv-brand-spin animate-spin rounded-full h-5 w-5 border-b-2 border-green-500"></div>
                         <span className="text-sm">加载中...</span>
                       </div>
                     </div>
@@ -827,9 +846,9 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
                       setSelectedHistoryItem(item);
                     }
                   }}
-                  className={`px-4 py-2 rounded-full text-sm transition-colors duration-200 ${
+                  className={`tv-history-chip px-4 py-2 rounded-full text-sm transition-colors duration-200 ${
                     selectedHistoryItem === item
-                      ? 'bg-green-500/20 text-green-600 dark:bg-green-600/30 dark:text-green-300'
+                      ? 'tv-history-chip-on bg-green-500/20 text-green-600 dark:bg-green-600/30 dark:text-green-300'
                       : 'bg-gray-500/10 hover:bg-gray-300 text-gray-700 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-300'
                   }`}
                 >
@@ -871,9 +890,11 @@ const sortedAggregatedResults: { exact: [string, SearchResult[]][], others: [str
         </div>
       </div>
 
+      {/* tv-hide-on-tv：遥控器上「回到顶部」就是按住上键，不需要悬浮按钮。
+          留着反而有害 —— 它是个真的 button，方向键会走到这个飘在画面角上的绿圆点。 */}
       <button
         onClick={scrollToTop}
-        className={`fixed bottom-20 md:bottom-6 right-6 z-[500] w-12 h-12 bg-green-500/90 hover:bg-green-500 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out flex items-center justify-center group ${
+        className={`tv-hide-on-tv fixed bottom-20 md:bottom-6 right-6 z-[500] w-12 h-12 bg-green-500/90 hover:bg-green-500 text-white rounded-full shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out flex items-center justify-center group ${
           showBackToTop ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'
         }`}
         aria-label="返回顶部"

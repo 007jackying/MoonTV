@@ -2,15 +2,12 @@
 
 'use client';
 
-import { ChevronRight, X } from 'lucide-react';
-import Link from 'next/link';
+import { X } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
 
-import {
-  BangumiCalendarData,
-  GetBangumiCalendarData,
-} from '@/lib/bangumi.client';
+import { GetBangumiCalendarData } from '@/lib/bangumi.client';
 // 客户端收藏 API
 import {
   clearAllFavorites,
@@ -23,26 +20,138 @@ import { DoubanItem } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
-import { useNavigationLoading } from '@/components/NavigationLoadingProvider';
+import HomeRail, { HomeRailProps } from '@/components/HomeRail';
 import PageLayout from '@/components/PageLayout';
-import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
 
+/**
+ * 首页的分类行。
+ *
+ * 原来只有 4 行（电影 / 剧集 / 新番 / 综艺），电视屏幕往下滚两下就到底了。
+ * 扩到十几行是安全的：每一行自己负责取数据，而且只在快滚到的时候才取
+ * （见 HomeRail），所以打开首页依然只有前两个请求。
+ *
+ * 分类值必须来自豆瓣 recent_hot 接口认识的那一组（和 DoubanSelector 里的一致），
+ * 随便编一个 type 回来的是空列表，那一行会自己收起来。
+ */
+const movies = (category: string, type: string) => async () => {
+  const r = await getDoubanCategories({ kind: 'movie', category, type });
+  return r.code === 200 ? r.list : [];
+};
+
+const tv = (category: string, type: string) => async () => {
+  const r = await getDoubanCategories({ kind: 'tv', category, type });
+  return r.code === 200 ? r.list : [];
+};
+
+/** 今天放送的番剧。Bangumi 的字段和豆瓣不一样，在这里抹平成 DoubanItem。 */
+const bangumiToday = async (): Promise<DoubanItem[]> => {
+  const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const today = weekdays[new Date().getDay()];
+  const calendar = await GetBangumiCalendarData();
+  const items = calendar.find((d) => d.weekday.en === today)?.items || [];
+  return items.map((a) => ({
+    id: String(a.id),
+    title: a.name_cn || a.name,
+    poster:
+      a.images.large ||
+      a.images.common ||
+      a.images.medium ||
+      a.images.small ||
+      a.images.grid,
+    rate: a.rating?.score?.toString() || '',
+    year: a.air_date?.split('-')?.[0] || '',
+  }));
+};
+
+const RAILS: HomeRailProps[] = [
+  // 前两行开屏就要有东西，不等 IntersectionObserver
+  {
+    title: '热门电影',
+    href: '/douban?type=movie',
+    load: movies('热门', '全部'),
+    eager: true,
+  },
+  {
+    title: '热门剧集',
+    href: '/douban?type=tv',
+    load: tv('tv', 'tv'),
+    eager: true,
+  },
+  {
+    title: '今日新番',
+    href: '/douban?type=anime',
+    load: bangumiToday,
+    isBangumi: true,
+  },
+  {
+    title: '豆瓣高分',
+    href: '/douban?type=movie',
+    load: movies('豆瓣高分', '全部'),
+  },
+  { title: '热门综艺', href: '/douban?type=show', load: tv('show', 'show') },
+  { title: '国产剧集', href: '/douban?type=tv', load: tv('tv', 'tv_domestic') },
+  { title: '欧美剧集', href: '/douban?type=tv', load: tv('tv', 'tv_american') },
+  { title: '韩国剧集', href: '/douban?type=tv', load: tv('tv', 'tv_korean') },
+  { title: '日本剧集', href: '/douban?type=tv', load: tv('tv', 'tv_japanese') },
+  {
+    title: '动画剧集',
+    href: '/douban?type=anime',
+    load: tv('tv', 'tv_animation'),
+  },
+  {
+    title: '华语电影',
+    href: '/douban?type=movie',
+    load: movies('热门', '华语'),
+  },
+  {
+    title: '欧美电影',
+    href: '/douban?type=movie',
+    load: movies('热门', '欧美'),
+  },
+  {
+    title: '日本电影',
+    href: '/douban?type=movie',
+    load: movies('热门', '日本'),
+  },
+  {
+    title: '韩国电影',
+    href: '/douban?type=movie',
+    load: movies('热门', '韩国'),
+  },
+  {
+    title: '纪录片',
+    href: '/douban?type=tv',
+    load: tv('tv', 'tv_documentary'),
+  },
+  {
+    title: '冷门佳片',
+    href: '/douban?type=movie',
+    load: movies('冷门佳片', '全部'),
+  },
+  {
+    title: '最新上映',
+    href: '/douban?type=movie',
+    load: movies('最新', '全部'),
+  },
+];
+
 function HomeClient() {
-  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'favorites'>('home');
-  const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
-  const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
-  const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
-  const [bangumiCalendarData, setBangumiCalendarData] = useState<
-    BangumiCalendarData[]
-  >([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'favorites'>(
+    'home'
+  );
+  // 电视端「收藏 / 历史」在顶部导航里，用 ?tab= 切换；桌面仍然用页面中间的胶囊
+  const tabParam = useSearchParams().get('tab');
+  useEffect(() => {
+    if (tabParam === 'history' || tabParam === 'favorites')
+      setActiveTab(tabParam);
+    else if (tabParam === null) setActiveTab('home');
+  }, [tabParam]);
   const { announcement } = useSite();
-  const { startLoading } = useNavigationLoading();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
-  
+
   // 检查是否启用简洁模式
   const [simpleMode, setSimpleMode] = useState(false);
   const [isClient, setIsClient] = useState(false);
@@ -59,6 +168,9 @@ function HomeClient() {
 
   // 检查公告弹窗状态
   useEffect(() => {
+    // 电视端不弹免责声明：这是自用的私人盒子，开机第一件事不该是拿遥控器
+    // 关掉一个法律弹窗。桌面/手机保持原样。
+    if (document.documentElement.classList.contains('tv')) return;
     if (typeof window !== 'undefined' && announcement) {
       const hasSeenAnnouncement = localStorage.getItem('hasSeenAnnouncement');
       if (hasSeenAnnouncement !== announcement) {
@@ -83,56 +195,7 @@ function HomeClient() {
 
   const [favoriteItems, setFavoriteItems] = useState<FavoriteItem[]>([]);
 
-  useEffect(() => {
-    const fetchRecommendData = async () => {
-      try {
-        setLoading(true);
-
-        // 检查是否启用简洁模式
-        const savedSimpleMode = localStorage.getItem('simpleMode');
-        const isSimpleMode = savedSimpleMode ? JSON.parse(savedSimpleMode) : false;
-
-        if (isSimpleMode) {
-          // 简洁模式下跳过豆瓣数据获取
-          setLoading(false);
-          return;
-        }
-
-        // 并行获取热门电影、热门剧集和热门综艺
-        const [moviesData, tvShowsData, varietyShowsData, bangumiCalendarData] =
-          await Promise.all([
-            getDoubanCategories({
-              kind: 'movie',
-              category: '热门',
-              type: '全部',
-            }),
-            getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
-            getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
-            GetBangumiCalendarData(),
-          ]);
-
-        if (moviesData.code === 200) {
-          setHotMovies(moviesData.list);
-        }
-
-        if (tvShowsData.code === 200) {
-          setHotTvShows(tvShowsData.list);
-        }
-
-        if (varietyShowsData.code === 200) {
-          setHotVarietyShows(varietyShowsData.list);
-        }
-
-        setBangumiCalendarData(bangumiCalendarData);
-      } catch (error) {
-        console.error('获取推荐数据失败:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecommendData();
-  }, []);
+  // 豆瓣数据不在这里取了：每条分类行自己负责，而且滚到附近才取（见 HomeRail）。
 
   // 处理收藏数据更新的函数
   const updateFavoriteItems = async (allFavorites: Record<string, any>) => {
@@ -196,21 +259,34 @@ function HomeClient() {
     <PageLayout>
       <div className='px-2 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 顶部 Tab 切换 */}
-        <div className='mb-8 flex justify-center'>
+        <div className='tv-tabs-row mb-8 flex justify-center'>
           <CapsuleSwitch
-            options={simpleMode ? [
-              { label: '历史', value: 'history' },
-              { label: '收藏夹', value: 'favorites' },
-            ] : [
-              { label: '首页', value: 'home' },
-              { label: '历史', value: 'history' },
-              { label: '收藏夹', value: 'favorites' },
-            ]}
+            options={
+              simpleMode
+                ? [
+                    { label: '历史', value: 'history' },
+                    { label: '收藏夹', value: 'favorites' },
+                  ]
+                : [
+                    { label: '首页', value: 'home' },
+                    { label: '历史', value: 'history' },
+                    { label: '收藏夹', value: 'favorites' },
+                  ]
+            }
             active={simpleMode && activeTab === 'home' ? 'history' : activeTab}
-            onChange={(value) => setActiveTab(value as 'home' | 'history' | 'favorites')}
+            onChange={(value) =>
+              setActiveTab(value as 'home' | 'history' | 'favorites')
+            }
           />
         </div>
 
+        {/*
+          原来这里有一块跟随焦点切换的沉浸式背景 + 大标题信息块（Netflix 首页那种）。
+          拿掉了：它吃掉屏幕上沿 330dp，1080p 的电视上只剩一行半海报，
+          而背景图每次移动焦点都要换一张，在 2GB 的盒子上是持续的解码开销。
+          换来的是首页能一眼看到两整行片子 —— 电视首页的价值在片子，不在配图。
+          组件 TvImmersiveBackdrop.tsx 和 .tv-immersive-* 样式一并删了。
+        */}
         <div className='w-full max-w-screen-2xl mx-auto'>
           {activeTab === 'history' ? (
             // 历史视图 - 显示所有播放记录的网格布局
@@ -251,7 +327,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
+              <div className='tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 sm:gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(140px,_1fr))] sm:gap-x-8'>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -263,8 +339,9 @@ function HomeClient() {
                   </div>
                 ))}
                 {favoriteItems.length === 0 && (
-                  <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
-                    暂无收藏内容
+                  // 空状态是一次引导，不是一句通知：告诉用户怎么往里加东西
+                  <div className='col-span-full py-8 text-left text-gray-500 dark:text-gray-400'>
+                    还没有收藏。在任意影片的播放页点一下 ♥，就会出现在这里。
                   </div>
                 )}
               </div>
@@ -278,226 +355,9 @@ function HomeClient() {
               {/* 简洁模式下只显示收藏夹，但在服务器端渲染时先不渲染 */}
               {isClient && !simpleMode && (
                 <>
-                  {/* 热门电影 */}
-                  <section className='mb-8'>
-                    <div className='mb-4 flex items-center justify-between'>
-                      <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                        热门电影
-                      </h2>
-                      <Link
-                        href='/douban?type=movie'
-                        onClick={startLoading}
-                        className='flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                      >
-                        查看更多
-                        <ChevronRight className='w-4 h-4 ml-1' />
-                      </Link>
-                    </div>
-                    <ScrollableRow>
-                      {loading
-                        ? // 加载状态显示灰色占位数据
-                          Array.from({ length: 8 }).map((_, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                                <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                              </div>
-                              <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
-                            </div>
-                          ))
-                        : // 显示真实数据
-                          hotMovies.map((movie, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <VideoCard
-                                from='douban'
-                                title={movie.title}
-                                poster={movie.poster}
-                                douban_id={Number(movie.id)}
-                                rate={movie.rate}
-                                year={movie.year}
-                                type='movie'
-                              />
-                            </div>
-                          ))}
-                    </ScrollableRow>
-                  </section>
-
-                  {/* 热门剧集 */}
-                  <section className='mb-8'>
-                    <div className='mb-4 flex items-center justify-between'>
-                      <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                        热门剧集
-                      </h2>
-                      <Link
-                        href='/douban?type=tv'
-                        onClick={startLoading}
-                        className='flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                      >
-                        查看更多
-                        <ChevronRight className='w-4 h-4 ml-1' />
-                      </Link>
-                    </div>
-                    <ScrollableRow>
-                      {loading
-                        ? // 加载状态显示灰色占位数据
-                          Array.from({ length: 8 }).map((_, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                                <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                              </div>
-                              <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
-                            </div>
-                          ))
-                        : // 显示真实数据
-                          hotTvShows.map((show, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <VideoCard
-                                from='douban'
-                                title={show.title}
-                                poster={show.poster}
-                                douban_id={Number(show.id)}
-                                rate={show.rate}
-                                year={show.year}
-                              />
-                            </div>
-                          ))}
-                    </ScrollableRow>
-                  </section>
-
-                  {/* 每日新番放送 */}
-                  <section className='mb-8'>
-                    <div className='mb-4 flex items-center justify-between'>
-                      <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                        新番放送
-                      </h2>
-                      <Link
-                        href='/douban?type=anime'
-                        onClick={startLoading}
-                        className='flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                      >
-                        查看更多
-                        <ChevronRight className='w-4 h-4 ml-1' />
-                      </Link>
-                    </div>
-                    <ScrollableRow>
-                      {loading
-                        ? // 加载状态显示灰色占位数据
-                          Array.from({ length: 8 }).map((_, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                                <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                              </div>
-                              <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
-                            </div>
-                          ))
-                        : // 展示当前日期的番剧
-                          (() => {
-                            // 获取当前日期对应的星期
-                            const today = new Date();
-                            const weekdays = [
-                              'Sun',
-                              'Mon',
-                              'Tue',
-                              'Wed',
-                              'Thu',
-                              'Fri',
-                              'Sat',
-                            ];
-                            const currentWeekday = weekdays[today.getDay()];
-
-                            // 找到当前星期对应的番剧数据
-                            const todayAnimes =
-                              bangumiCalendarData.find(
-                                (item) => item.weekday.en === currentWeekday
-                              )?.items || [];
-
-                            return todayAnimes.map((anime, index) => (
-                              <div
-                                key={`${anime.id}-${index}`}
-                                className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                              >
-                                <VideoCard
-                                  from='douban'
-                                  title={anime.name_cn || anime.name}
-                                  poster={
-                                    anime.images.large ||
-                                    anime.images.common ||
-                                    anime.images.medium ||
-                                    anime.images.small ||
-                                    anime.images.grid
-                                  }
-                                  douban_id={anime.id}
-                                  rate={anime.rating?.score?.toString() || ''}
-                                  year={anime.air_date?.split('-')?.[0] || ''}
-                                  isBangumi={true}
-                                />
-                              </div>
-                            ));
-                          })()}
-                    </ScrollableRow>
-                  </section>
-
-                  {/* 热门综艺 */}
-                  <section className='mb-8'>
-                    <div className='mb-4 flex items-center justify-between'>
-                      <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-                        热门综艺
-                      </h2>
-                      <Link
-                        href='/douban?type=show'
-                        onClick={startLoading}
-                        className='flex items-center text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                      >
-                        查看更多
-                        <ChevronRight className='w-4 h-4 ml-1' />
-                      </Link>
-                    </div>
-                    <ScrollableRow>
-                      {loading
-                        ? // 加载状态显示灰色占位数据
-                          Array.from({ length: 8 }).map((_, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                                <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                              </div>
-                              <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
-                            </div>
-                          ))
-                        : // 显示真实数据
-                          hotVarietyShows.map((show, index) => (
-                            <div
-                              key={index}
-                              className='min-w-[120px] w-[120px] sm:min-w-[180px] sm:w-44'
-                            >
-                              <VideoCard
-                                from='douban'
-                                title={show.title}
-                                poster={show.poster}
-                                douban_id={Number(show.id)}
-                                rate={show.rate}
-                                year={show.year}
-                              />
-                            </div>
-                          ))}
-                    </ScrollableRow>
-                  </section>
+                  {RAILS.map((rail) => (
+                    <HomeRail key={rail.title} {...rail} />
+                  ))}
                 </>
               )}
             </>

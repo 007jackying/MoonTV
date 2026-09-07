@@ -30,6 +30,12 @@ function DoubanPageClient() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectorsReady, setSelectorsReady] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  // 观察者回调里要读"是不是正在加载"，但不能把它放进依赖 —— 否则每次加载都要
+  // 拆掉重建观察者。用 ref 镜像一份。
+  const isLoadingMoreRef = useRef(false);
+  useEffect(() => {
+    isLoadingMoreRef.current = isLoadingMore;
+  }, [isLoadingMore]);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -362,6 +368,11 @@ function DoubanPageClient() {
         if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
           setDoubanData(data.list);
           setHasMore(data.list.length !== 0);
+          // 预取第二页：只有一页时内容往往不到一屏，哨兵进不了视口，
+          // 触底加载就永远不会被触发。先垫一页出来。
+          if (data.list.length !== 0) {
+            setCurrentPage((prev) => (prev === 0 ? 1 : prev));
+          }
           setLoading(false);
         } else {
           console.log('参数不一致，不执行任何操作，避免设置过期数据');
@@ -547,36 +558,38 @@ function DoubanPageClient() {
     selectedWeekday,
   ]);
 
-  // 设置滚动监听
+  /*
+   * 触底加载。
+   *
+   * 之前这里有两个坑，合起来的效果就是"第一页之后再也不加载":
+   *  1. 哨兵的 ref 是个回调，只在 offsetParent 非空时赋值，而且卸载时（el === null）
+   *     不清空 —— 筛选一变哨兵重挂，ref 还指着已经脱离文档的旧节点，
+   *     观察一个不在文档里的元素永远不会相交。改成普通 ref，卸载时 React 自己置空。
+   *  2. 依赖里带着 isLoadingMore，加载中整个观察者被拆掉；配合上面那条，
+   *     重建时又绑到了错的节点上。
+   *
+   * rootMargin 提前 600px 触发：等滚到底才开始拉，用户一定会看到一段空白。
+   */
   useEffect(() => {
-    // 如果没有更多数据或正在加载，则不设置监听
-    if (!hasMore || isLoadingMore || loading) {
-      return;
-    }
-
-    // 确保 loadingRef 存在
-    if (!loadingRef.current) {
-      return;
-    }
+    if (!hasMore || loading) return;
+    const el = loadingRef.current;
+    if (!el) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+        if (!entries[0].isIntersecting) return;
+        // 用函数式更新 + isLoadingMore 判断，避免同一屏里连续触发翻两页
+        if (!isLoadingMoreRef.current) {
           setCurrentPage((prev) => prev + 1);
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0, rootMargin: '600px 0px' }
     );
 
-    observer.observe(loadingRef.current);
+    observer.observe(el);
     observerRef.current = observer;
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [hasMore, isLoadingMore, loading]);
+    return () => observer.disconnect();
+  }, [hasMore, loading, doubanData.length]);
 
   // 处理选择器变化
   const handlePrimaryChange = useCallback(
@@ -754,7 +767,7 @@ function DoubanPageClient() {
         {/* 内容展示区域 */}
         <div className='w-full max-w-screen-2xl mx-auto mt-8 overflow-visible'>
           {/* 内容网格 */}
-          <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-x-8 sm:gap-y-12'>
+          <div className='tv-poster-grid justify-start grid grid-cols-3 gap-x-2 gap-y-8 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-x-8 sm:gap-y-12'>
             {loading || !selectorsReady
               ? // 显示骨架屏
               skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
@@ -779,16 +792,7 @@ function DoubanPageClient() {
 
           {/* 加载更多指示器 */}
           {hasMore && !loading && (
-            <div
-              ref={(el) => {
-                if (el && el.offsetParent !== null) {
-                  (
-                    loadingRef as React.MutableRefObject<HTMLDivElement | null>
-                  ).current = el;
-                }
-              }}
-              className='flex justify-center mt-12 py-8'
-            >
+            <div ref={loadingRef} className='flex justify-center mt-12 py-8'>
               {isLoadingMore && (
                 <div className='flex items-center gap-2'>
                   <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>

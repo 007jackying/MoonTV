@@ -2,8 +2,10 @@
 
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import { headers } from 'next/headers';
 
 import './globals.css';
+import '../styles/tv.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
 import { getConfig } from '@/lib/config';
@@ -25,7 +27,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 // 动态生成 metadata，支持配置更新后的标题变化
 export async function generateMetadata(): Promise<Metadata> {
-  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV';
+  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'DreamTV';
   if (process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'localstorage') {
     const config = await getConfig();
     siteName = config.SiteConfig.SiteName;
@@ -49,7 +51,7 @@ export default async function RootLayout({
 }) {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
 
-  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV';
+  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'DreamTV';
   let announcement =
     process.env.ANNOUNCEMENT ||
     '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
@@ -92,8 +94,12 @@ export default async function RootLayout({
     DANMU_API_BASE_URL: danmakuApiBaseUrl,
   };
 
+  // 电视端由 WebView 在 UA 里加了 MoonTV-TV 标记（见 android/.../MainActivity.kt）。
+  // 服务端判断，首帧就带上 .tv，避免闪一下桌面布局。
+  const isTv = headers().get('user-agent')?.includes('MoonTV-TV') ?? false;
+
   return (
-    <html lang='zh-CN' suppressHydrationWarning>
+    <html lang='zh-CN' className={isTv ? 'tv' : undefined} suppressHydrationWarning>
       <head>
         <meta
           name='viewport'
@@ -124,7 +130,7 @@ export default async function RootLayout({
               <UserOnlineUpdate />
               
               {/* 条件导航栏 - 根据路径自动判断是否显示 */}
-              <ConditionalNav />
+              <ConditionalNav isTv={isTv} />
               
               {/* 全局下载管理器 - 只渲染一次，被所有导航栏共享 */}
               <GlobalDownloadManager />

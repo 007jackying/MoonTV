@@ -46,3 +46,5 @@ sitemap-*.xml
 # generated files
 src/lib/runtime.ts
 public/manifest.json
+# wrangler local dev cache
+.wrangler/

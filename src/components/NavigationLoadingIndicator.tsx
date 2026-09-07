@@ -8,6 +8,11 @@ export function NavigationLoadingIndicator() {
   const { isLoading } = useNavigationLoading();
   const [visible, setVisible] = useState(false);
   const [doorsClosed, setDoorsClosed] = useState(false);
+  const [isTv, setIsTv] = useState(false);
+
+  useEffect(() => {
+    setIsTv(document.documentElement.classList.contains('tv'));
+  }, []);
 
   useEffect(() => {
     if (isLoading) {
@@ -19,6 +24,13 @@ export function NavigationLoadingIndicator() {
     }
   }, [isLoading]);
 
+  /*
+   * 电视端不挡这一层。
+   * 点「电影」之后先糊一张全屏遮罩、中间转个月亮，等数据回来才放行 ——
+   * 这是网页时代的做法：用户盯着一个和内容无关的动画，什么也做不了。
+   * 目的页自己有骨架屏，直接让它渲染出来，卡片位置立刻成形，图片随后填进去。
+   */
+  if (isTv) return null;
   if (!visible) return null;
 
   return (

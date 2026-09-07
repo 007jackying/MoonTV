@@ -5,13 +5,14 @@ import { usePathname } from 'next/navigation';
 import MobileBottomNav from './MobileBottomNav';
 import MobileHeader from './MobileHeader';
 import TopNav from './TopNav';
+import TvSidebar from './TvSidebar';
 
 /**
  * 条件导航栏组件
  * 根据当前路径决定是否显示导航栏
  * 在登录、警告等特殊页面不显示导航栏
  */
-const ConditionalNav = () => {
+const ConditionalNav = ({ isTv = false }: { isTv?: boolean }) => {
   const pathname = usePathname();
 
   // 不显示导航栏的路径列表
@@ -23,6 +24,12 @@ const ConditionalNav = () => {
   // 如果需要隐藏导航栏，返回 null
   if (shouldHideNav) {
     return null;
+  }
+
+  // 电视端：左侧 rail 取代顶部栏和底部栏。
+  // 播放页不显示 rail —— 电视上看片时画面要铺满，返回用遥控器的返回键。
+  if (isTv) {
+    return pathname.startsWith('/play') ? null : <TvSidebar />;
   }
 
   return (

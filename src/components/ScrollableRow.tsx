@@ -53,24 +53,10 @@ export default function ScrollableRow({
     };
   }, [children]); // 依赖 children，当子组件变化时重新检查
 
-  // 添加一个额外的效果来监听子组件的变化
-  useEffect(() => {
-    if (containerRef.current) {
-      // 监听 DOM 变化
-      const observer = new MutationObserver(() => {
-        setTimeout(checkScroll, 100);
-      });
-
-      observer.observe(containerRef.current, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['style', 'class'],
-      });
-
-      return () => observer.disconnect();
-    }
-  }, []);
+  // 这里原来还挂了一个 MutationObserver，监听整棵子树的 style/class 变化。
+  // 遥控器每移动一次焦点都会改卡片的 class，于是每一行都被唤醒、排一次队再量一次布局 ——
+  // 首页十行就是每按一次方向键十次强制重排。上面的 [children] + ResizeObserver
+  // 已经覆盖了「内容变了」和「尺寸变了」这两种真正需要重算的情况，删掉。
 
   const handleScrollRightClick = () => {
     if (containerRef.current) {
@@ -103,14 +89,14 @@ export default function ScrollableRow({
       {/* pb 只需容纳卡片 hover 时 1.05 的缩放溢出，不需要 3rem */}
       <div
         ref={containerRef}
-        className='flex space-x-3 sm:space-x-6 overflow-x-auto scrollbar-hide py-1 sm:py-2 pb-4 sm:pb-6 px-4 sm:px-6'
+        className='tv-rail-row flex space-x-3 sm:space-x-6 overflow-x-auto scrollbar-hide py-1 sm:py-2 pb-4 sm:pb-6 px-4 sm:px-6'
         onScroll={checkScroll}
       >
         {children}
       </div>
       {showLeftScroll && (
         <div
-          className={`hidden sm:flex absolute left-0 top-0 bottom-0 w-16 items-center justify-center z-[600] transition-opacity duration-200 ${
+          className={`tv-hide-on-tv hidden sm:flex absolute left-0 top-0 bottom-0 w-16 items-center justify-center z-[600] transition-opacity duration-200 ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}
           style={{
@@ -139,7 +125,7 @@ export default function ScrollableRow({
 
       {showRightScroll && (
         <div
-          className={`hidden sm:flex absolute right-0 top-0 bottom-0 w-16 items-center justify-center z-[600] transition-opacity duration-200 ${
+          className={`tv-hide-on-tv hidden sm:flex absolute right-0 top-0 bottom-0 w-16 items-center justify-center z-[600] transition-opacity duration-200 ${
             isHovered ? 'opacity-100' : 'opacity-0'
           }`}
           style={{

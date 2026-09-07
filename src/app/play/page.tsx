@@ -730,8 +730,21 @@ function PlayPageClient() {
           }
         }
         // 销毁 HLS 实例
-        if (artPlayerRef.current.video && artPlayerRef.current.video.hls) {
-          artPlayerRef.current.video.hls.destroy();
+        const video = artPlayerRef.current.video as HTMLVideoElement | undefined;
+        if (video?.hls) {
+          video.hls.destroy();
+          video.hls = undefined;
+        }
+
+        // destroy() 只摘掉 src 属性，既不 pause 也不管 ensureVideoSource 塞进去的
+        // <source> —— 于是被摘下来的 video 还会继续拉流出声。手动停干净。
+        if (video) {
+          video.pause();
+          video.removeAttribute('src');
+          Array.from(video.getElementsByTagName('source')).forEach((el) =>
+            el.remove()
+          );
+          video.load();
         }
 
         // 销毁 ArtPlayer 实例
@@ -1885,28 +1898,9 @@ function PlayPageClient() {
     }
     console.log(videoUrl);
 
-    // 检测是否为WebKit浏览器
-    const isWebkit =
-      typeof window !== 'undefined' &&
-      typeof (window as any).webkitConvertPointFromNodeToPage === 'function';
-
-    // 非WebKit浏览器且播放器已存在，使用switch方法切换
-    if (!isWebkit && artPlayerRef.current) {
-      artPlayerRef.current.switch = videoUrl;
-      artPlayerRef.current.title = `${videoTitle} - 第${
-        currentEpisodeIndex + 1
-      }集`;
-      artPlayerRef.current.poster = videoCover;
-      if (artPlayerRef.current?.video) {
-        ensureVideoSource(
-          artPlayerRef.current.video as HTMLVideoElement,
-          videoUrl
-        );
-      }
-      return;
-    }
-
-    // WebKit浏览器或首次创建：销毁之前的播放器实例并创建新的
+    // 换源/换集一律重建播放器。原来非 WebKit 走 art.switch 原地换 URL，旧的 Hls
+    // 只在新地址恰好还是 .m3u8 时才会被顶掉，否则旧实例继续在后台拉流。
+    // 重建这条路 WebKit 一直在走，进度和全屏状态下面都会恢复。
     if (artPlayerRef.current) {
       cleanupPlayer();
     }
@@ -2327,8 +2321,7 @@ function PlayPageClient() {
           if (
             Math.abs(
               artPlayerRef.current.playbackRate - lastPlaybackRateRef.current
-            ) > 0.01 &&
-            isWebkit
+            ) > 0.01
           ) {
             artPlayerRef.current.playbackRate = lastPlaybackRateRef.current;
           }

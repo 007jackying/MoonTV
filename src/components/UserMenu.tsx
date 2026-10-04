@@ -17,6 +17,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { DEFAULT_FILTER_ADULT_SOURCES } from '@/lib/adult-filter';
+import {
+  getFilterAdultSources,
+  setFilterAdultSources as persistFilterAdultSources,
+} from '@/lib/adult-filter.client';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
 
@@ -65,6 +70,9 @@ export const UserMenu: React.FC = () => {
     return 3; // 默认重试3次
   });
   const [enablePreferBestSource, setEnablePreferBestSource] = useState(false);
+  const [filterAdultSources, setFilterAdultSources] = useState(
+    DEFAULT_FILTER_ADULT_SOURCES
+  );
   const [preferredDanmakuPlatform, setPreferredDanmakuPlatform] = useState("bilibili1");
   const [isDanmakuPlatformDropdownOpen, setIsDanmakuPlatformDropdownOpen] = useState(false);
 
@@ -243,6 +251,9 @@ export const UserMenu: React.FC = () => {
         setPreferredDanmakuPlatform(savedPreferredPlatform);
       }
 
+      // AV 源过滤（缺省开启）
+      setFilterAdultSources(getFilterAdultSources());
+
     }
   }, []);
 
@@ -419,6 +430,12 @@ export const UserMenu: React.FC = () => {
     localStorage.setItem("preferredDanmakuPlatform", value);
   };
 
+  // AV 源过滤：写入本地并广播，其他已挂载组件（源选择器等）会立即生效
+  const handleFilterAdultSourcesToggle = (value: boolean) => {
+    setFilterAdultSources(value);
+    persistFilterAdultSources(value);
+  };
+
   const handleAggregateToggle = (value: boolean) => {
     setDefaultAggregateSearch(value);
     if (typeof window !== 'undefined') {
@@ -517,6 +534,7 @@ export const UserMenu: React.FC = () => {
     setAutoDanmakuEnabled(false);
     setPreferredDanmakuPlatform('bilibili1');
     setDanmakuRetryCount(3); // 新增：重置弹幕自动尝试次数为3
+    setFilterAdultSources(DEFAULT_FILTER_ADULT_SOURCES);
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -532,6 +550,8 @@ export const UserMenu: React.FC = () => {
       localStorage.setItem('autoDanmakuEnabled', JSON.stringify(false));
       localStorage.setItem('preferredDanmakuPlatform', 'bilibili1');
       localStorage.setItem('danmakuRetryCount', '3'); // 新增：重置本地弹幕自动尝试次数为3
+
+      persistFilterAdultSources(DEFAULT_FILTER_ADULT_SOURCES);
     }
   };
 
@@ -998,6 +1018,32 @@ export const UserMenu: React.FC = () => {
                   className='sr-only peer'
                   checked={enablePreferBestSource}
                   onChange={(e) => handlePreferBestSourceToggle(e.target.checked)}
+                />
+                <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
+                <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
+              </div>
+            </label>
+          </div>
+
+          {/* 过滤 AV 资源 */}
+          <div className='flex items-center justify-between'>
+            <div>
+              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                过滤 AV 资源
+              </h4>
+              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                全局隐藏 AV-* 采集源，搜索、换源与搜索建议均不再使用
+              </p>
+            </div>
+            <label className='flex items-center cursor-pointer'>
+              <div className='relative'>
+                <input
+                  type='checkbox'
+                  className='sr-only peer'
+                  checked={filterAdultSources}
+                  onChange={(e) =>
+                    handleFilterAdultSourcesToggle(e.target.checked)
+                  }
                 />
                 <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
                 <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>

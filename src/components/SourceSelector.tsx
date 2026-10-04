@@ -1,6 +1,6 @@
 'use client';
 import { ChevronDown, Save, Server, Settings, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Swal from 'sweetalert2';
 
 import { getAvailableApiSitesClient } from '@/lib/config.client';
@@ -36,29 +36,48 @@ export default function SourceSelector({
   const [popupStyles, setPopupStyles] = useState<React.CSSProperties>({});
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  // 当前已选源的最新值。上面的恢复/裁剪 effect 只依赖 availableSources，
+  // 用 ref 读取可以避免把 selectedSources 塞进依赖数组——那会在用户手动改选后
+  // 又把保存的选择覆盖回去。
+  const selectedSourcesRef = useRef(selectedSources);
+  selectedSourcesRef.current = selectedSources;
 
-  // 加载可用的搜索源 - 只在客户端执行
-  useEffect(() => {
-    // 确保在客户端执行
-    if (typeof window !== 'undefined') {
-      const loadSources = async () => {
-        try {
-          const sites = await getAvailableApiSitesClient();
-          setAvailableSources(sites.map(site => ({ key: site.key, name: site.name })));
-        } catch (error) {
-          console.error('Failed to load sources:', error);
-          setAvailableSources([]); // 确保不会因为错误导致状态未更新
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      
-      loadSources();
-    } else {
-      // 在服务端渲染时直接设置为完成状态
+  /**
+   * 加载可用的搜索源（getAvailableApiSitesClient 已按本地偏好过滤掉 AV 源）。
+   * 只在客户端执行，SSR 时直接返回，由下面的 effect 收尾。
+   */
+  const loadSources = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      const sites = await getAvailableApiSitesClient();
+      setAvailableSources(sites.map(site => ({ key: site.key, name: site.name })));
+    } catch (error) {
+      console.error('Failed to load sources:', error);
+      setAvailableSources([]); // 确保不会因为错误导致状态未更新
+    } finally {
       setIsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      // 在服务端渲染时直接设置为完成状态
+      setIsLoading(false);
+      return;
+    }
+    loadSources();
+  }, [loadSources]);
+
+  // 监听设置变更（如 AV 源过滤开关），重新裁剪可选源与已选源
+  useEffect(() => {
+    const handleSettingsChange = async () => {
+      await loadSources();
+    };
+    window.addEventListener('searchSettingsChanged', handleSettingsChange);
+    return () => {
+      window.removeEventListener('searchSettingsChanged', handleSettingsChange);
+    };
+  }, [loadSources]);
 
   const toggleOpen = () => {
     if (open) {
@@ -124,12 +143,19 @@ export default function SourceSelector({
             availableSources.some(avail => avail.key === source)
           );
           
-          // 如果保存的源中有不存在的源，更新本地存储
+          // 如果保存的源中有不存在的源（已禁用、已被分组限制或被 AV 过滤），更新本地存储
           if (validSources.length !== parsedSources.length) {
             localStorage.setItem('savedSources', JSON.stringify(validSources));
           }
-          
-          if (validSources.length > 0) {
+
+          // 无条件同步，确保被过滤掉的源不会残留（否则父级仍会把它
+          // 带上 sources= 参数发出去，得到一个空结果页）。内容相同时跳过，
+          // 避免无谓地让父级重渲染并回写 URL。
+          const current = selectedSourcesRef.current;
+          const unchanged =
+            current.length === validSources.length &&
+            current.every((s, i) => s === validSources[i]);
+          if (!unchanged) {
             onChange(validSources);
           }
         } catch (error) {
@@ -170,6 +196,14 @@ export default function SourceSelector({
 
   const heightClass = size === 'compact' ? 'h-10' : 'h-12';
 
+  /**
+   * 服务端渲染时 selectedSources 只能来自 URL（localStorage 读不到），而客户端
+   * 水合后会立刻用 localStorage 里的 savedSources 覆盖它。加载完成前不显示
+   * 计数，SSR 与首次客户端渲染才能一致，否则 React 会报
+   * “Text content did not match”（全部源 → N 个源）并把整段 DOM 重建一次。
+   */
+  const selectedCount = isLoading ? 0 : selectedSources.length;
+
   const pillTrigger = (
     <button
       ref={buttonRef}
@@ -181,9 +215,7 @@ export default function SourceSelector({
     >
       <Server className='h-3.5 w-3.5' strokeWidth={2.75} />
       <span className='whitespace-nowrap'>
-        {selectedSources.length > 0
-          ? t.nSources(selectedSources.length)
-          : t.allSources}
+        {selectedCount > 0 ? t.nSources(selectedCount) : t.allSources}
       </span>
       <ChevronDown
         className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`}

@@ -6,8 +6,15 @@ import { Moon, Sun } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
+import { twMerge } from 'tailwind-merge';
 
-export function ThemeToggle() {
+import { useI18n } from './LanguageProvider';
+
+// 与 globals.css 中的 --o-theme-color 保持一致
+const THEME_COLORS = { dark: '#1e1a16', light: '#f5ead8' };
+
+export function ThemeToggle({ className = '' }: { className?: string }) {
+  const { t } = useI18n();
   const [mounted, setMounted] = useState(false);
   const { setTheme, resolvedTheme } = useTheme();
   const pathname = usePathname();
@@ -17,10 +24,13 @@ export function ThemeToggle() {
     if (!meta) {
       const meta = document.createElement('meta');
       meta.name = 'theme-color';
-      meta.content = theme === 'dark' ? '#0c111c' : '#f9fbfe';
+      meta.content = theme === 'dark' ? THEME_COLORS.dark : THEME_COLORS.light;
       document.head.appendChild(meta);
     } else {
-      meta.setAttribute('content', theme === 'dark' ? '#0c111c' : '#f9fbfe');
+      meta.setAttribute(
+        'content',
+        theme === 'dark' ? THEME_COLORS.dark : THEME_COLORS.light
+      );
     }
   };
 
@@ -37,7 +47,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     // 渲染一个占位符以避免布局偏移
-    return <div className='w-10 h-10' />;
+    return <div className={twMerge('h-10 w-10 flex-none', className)} />;
   }
 
   const toggleTheme = () => {
@@ -57,13 +67,17 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
-      className='w-10 h-10 p-2 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200/50 dark:text-gray-300 dark:hover:bg-gray-700/50 transition-colors'
-      aria-label='Toggle theme'
+      className={twMerge(
+        'flex h-10 w-10 flex-none items-center justify-center rounded-full border border-o-divider text-o-ink transition-colors hover:bg-o-ink/[0.07] active:bg-o-ink/[0.14]',
+        className
+      )}
+      aria-label={t.toggleTheme}
+      title={t.toggleTheme}
     >
       {resolvedTheme === 'dark' ? (
-        <Sun className='w-full h-full' />
+        <Sun className='h-[18px] w-[18px]' strokeWidth={2.5} />
       ) : (
-        <Moon className='w-full h-full' />
+        <Moon className='h-[18px] w-[18px]' strokeWidth={2.5} />
       )}
     </button>
   );

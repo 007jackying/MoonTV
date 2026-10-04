@@ -24,14 +24,17 @@
 
 - 🔍 **多源聚合搜索**：快速返回结果。
 - 📄 **丰富详情页**：支持剧集列表、演员、年份、简介等完整信息展示。
-- ▶️ **流畅在线播放**：集成 HLS.js & ArtPlayer。
+- ▶️ **流畅在线播放**：基于 HLS.js 的自研播放器，换集 / 换源时冻结上一帧并显示加载步骤，始终只有一路声音；支持拖动预览、倍速、画中画、AirPlay、键盘快捷键、长按 3 倍速。
 - 📥 **视频下载**：支持 M3U8 视频下载，多线程并发加速，边下边存功能（Chrome/Edge）。
 - ❤️ **收藏 + 继续观看**：支持 Redis/Upstash 存储，多端同步进度。
 - 📱 **PWA**：离线缓存、安装到桌面/主屏，移动端原生体验。
-- 🌗 **响应式布局**：桌面侧边栏 + 移动底部导航，自适应各种屏幕尺寸。
+- 🌗 **响应式布局**：桌面顶部导航 + 移动底部导航，自适应各种屏幕尺寸。
+- 🎨 **Organic 设计**：奶油底色、陶土主色、鼠尾草绿辅色，圆润的卡片与胶囊按钮；浅色 / 暖色深色主题，骨架屏、过渡与悬停动效（尊重系统“减少动态效果”设置）。
+- 🌐 **中 / EN 界面**：导航栏一键切换界面语言，偏好保存在浏览器本地。
+- 🧭 **一体化播放面板**：当前播放源（分辨率 / 速度 / 延迟）与选集同屏，其它源原地展开，⚡ 一键优选，坏源约 3 秒内提示换源。
 - 🚀 **极简部署**：一条 Docker 命令即可将完整服务跑起来，或免费部署到 Vercel、Netlify、cloudflare。
 - 👿 **智能去广告**：自动跳过视频中的切片广告（实验性）
-- 💬 **弹幕支持**：以[danmu_api](https://github.com/huangxd-/danmu_api)为后端, 需自行部署
+- 💬 **弹幕支持**：以[danmu_api](https://github.com/huangxd-/danmu_api)为后端（需自行部署），播放器内置弹幕渲染，可自动匹配或手动选择弹幕源。
 
 ### 注意：部署后项目为空壳项目，无内置播放源，需要自行收集，需要弹幕请自行部署后端
 
@@ -47,6 +50,9 @@
     - [注意：部署后项目为空壳项目，无内置播放源，需要自行收集，需要弹幕请自行部署后端](#注意部署后项目为空壳项目无内置播放源需要自行收集需要弹幕请自行部署后端)
   - [🗺 目录](#-目录)
   - [技术栈](#技术栈)
+  - [界面设计（Organic）](#界面设计organic)
+  - [播放器说明](#播放器说明)
+  - [开发与测试](#开发与测试)
   - [部署](#部署)
     - [Vercel 部署](#vercel-部署)
       - [普通部署（localstorage）](#普通部署localstorage)
@@ -84,11 +90,45 @@
 | 分类      | 主要依赖                                                                                              |
 | --------- | ----------------------------------------------------------------------------------------------------- |
 | 前端框架  | [Next.js 14](https://nextjs.org/) · App Router                                                        |
-| UI & 样式 | [Tailwind&nbsp;CSS 3](https://tailwindcss.com/)                                                       |
+| UI & 样式 | [Tailwind&nbsp;CSS 3](https://tailwindcss.com/) · Organic 设计令牌（`o-*` 颜色）· Caprasimo / Figtree |
 | 语言      | TypeScript 4                                                                                          |
-| 播放器    | [ArtPlayer](https://github.com/zhw2590582/ArtPlayer) · [HLS.js](https://github.com/video-dev/hls.js/) |
+| 播放器    | 自研播放器（`src/components/player`）· [HLS.js](https://github.com/video-dev/hls.js/)                 |
 | 代码质量  | ESLint · Prettier · Jest                                                                              |
 | 部署      | Docker · Vercel · pages                                                                               |
+
+## 界面设计（Organic）
+
+界面基于 Organic 设计系统：温暖、圆润、略带俏皮。
+
+- **颜色**：设计令牌以 RGB 通道变量定义在 `src/app/globals.css`（浅色 `:root`，深色 `.dark`），在 Tailwind 中以 `o-*` 命名空间使用，例如 `bg-o-surface`、`text-o-accent-700`、`bg-o-accent/20`。深色主题由同一套色阶反转得到（100 为最深，900 为最浅），同一个类名在两种主题下都可读。
+- **旧组件兼容**：后台、用户菜单、下载管理等仍使用 `gray / green / blue` 的旧组件，通过 `tailwind.config.ts` 中的色板重映射自动变为暖灰 / 陶土 / 鼠尾草绿。
+- **字体**：标题与按钮使用 Caprasimo，正文使用 Figtree（`next/font` 加载）；Caprasimo 不含中文字形，中文标题使用系统字体。
+- **组件类**：`o-btn`、`o-btn-primary`、`o-btn-secondary`、`o-btn-ghost`、`o-tag-*`、`o-eyebrow`、`o-skeleton`（骨架屏流光），通用组件见 `src/components/ui/`。
+- **动效**：页面淡入、列表错峰入场、菜单弹出、卡片悬停抬升、顶部导航进度条；系统开启“减少动态效果”时全部关闭。
+- **界面语言**：文案集中在 `src/lib/i18n.ts`（中文与英文键完全一致，有单元测试检查），通过 `useI18n()` 读取；影片标题、简介等来自播放源的内容不翻译。
+
+## 播放器说明
+
+播放器位于 `src/components/player/`，引擎在 `src/lib/player/engine.ts`：
+
+- 整个播放页只有一个 `<video>`，任何时刻只挂载一路流。每次换集、换源或切换去广告都会先执行统一的 teardown（暂停 → 停止并销毁 Hls → 清空 src → `load()`），再挂载新的流；过期回调由 generation 计数丢弃，因此不会出现上一集 / 上一个源的声音残留。
+- 切换期间冻结并压暗上一帧，显示“已停止上一路视频 → 已获取播放列表 → 缓冲中”和续播时间。
+- 首次加载失败会在约 3 秒内提示“无法播放”并提供换源按钮；播放过程中的网络抖动仍会自动恢复。
+- 设置菜单：去广告、跳过片头片尾（设为当前位置）、弹幕开关与弹幕源。
+- 快捷键：空格播放 / 暂停，← / → 快退 / 快进 10 秒，↑ / ↓ 调节音量，F 全屏，Alt + ← / → 上一集 / 下一集。
+
+## 开发与测试
+
+```bash
+pnpm install
+pnpm dev          # 本地开发
+pnpm typecheck    # 类型检查
+pnpm lint         # ESLint
+pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言）
+pnpm build        # 生产构建
+```
+
+端到端测试使用 Playwright 在生产构建上运行（本地生成的 HLS 测试流与海报、对豆瓣 / Bangumi / 搜索 / 弹幕接口打桩），覆盖首页、搜索、分类、播放、换集换源、快捷键、弹幕、续播、登录与主题 / 语言切换等 32 个用例。
 
 ## 部署
 
@@ -440,7 +480,7 @@ MoonTV 支持标准的苹果 CMS V10 API 格式。
 
 - [ts-nextjs-tailwind-starter](https://github.com/theodorusclarence/ts-nextjs-tailwind-starter) — 项目最初基于该脚手架。
 - [LibreTV](https://github.com/LibreSpark/LibreTV) — 由此启发，站在巨人的肩膀上。
-- [ArtPlayer](https://github.com/zhw2590582/ArtPlayer) — 提供强大的网页视频播放器。
+- [ArtPlayer](https://github.com/zhw2590582/ArtPlayer) — 早期版本使用的网页视频播放器。
 - [HLS.js](https://github.com/video-dev/hls.js) — 实现 HLS 流媒体在浏览器中的播放支持。
 - [Zwei](https://github.com/bestzwei) — 提供获取豆瓣数据的 cors proxy
 - [CMLiussss](https://github.com/cmliu) — 提供豆瓣 CDN 服务

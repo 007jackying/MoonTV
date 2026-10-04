@@ -1,5 +1,9 @@
-import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
-import React, { useState } from "react";
+'use client';
+
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, X } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+
+import { useI18n } from './LanguageProvider';
 
 interface FilterOptionsProps {
   openFilter: string | null;
@@ -21,253 +25,230 @@ interface FilterOptionsProps {
   setSelectedYears: (opts: string[]) => void;
 
   // 排序
-  sortField: "year" | "sources" | "episodes";
-  onSortFieldChange: (field: "year" | "title" | "source" | "episodes") => void;
-  sortOrder: "asc" | "desc";
-  onSortOrderChange: (order: "asc" | "desc") => void;
+  sortField: 'year' | 'sources' | 'episodes';
+  onSortFieldChange: (field: 'year' | 'title' | 'source' | 'episodes') => void;
+  sortOrder: 'asc' | 'desc';
+  onSortOrderChange: (order: 'asc' | 'desc') => void;
   sortOptions: { value: string; label: string }[];
 }
 
-const FilterOptions: React.FC<FilterOptionsProps> = ({
-  openFilter,
-  setOpenFilter,
-  sourceOptions,
-  filterSources,
-  setFilterSources,
-  titleOptions,
-  selectedTitles,
-  setSelectedTitles,
-  yearOptions,
-  selectedYears,
-  setSelectedYears,
-  sortField,
-  onSortFieldChange,
-  sortOrder,
-  onSortOrderChange,
-  sortOptions,
-}) => {
-  const [collapsed, setCollapsed] = useState(true);
-  const [activeTab, setActiveTab] = useState<"筛选" | "排序">("筛选");
+type FilterKey = 'source' | 'title' | 'year' | 'sort';
 
-  const filterButtons = [
-    { key: "来源", label: "来源" },
-    { key: "标题", label: "标题" },
-    { key: "年份", label: "年份" },
+/**
+ * 搜索结果筛选：一排胶囊下拉（来源 / 标题 / 年份，可多选）+ 排序。
+ * 有选中项的胶囊高亮并显示数量。
+ */
+const FilterOptions: React.FC<FilterOptionsProps> = (props) => {
+  const { t } = useI18n();
+  const { openFilter, setOpenFilter } = props;
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部 / Esc 关闭
+  useEffect(() => {
+    if (!openFilter) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpenFilter(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenFilter(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openFilter, setOpenFilter]);
+
+  const groups: {
+    key: Exclude<FilterKey, 'sort'>;
+    label: string;
+    options: string[];
+    selected: string[];
+    set: (v: string[]) => void;
+  }[] = [
+    {
+      key: 'source',
+      label: t.filterSource,
+      options: props.sourceOptions,
+      selected: props.filterSources,
+      set: props.setFilterSources,
+    },
+    {
+      key: 'title',
+      label: t.filterTitle,
+      options: props.titleOptions,
+      selected: props.selectedTitles,
+      set: props.setSelectedTitles,
+    },
+    {
+      key: 'year',
+      label: t.filterYear,
+      options: props.yearOptions,
+      selected: props.selectedYears,
+      set: props.setSelectedYears,
+    },
   ];
 
-  const handleButtonClick = (key: string) => {
+  const anySelected = groups.some((g) => g.selected.length > 0);
+  const sortLabel =
+    props.sortOptions.find((o) => o.value === props.sortField)?.label || '';
+  const toggle = (key: FilterKey) =>
     setOpenFilter(openFilter === key ? null : key);
-  };
 
-  const handleOptionClick = (category: string, option: string) => {
-    if (category === "来源") {
-      setFilterSources(
-        filterSources.includes(option)
-          ? filterSources.filter((o) => o !== option)
-          : [...filterSources, option]
-      );
-    } else if (category === "标题") {
-      setSelectedTitles(
-        selectedTitles.includes(option)
-          ? selectedTitles.filter((o) => o !== option)
-          : [...selectedTitles, option]
-      );
-    } else if (category === "年份") {
-      setSelectedYears(
-        selectedYears.includes(option)
-          ? selectedYears.filter((o) => o !== option)
-          : [...selectedYears, option]
-      );
-    }
-  };
-
-  const clearAllFilters = () => {
-    setFilterSources([]);
-    setSelectedTitles([]);
-    setSelectedYears([]);
-  };
-
-  const renderFilterOptions = () => {
-    if (collapsed) {
-      if (!filterSources.length && !selectedTitles.length && !selectedYears.length) {
-        return <div className="text-gray-400">请展开选择筛选条件</div>;
-      }
-      return (
-        <div className="space-y-2 text-sm text-gray-500 dark:text-gray-400">
-          {filterSources.length > 0 && <div>已选来源: {filterSources.join("、")}</div>}
-          {selectedTitles.length > 0 && <div>已选标题: {selectedTitles.join("、")}</div>}
-          {selectedYears.length > 0 && <div>已选年份: {selectedYears.join("、")}</div>}
-        </div>
-      );
-    }
-
-    if (!openFilter) {
-      return <div className="text-gray-400">请选择一个筛选分类</div>;
-    }
-
-    switch (openFilter) {
-      case "来源":
-        return (
-          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
-            {sourceOptions.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => handleOptionClick("来源", opt)}
-                className={`px-3 py-2 text-sm rounded-lg border transition-all duration-200 ${
-                  filterSources.includes(opt)
-                    ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-700/80 border-transparent"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        );
-      case "标题":
-        return (
-          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
-            {titleOptions.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => handleOptionClick("标题", opt)}
-                className={`px-3 py-2 text-sm rounded-lg border transition-all duration-200 ${
-                  selectedTitles.includes(opt)
-                    ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-700/80 border-transparent"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        );
-      case "年份":
-        return (
-          <div className="grid gap-2 grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
-            {yearOptions.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => handleOptionClick("年份", opt)}
-                className={`px-3 py-2 text-sm rounded-lg border transition-all duration-200 ${
-                  selectedYears.includes(opt)
-                    ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-700/80 border-transparent"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const renderSortOptions = () => (
-    <div className="flex flex-wrap gap-2 items-center">
-      {sortOptions.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onSortFieldChange(opt.value as "year" | "title" | "source" | "episodes")}
-          className={`px-3 py-2 text-sm rounded-lg border transition-all duration-200 ${
-            sortField === opt.value
-              ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700"
-              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-700/80 border-gray-300 dark:border-gray-600"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+  const pill = (active: boolean) =>
+    `o-btn o-press min-h-10 text-[13px] ${
+      active
+        ? 'border border-o-accent-300 bg-o-accent-100 text-o-accent-800'
+        : 'o-btn-secondary'
+    }`;
 
   return (
-    <div className="flex w-full border rounded-lg overflow-hidden shadow-sm dark:border-gray-700 flex-col">
-      {/* Tab 栏 + 排序按钮 */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-        <div className="flex gap-4">
+    <div
+      ref={rootRef}
+      className='scrollbar-hide -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0'
+    >
+      {groups.map((g) => (
+        <div key={g.key} className='relative flex-none'>
           <button
-            className={`px-3 py-1 font-semibold rounded ${
-              activeTab === "筛选"
-                ? "bg-green-500 text-white"
-                : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-            }`}
-            onClick={() => setActiveTab("筛选")}
+            type='button'
+            onClick={() => toggle(g.key)}
+            aria-expanded={openFilter === g.key}
+            className={pill(g.selected.length > 0)}
           >
-            筛选
+            {g.label}
+            {g.selected.length > 0 && (
+              <span className='rounded-full bg-o-accent px-1.5 text-[11px] font-bold leading-[18px] text-o-on-accent'>
+                {g.selected.length}
+              </span>
+            )}
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform ${
+                openFilter === g.key ? 'rotate-180' : ''
+              }`}
+              strokeWidth={2.75}
+            />
           </button>
-          <button
-            className={`px-3 py-1 font-semibold rounded ${
-              activeTab === "排序"
-                ? "bg-green-500 text-white"
-                : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-            }`}
-            onClick={() => setActiveTab("排序")}
-          >
-            排序
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          {activeTab === "筛选" && (
-            <>
-              <button
-                onClick={clearAllFilters}
-                className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-              >
-                清空筛选
-              </button>
-              <button
-                onClick={() => setCollapsed(!collapsed)}
-                className="p-1 border rounded hover:bg-gray-200 dark:hover:bg-gray-700"
-              >
-                {collapsed ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronUp className="w-4 h-4" />
-                )}
-              </button>
-            </>
+          {openFilter === g.key && (
+            <div className='fixed inset-x-4 z-50 mt-2 max-h-[50vh] animate-o-pop overflow-y-auto rounded-[24px] bg-o-surface p-2 shadow-o-lg md:absolute md:inset-x-auto md:left-0 md:w-[min(420px,90vw)]'>
+              <div className='flex flex-wrap gap-1.5'>
+                {g.options.map((opt) => {
+                  const on = g.selected.includes(opt);
+                  return (
+                    <button
+                      key={opt}
+                      type='button'
+                      aria-pressed={on}
+                      onClick={() =>
+                        g.set(
+                          on
+                            ? g.selected.filter((o) => o !== opt)
+                            : [...g.selected, opt]
+                        )
+                      }
+                      className={`flex max-w-full items-center gap-1 truncate rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                        on
+                          ? 'bg-o-accent text-o-on-accent'
+                          : 'bg-o-bg hover:bg-o-accent-100'
+                      }`}
+                    >
+                      {on && <Check className='h-3 w-3 flex-none' strokeWidth={3} />}
+                      <span className='truncate'>
+                        {opt === 'unknown' ? t.unknownYear : opt}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {g.selected.length > 0 && (
+                <button
+                  type='button'
+                  onClick={() => g.set([])}
+                  className='o-btn o-btn-ghost mt-2 text-[13px]'
+                >
+                  {t.clear}
+                </button>
+              )}
+            </div>
           )}
-
-          {activeTab === "排序" && (
-            <button
-              onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
-              className="px-3 py-2 text-sm flex items-center gap-1 border rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
-            >
-              <ArrowUpDown className="w-4 h-4" />
-              {sortOrder === "asc" ? "升序" : "降序"}
-            </button>
-          )}
         </div>
-      </div>
+      ))}
 
-      <div className="flex w-full">
-        {/* 左侧筛选分类按钮 */}
-        {activeTab === "筛选" && !collapsed && (
-          <div className="w-28 bg-gray-100 dark:bg-gray-800 flex flex-col">
-            {filterButtons.map((btn) => (
+      {/* 排序 */}
+      <div className='relative flex-none'>
+        <button
+          type='button'
+          onClick={() => toggle('sort')}
+          aria-expanded={openFilter === 'sort'}
+          className={pill(true)}
+        >
+          <ArrowUpDown className='h-3.5 w-3.5' strokeWidth={2.75} />
+          {sortLabel}
+          {props.sortOrder === 'asc' ? (
+            <ArrowUp className='h-3 w-3' strokeWidth={3} />
+          ) : (
+            <ArrowDown className='h-3 w-3' strokeWidth={3} />
+          )}
+        </button>
+        {openFilter === 'sort' && (
+          <div className='fixed inset-x-4 z-50 mt-2 animate-o-pop rounded-[24px] bg-o-surface p-1.5 shadow-o-lg md:absolute md:inset-x-auto md:left-0 md:w-56'>
+            {props.sortOptions.map((opt) => (
               <button
-                key={btn.key}
-                onClick={() => handleButtonClick(btn.key)}
-                className={`px-4 py-3 text-left border-b border-gray-200 dark:border-gray-700 transition-colors ${
-                  openFilter === btn.key
-                    ? "bg-green-500 text-white font-semibold"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                key={opt.value}
+                type='button'
+                onClick={() =>
+                  props.onSortFieldChange(
+                    opt.value as 'year' | 'title' | 'source' | 'episodes'
+                  )
+                }
+                className={`flex w-full items-center gap-2 rounded-[16px] px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                  props.sortField === opt.value
+                    ? 'bg-o-accent-100 text-o-accent-800'
+                    : 'hover:bg-o-bg'
                 }`}
               >
-                {btn.label}
+                <span className='flex-1'>{opt.label}</span>
+                {props.sortField === opt.value && (
+                  <Check className='h-4 w-4' strokeWidth={3} />
+                )}
               </button>
             ))}
+            <div className='my-1 h-px bg-o-divider' />
+            <div className='flex gap-1 p-1'>
+              {(['desc', 'asc'] as const).map((o) => (
+                <button
+                  key={o}
+                  type='button'
+                  onClick={() => props.onSortOrderChange(o)}
+                  className={`flex flex-1 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                    props.sortOrder === o
+                      ? 'bg-o-accent text-o-on-accent'
+                      : 'bg-o-bg hover:bg-o-accent-100'
+                  }`}
+                >
+                  {o === 'desc' ? (
+                    <ArrowDown className='h-3 w-3' strokeWidth={3} />
+                  ) : (
+                    <ArrowUp className='h-3 w-3' strokeWidth={3} />
+                  )}
+                  {o === 'desc' ? t.descending : t.ascending}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-
-        {/* 右侧内容 */}
-        <div className="flex-1 max-h-[60vh] overflow-y-auto bg-white dark:bg-gray-900 p-4">
-          {activeTab === "筛选" ? renderFilterOptions() : renderSortOptions()}
-        </div>
       </div>
+
+      {anySelected && (
+        <button
+          type='button'
+          onClick={() => groups.forEach((g) => g.set([]))}
+          className='o-btn o-btn-ghost min-h-10 flex-none text-[13px]'
+        >
+          <X className='h-3.5 w-3.5' strokeWidth={2.75} />
+          {t.clearFilters}
+        </button>
+      )}
     </div>
   );
 };

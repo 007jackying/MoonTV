@@ -2,6 +2,7 @@
 
 'use client';
 
+import { Clapperboard } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,13 +16,19 @@ import {
 } from '@/lib/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
-import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector from '@/components/DoubanSelector';
+import { useI18n } from '@/components/LanguageProvider';
 import PageLayout from '@/components/PageLayout';
+import {
+  EmptyState,
+  PosterSkeleton,
+  staggerStyle,
+} from '@/components/ui/Organic';
 import VideoCard from '@/components/VideoCard';
 
 function DoubanPageClient() {
+  const { t } = useI18n();
   const searchParams = useSearchParams();
   const [doubanData, setDoubanData] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -184,9 +191,6 @@ function DoubanPageClient() {
     return () => clearTimeout(timer);
   }, [type, customCategories]);
 
-  // 生成骨架屏数据
-  const skeletonData = Array.from({ length: 25 }, (_, index) => index);
-
   // 参数快照比较函数
   const isSnapshotEqual = useCallback(
     (
@@ -214,7 +218,7 @@ function DoubanPageClient() {
         snapshot1.selectedWeekday === snapshot2.selectedWeekday &&
         snapshot1.currentPage === snapshot2.currentPage &&
         JSON.stringify(snapshot1.multiLevelSelection) ===
-        JSON.stringify(snapshot2.multiLevelSelection)
+          JSON.stringify(snapshot2.multiLevelSelection)
       );
     },
     []
@@ -681,133 +685,120 @@ function DoubanPageClient() {
     setSelectedWeekday(weekday);
   }, []);
 
-  const getPageTitle = () => {
-    // 根据 type 生成标题
-    return type === 'movie'
-      ? '电影'
+  const pageTitle =
+    type === 'movie'
+      ? t.browseMovie
       : type === 'tv'
-        ? '电视剧'
-        : type === 'anime'
-          ? '动漫'
-          : type === 'show'
-            ? '综艺'
-            : '自定义';
-  };
+      ? t.browseTv
+      : type === 'anime'
+      ? t.browseAnime
+      : type === 'show'
+      ? t.browseShow
+      : t.browseCustom;
+  const pageDescription =
+    type === 'anime' && primarySelection === '每日放送'
+      ? t.fromBangumi
+      : t.fromDouban;
 
-  const getPageDescription = () => {
-    if (type === 'anime' && primarySelection === '每日放送') {
-      return '来自 Bangumi 番组计划的精选内容';
-    }
-    return '来自豆瓣的精选内容';
-  };
-
-  const getActivePath = () => {
-    const params = new URLSearchParams();
-    if (type) params.set('type', type);
-
-    const queryString = params.toString();
-    const activePath = `/douban${queryString ? `?${queryString}` : ''}`;
-    return activePath;
-  };
+  const showSkeleton = loading || !selectorsReady;
 
   return (
-    <PageLayout activePath={getActivePath()}>
-      <div className='px-4 sm:px-10 py-4 sm:py-8 overflow-visible'>
-        {/* 页面标题和选择器 */}
-        <div className='mb-6 sm:mb-8 space-y-4 sm:space-y-6'>
-          {/* 页面标题 */}
-          <div>
-            <h1 className='text-2xl sm:text-3xl font-bold text-gray-800 mb-1 sm:mb-2 dark:text-gray-200'>
-              {getPageTitle()}
-            </h1>
-            <p className='text-sm sm:text-base text-gray-600 dark:text-gray-400'>
-              {getPageDescription()}
-            </p>
-          </div>
+    <PageLayout activePath={`/douban?type=${type}`}>
+      <div className='mx-auto flex w-full max-w-[1760px] flex-col gap-[18px] px-4 pb-12 pt-[22px] md:gap-7 md:px-10 md:pt-4'>
+        {/* 页面标题 */}
+        <div>
+          <h1 className='m-0 mb-1 font-heading text-[32px] leading-[1.12] tracking-[-0.015em] md:text-[42px]'>
+            {pageTitle}
+          </h1>
+          <p className='m-0 text-sm text-o-neutral-700 md:text-[15px]'>
+            {pageDescription}
+          </p>
+        </div>
 
-          {/* 选择器组件 */}
+        {/* 选择器 */}
+        <div className='max-w-[960px] rounded-[24px] bg-o-surface p-3.5 md:rounded-[32px] md:px-6 md:py-5'>
           {type !== 'custom' ? (
-            <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30 backdrop-blur-sm'>
-              <DoubanSelector
-                type={type as 'movie' | 'tv' | 'show' | 'anime'}
-                primarySelection={primarySelection}
-                secondarySelection={secondarySelection}
-                onPrimaryChange={handlePrimaryChange}
-                onSecondaryChange={handleSecondaryChange}
-                onMultiLevelChange={handleMultiLevelChange}
-                onWeekdayChange={handleWeekdayChange}
-              />
-            </div>
+            <DoubanSelector
+              type={type as 'movie' | 'tv' | 'show' | 'anime'}
+              primarySelection={primarySelection}
+              secondarySelection={secondarySelection}
+              onPrimaryChange={handlePrimaryChange}
+              onSecondaryChange={handleSecondaryChange}
+              onMultiLevelChange={handleMultiLevelChange}
+              onWeekdayChange={handleWeekdayChange}
+            />
           ) : (
-            <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30 backdrop-blur-sm'>
-              <DoubanCustomSelector
-                customCategories={customCategories}
-                primarySelection={primarySelection}
-                secondarySelection={secondarySelection}
-                onPrimaryChange={handlePrimaryChange}
-                onSecondaryChange={handleSecondaryChange}
-              />
-            </div>
+            <DoubanCustomSelector
+              customCategories={customCategories}
+              primarySelection={primarySelection}
+              secondarySelection={secondarySelection}
+              onPrimaryChange={handlePrimaryChange}
+              onSecondaryChange={handleSecondaryChange}
+            />
           )}
         </div>
 
-        {/* 内容展示区域 */}
-        <div className='w-full max-w-screen-2xl mx-auto mt-8 overflow-visible'>
-          {/* 内容网格 */}
-          <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-8 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-x-8 sm:gap-y-12'>
-            {loading || !selectorsReady
-              ? // 显示骨架屏
-              skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
-              : // 显示实际数据
-              doubanData.map((item, index) => (
-                <div key={`${item.title}-${index}`} className='w-full'>
-                  <VideoCard
-                    from='douban'
-                    title={item.title}
-                    poster={item.poster}
-                    douban_id={Number(item.id)}
-                    rate={item.rate}
-                    year={item.year}
-                    type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
-                    isBangumi={
-                      type === 'anime' && primarySelection === '每日放送'
-                    }
-                  />
-                </div>
+        {/* 内容网格 */}
+        {!showSkeleton && doubanData.length === 0 ? (
+          <EmptyState
+            icon={<Clapperboard className='h-6 w-6' strokeWidth={2.5} />}
+            title={t.nothingHere}
+          />
+        ) : (
+          <div className='grid grid-cols-3 gap-x-2.5 gap-y-[18px] sm:grid-cols-[repeat(auto-fill,minmax(150px,1fr))] sm:gap-x-5 sm:gap-y-7'>
+            {showSkeleton
+              ? Array.from({ length: 21 }).map((_, i) => (
+                  <PosterSkeleton key={i} />
+                ))
+              : doubanData.map((item, index) => (
+                  <div
+                    key={`${item.title}-${index}`}
+                    className='animate-o-rise'
+                    style={staggerStyle(index % 25)}
+                  >
+                    <VideoCard
+                      from='douban'
+                      title={item.title}
+                      poster={item.poster}
+                      douban_id={Number(item.id)}
+                      rate={item.rate}
+                      year={item.year}
+                      type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
+                      isBangumi={
+                        type === 'anime' && primarySelection === '每日放送'
+                      }
+                    />
+                  </div>
+                ))}
+            {/* 加载更多时追加一行骨架 */}
+            {isLoadingMore &&
+              Array.from({ length: 7 }).map((_, i) => (
+                <PosterSkeleton key={`more-${i}`} />
               ))}
           </div>
+        )}
 
-          {/* 加载更多指示器 */}
-          {hasMore && !loading && (
-            <div
-              ref={(el) => {
-                if (el && el.offsetParent !== null) {
-                  (
-                    loadingRef as React.MutableRefObject<HTMLDivElement | null>
-                  ).current = el;
-                }
-              }}
-              className='flex justify-center mt-12 py-8'
-            >
-              {isLoadingMore && (
-                <div className='flex items-center gap-2'>
-                  <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
-                  <span className='text-gray-600'>加载中...</span>
-                </div>
-              )}
-            </div>
-          )}
+        {/* 无限滚动触发点 */}
+        {hasMore && !loading && (
+          <div
+            ref={(el) => {
+              if (el && el.offsetParent !== null) {
+                (
+                  loadingRef as React.MutableRefObject<HTMLDivElement | null>
+                ).current = el;
+              }
+            }}
+            className='h-8'
+          />
+        )}
 
-          {/* 没有更多数据提示 */}
-          {!hasMore && doubanData.length > 0 && (
-            <div className='text-center text-gray-500 py-8'>已加载全部内容</div>
-          )}
-
-          {/* 空状态 */}
-          {!loading && doubanData.length === 0 && (
-            <div className='text-center text-gray-500 py-8'>暂无相关内容</div>
-          )}
-        </div>
+        {!hasMore && doubanData.length > 0 && (
+          <div className='flex items-center justify-center gap-3 py-6 text-sm text-o-neutral-700'>
+            <span className='h-px w-10 bg-o-divider' />
+            {t.allLoaded}
+            <span className='h-px w-10 bg-o-divider' />
+          </div>
+        )}
       </div>
     </PageLayout>
   );

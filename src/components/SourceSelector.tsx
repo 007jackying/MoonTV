@@ -1,17 +1,20 @@
 'use client';
-import { ChevronDown, Save, Settings, X } from 'lucide-react';
+import { ChevronDown, Save, Server, Settings, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import Swal from 'sweetalert2';
 
 import { getAvailableApiSitesClient } from '@/lib/config.client';
 import { getRequestTimeout } from '@/lib/utils';
 
+import { useI18n } from './LanguageProvider';
+
 interface SourceSelectorProps {
   selectedSources: string[];
   onChange: (sources: string[]) => void;
   openFilter: string | null;
   setOpenFilter: React.Dispatch<React.SetStateAction<string | null>>;
-  size?: 'default' | 'compact'; // 可选的尺寸属性
+  // pill：导航栏搜索框内的胶囊样式（Organic 设计）
+  size?: 'default' | 'compact' | 'pill';
 }
 
 export default function SourceSelector({
@@ -21,6 +24,7 @@ export default function SourceSelector({
   setOpenFilter,
   size = 'default',
 }: SourceSelectorProps) {
+  const { t } = useI18n();
   const [availableSources, setAvailableSources] = useState<{ key: string; name: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeoutSeconds, setTimeoutSeconds] = useState<number>(30);
@@ -166,7 +170,30 @@ export default function SourceSelector({
 
   const heightClass = size === 'compact' ? 'h-10' : 'h-12';
 
+  const pillTrigger = (
+    <button
+      ref={buttonRef}
+      type='button'
+      onClick={toggleOpen}
+      disabled={isLoading}
+      aria-expanded={open}
+      className='flex h-8 flex-none items-center gap-1.5 rounded-full bg-o-bg px-3 text-[13px] font-semibold text-o-ink transition-colors hover:bg-o-neutral-100 disabled:opacity-60'
+    >
+      <Server className='h-3.5 w-3.5' strokeWidth={2.75} />
+      <span className='whitespace-nowrap'>
+        {selectedSources.length > 0
+          ? t.nSources(selectedSources.length)
+          : t.allSources}
+      </span>
+      <ChevronDown
+        className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`}
+        strokeWidth={2.75}
+      />
+    </button>
+  );
+
   if (isLoading) {
+    if (size === 'pill') return pillTrigger;
     return (
       <div className="relative inline-block">
         <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-l-lg overflow-hidden">
@@ -184,6 +211,7 @@ export default function SourceSelector({
 
   return (
     <div className="relative inline-block">
+      {size === 'pill' ? pillTrigger : (
       <div className="flex items-center bg-gray-200 dark:bg-gray-700 rounded-l-lg overflow-hidden">
         <button
           ref={buttonRef}
@@ -200,6 +228,7 @@ export default function SourceSelector({
         </button>
         
       </div>
+      )}
 
       {open && (
         <div
@@ -207,9 +236,8 @@ export default function SourceSelector({
           style={popupStyles}
           className="
             fixed z-50
-            bg-white dark:bg-gray-800
-            border border-gray-200 dark:border-gray-700
-            rounded-lg shadow-lg p-4
+            bg-o-surface text-o-ink
+            rounded-[28px] shadow-o-lg p-4
             max-h-[50vh] overflow-auto
           "
         >
@@ -222,7 +250,7 @@ export default function SourceSelector({
             {/* 保存按钮 */}
             <button
               onClick={handleSaveSources}
-              className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-800/50 flex items-center justify-center gap-1"
+              className="o-btn o-btn-primary px-3 py-1 text-sm"
               title="保存当前选中的搜索源和超时设置"
             >
               <Save className="w-3 h-3" />
@@ -232,7 +260,7 @@ export default function SourceSelector({
             {/* 清空按钮 */}
             <button
               onClick={handleClearAll}
-              className="px-2 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-800/50 flex items-center justify-center gap-1"
+              className="o-btn o-btn-secondary px-2 py-1 text-sm"
               title="清空所有选中的搜索源"
             >
               <X className="w-4 h-4" />
@@ -240,8 +268,8 @@ export default function SourceSelector({
             </button>
             
             {/* 超时时间设置 */}
-            <div className="flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-700 rounded px-2 py-1">
-              <label className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">
+            <div className="flex items-center justify-center gap-2 bg-o-bg rounded-full px-3 py-1">
+              <label className="text-xs text-o-neutral-700 whitespace-nowrap">
                 超时:
               </label>
               <input
@@ -250,26 +278,26 @@ export default function SourceSelector({
                 max="60"
                 value={timeoutSeconds}
                 onChange={(e) => setTimeoutSeconds(Math.max(1, Math.min(60, Number(e.target.value) || 30)))}
-                className="w-12 px-1 py-0.5 text-sm bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-green-400"
+                className="w-12 px-1 py-0.5 text-sm bg-o-surface border border-o-divider rounded-full text-center text-o-ink focus:outline-none focus:ring-1 focus:ring-o-accent"
                 title="请求超时时间（秒）"
               />
-              <span className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">秒</span>
+              <span className="text-xs text-o-neutral-700 whitespace-nowrap">秒</span>
             </div>
             
             {/* 搜索建议开关 */}
-            <div className="flex items-center justify-center gap-2 bg-gray-100 dark:bg-gray-700 rounded px-2 py-1">
-              <label className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap">
+            <div className="flex items-center justify-center gap-2 bg-o-bg rounded-full px-3 py-1">
+              <label className="text-xs text-o-neutral-700 whitespace-nowrap">
                 搜索建议
               </label>
               <button
                 onClick={handleToggleSearchSuggestions}
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  enableSearchSuggestions ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+                  enableSearchSuggestions ? 'bg-o-sage' : 'bg-o-neutral-400'
                 }`}
                 title={enableSearchSuggestions ? '点击关闭搜索建议（立即生效）' : '点击开启搜索建议（立即生效）'}
               >
                 <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  className={`inline-block h-4 w-4 transform rounded-full bg-o-bg transition-transform ${
                     enableSearchSuggestions ? 'translate-x-5' : 'translate-x-0.5'
                   }`}
                 />
@@ -288,10 +316,10 @@ export default function SourceSelector({
                 <button
                   key={source.key}
                   onClick={() => handleSourceClick(source.key)}
-                  className={`px-3 py-2 text-sm rounded-lg transition-all duration-200 text-center ${
+                  className={`px-3 py-2 text-sm font-semibold rounded-full transition-colors text-center truncate ${
                     selectedSources.includes(source.key)
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-700'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-700/80'
+                      ? 'bg-o-accent text-o-on-accent'
+                      : 'text-o-ink hover:bg-o-ink/[0.07]'
                   }`}
                   title={source.name}
                 >
@@ -300,7 +328,7 @@ export default function SourceSelector({
               ))}
             </div>
           ) : (
-            <div className="py-4 text-center text-gray-500 dark:text-gray-400">
+            <div className="py-4 text-center text-o-neutral-700">
               请配置搜索源或清除缓存
             </div>
           )}

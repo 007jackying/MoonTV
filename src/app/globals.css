@@ -13,8 +13,146 @@
   }
 }
 
+/*
+  Organic 设计系统 tokens（RGB 通道，供 Tailwind 的 o-* 颜色使用）
+  浅色来自 Organic styles.css；深色是在同一套色阶上推导的暖色深色版：
+  色阶反转（100 为最深的染色，900 为最浅），主色略提亮以保证对比度。
+*/
 :root {
-  --foreground-rgb: 255, 255, 255;
+  --o-bg: 245 234 216;
+  --o-surface: 235 221 197;
+  --o-ink: 32 30 29;
+  --o-on-accent: 245 234 216;
+  --o-accent: 198 113 57;
+  --o-sage: 122 138 94;
+  --o-divider: rgb(32 30 29 / 0.16);
+
+  --o-neutral-100: 249 244 237;
+  --o-neutral-200: 238 231 219;
+  --o-neutral-300: 220 211 196;
+  --o-neutral-400: 192 182 165;
+  --o-neutral-500: 161 151 134;
+  --o-neutral-600: 130 121 106;
+  --o-neutral-700: 100 92 80;
+  --o-neutral-800: 71 66 56;
+  --o-neutral-900: 46 43 37;
+
+  --o-accent-100: 255 242 235;
+  --o-accent-200: 255 225 208;
+  --o-accent-300: 255 198 165;
+  --o-accent-400: 246 160 107;
+  --o-accent-500: 214 127 72;
+  --o-accent-600: 178 98 45;
+  --o-accent-700: 140 73 26;
+  --o-accent-800: 100 51 18;
+  --o-accent-900: 64 35 16;
+
+  --o-sage-100: 240 250 225;
+  --o-sage-200: 225 238 204;
+  --o-sage-300: 204 219 178;
+  --o-sage-400: 174 191 146;
+  --o-sage-500: 143 160 115;
+  --o-sage-600: 114 129 87;
+  --o-sage-700: 86 99 63;
+  --o-sage-800: 61 71 43;
+  --o-sage-900: 39 46 27;
+
+  /* 视频画面上的颜色，两种主题下保持一致 */
+  --o-video-ink: 32 30 29;
+  --o-video-paper: 249 244 237;
+
+  --o-shadow-sm: 0 1px 2px rgb(46 43 37 / 0.14);
+  --o-shadow-md: 0 3px 10px rgb(46 43 37 / 0.16);
+  --o-shadow-lg: 0 12px 32px rgb(46 43 37 / 0.22);
+
+  --o-theme-color: #f5ead8;
+}
+
+.dark {
+  --o-bg: 30 26 22;
+  --o-surface: 42 37 31;
+  --o-ink: 243 233 218;
+  --o-on-accent: 30 26 22;
+  --o-accent: 217 132 77;
+  --o-sage: 154 171 124;
+  --o-divider: rgb(243 233 218 / 0.14);
+
+  --o-neutral-100: 52 46 40;
+  --o-neutral-200: 62 56 48;
+  --o-neutral-300: 78 71 61;
+  --o-neutral-400: 104 96 84;
+  --o-neutral-500: 133 124 110;
+  --o-neutral-600: 160 151 136;
+  --o-neutral-700: 186 177 162;
+  --o-neutral-800: 212 203 188;
+  --o-neutral-900: 236 228 214;
+
+  --o-accent-100: 58 36 22;
+  --o-accent-200: 77 46 25;
+  --o-accent-300: 106 61 31;
+  --o-accent-400: 154 90 46;
+  --o-accent-500: 214 127 72;
+  --o-accent-600: 228 146 92;
+  --o-accent-700: 240 168 119;
+  --o-accent-800: 248 196 160;
+  --o-accent-900: 255 225 208;
+
+  --o-sage-100: 38 44 29;
+  --o-sage-200: 47 55 36;
+  --o-sage-300: 62 72 47;
+  --o-sage-400: 86 99 63;
+  --o-sage-500: 143 160 115;
+  --o-sage-600: 163 179 134;
+  --o-sage-700: 188 203 159;
+  --o-sage-800: 212 225 188;
+  --o-sage-900: 234 244 217;
+
+  --o-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --o-shadow-md: 0 0 0 1px rgb(255 255 255 / 0.04), 0 3px 10px rgb(0 0 0 / 0.45);
+  --o-shadow-lg: 0 0 0 1px rgb(255 255 255 / 0.05),
+    0 12px 32px rgb(0 0 0 / 0.55);
+
+  --o-theme-color: #1e1a16;
+}
+
+/* Organic 组件类（对应设计系统的 .btn / .tag） */
+@layer components {
+  .o-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full border border-transparent bg-transparent font-heading text-sm leading-tight text-o-ink transition-colors disabled:cursor-not-allowed disabled:opacity-45;
+    padding: 8.8px 15.84px;
+  }
+  .o-btn-primary {
+    @apply bg-o-accent text-o-on-accent hover:bg-o-accent-600 active:bg-o-accent-700;
+  }
+  .o-btn-secondary {
+    @apply border-o-divider hover:bg-o-ink/[0.07] active:bg-o-ink/[0.14];
+  }
+  .o-btn-ghost {
+    @apply text-o-accent hover:bg-o-accent/10 active:bg-o-accent/[0.18];
+    padding-inline: 4.4px;
+  }
+  .o-btn-icon {
+    @apply h-9 w-9 p-0;
+  }
+  .o-tag {
+    @apply inline-flex items-center rounded-full text-[11px] tracking-[0.02em];
+    padding: 3px 10px;
+  }
+  .o-tag-accent {
+    @apply bg-o-accent-100 text-o-accent-800;
+  }
+  .o-tag-sage {
+    @apply bg-o-sage-100 text-o-sage-800;
+  }
+  .o-tag-neutral {
+    @apply bg-o-neutral-100 text-o-neutral-800;
+  }
+  .o-tag-outline {
+    @apply border border-o-accent text-o-accent;
+  }
+  .o-eyebrow {
+    @apply text-xs font-bold uppercase tracking-[0.08em] text-o-neutral-700;
+  }
 }
 
 html,
@@ -26,20 +164,17 @@ body {
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
+  font-size: 15px;
+  line-height: 1.55;
 }
 
-html:not(.dark) body {
-  background: linear-gradient(
-    180deg,
-    #e6f3fb 0%,
-    #eaf3f7 18%,
-    #f7f7f3 38%,
-    #e9ecef 60%,
-    #dbe3ea 80%,
-    #d3dde6 100%
-  );
-  background-attachment: fixed;
+:focus-visible {
+  outline: 2px solid rgb(var(--o-accent));
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(var(--o-accent) / 0.3);
 }
 
 /* 自定义滚动条样式 */
@@ -49,16 +184,16 @@ html:not(.dark) body {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(31, 41, 55, 0.1);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
-  border-radius: 4px;
+  background: rgb(var(--o-neutral-500) / 0.45);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(107, 114, 128, 0.5);
+  background: rgb(var(--o-neutral-600) / 0.6);
 }
 
 /* 视频卡片悬停效果 */
@@ -130,30 +265,128 @@ html:not(.dark) body {
   animation-name: fade-in;
 }
 
-/* 强制播放器内部的 video 元素高度为 100%，并保持内容完整显示 */
-div[data-media-provider] video {
-  height: 100%;
-  object-fit: contain;
+/* ===================== Organic 动效 ===================== */
+
+/* 骨架屏：在 surface 上流动的柔和高光 */
+.o-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--o-surface));
+}
+.o-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--o-neutral-100) / 0.65) 50%,
+    transparent 100%
+  );
+  animation: o-shimmer 1.4s ease-in-out infinite;
+}
+.dark .o-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--o-neutral-300) / 0.35) 50%,
+    transparent 100%
+  );
+}
+@keyframes o-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
-.art-poster {
-  background-size: contain !important; /* 使图片完整展示 */
-  background-position: center center !important; /* 居中显示 */
-  background-repeat: no-repeat !important; /* 防止重复 */
-  background-color: #000 !important; /* 其余区域填充为黑色 */
+/* 海报：默认轻微 “washed”，悬停时恢复原色 */
+.o-washed {
+  filter: saturate(0.82) contrast(0.94) brightness(1.03);
+  transition: filter 0.35s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.group:hover .o-washed,
+.group:focus-visible .o-washed {
+  filter: none;
 }
 
-/* 隐藏移动端竖屏时的 pip 按钮 */
-@media (max-width: 768px) {
-  .art-control-pip {
-    display: none !important;
-  }
+/* 按下反馈 */
+.o-press {
+  transition: transform 0.15s ease;
+}
+.o-press:active {
+  transform: scale(0.97);
+}
 
-  .art-control-fullscreenWeb {
-    display: none !important;
+/* 尊重系统的“减少动态效果”设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
+}
 
-  .art-control-volume {
-    display: none !important;
+/* ===================== SweetAlert2 主题 ===================== */
+.swal2-popup {
+  border-radius: 32px !important;
+  background: rgb(var(--o-surface)) !important;
+  color: rgb(var(--o-ink)) !important;
+  font-family: var(--font-body), system-ui, sans-serif !important;
+  box-shadow: var(--o-shadow-lg) !important;
+}
+.swal2-popup.swal2-toast {
+  border-radius: 999px !important;
+}
+.swal2-title {
+  font-family: var(--font-heading), system-ui, sans-serif !important;
+  font-weight: 400 !important;
+  color: rgb(var(--o-ink)) !important;
+}
+.swal2-html-container {
+  color: rgb(var(--o-neutral-800)) !important;
+}
+.swal2-styled.swal2-confirm {
+  border-radius: 999px !important;
+  background: rgb(var(--o-accent)) !important;
+  color: rgb(var(--o-on-accent)) !important;
+  font-family: var(--font-heading), system-ui, sans-serif !important;
+}
+.swal2-styled.swal2-cancel,
+.swal2-styled.swal2-deny {
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: rgb(var(--o-ink)) !important;
+  border: 1px solid var(--o-divider) !important;
+  font-family: var(--font-heading), system-ui, sans-serif !important;
+}
+.swal2-styled:focus {
+  box-shadow: 0 0 0 2px rgb(var(--o-accent) / 0.5) !important;
+}
+.swal2-timer-progress-bar {
+  background: rgb(var(--o-accent)) !important;
+}
+.swal2-container.swal2-backdrop-show:not(.swal2-top-end):not(.swal2-top):not(.swal2-bottom-end) {
+  background: rgb(32 30 29 / 0.5) !important;
+}
+.swal2-popup.swal2-toast {
+  padding: 10px 20px !important;
+  box-shadow: var(--o-shadow-lg) !important;
+}
+.swal2-popup.swal2-toast .swal2-title {
+  font-size: 15px !important;
+  margin: 0 !important;
+}
+
+/* 顶部导航进度条 */
+@keyframes o-nav-progress {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 80%;
   }
 }

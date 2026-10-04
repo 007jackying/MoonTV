@@ -5,6 +5,8 @@ import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { useI18n } from './LanguageProvider';
+
 interface ActionItem {
   id: string;
   label: string;
@@ -41,6 +43,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
   totalEpisodes,
   origin = 'vod',
 }) => {
+  const { t } = useI18n();
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -179,7 +182,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
       />
 
       <div
-        className="relative w-full max-w-lg mx-4 mb-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl transition-all duration-200 ease-out"
+        className="relative mx-4 mb-4 w-full max-w-lg rounded-[28px] bg-o-surface text-o-ink shadow-o-lg transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
         onTouchMove={(e) => {
           e.stopPropagation();
         }}
@@ -194,10 +197,10 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
           touchAction: 'auto',
         }}
       >
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between p-4 border-b border-o-divider">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {poster && (
-              <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 flex-shrink-0">
+              <div className="relative w-12 h-16 rounded-xl overflow-hidden bg-o-bg flex-shrink-0">
                 <Image
                   src={poster}
                   alt={title}
@@ -209,7 +212,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
             )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
+                <h3 className="truncate font-heading text-lg">
                   {title}
                 </h3>
                 {sourceName && (
@@ -222,7 +225,7 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
                 )}
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                选择操作
+                {t.chooseAction}
               </p>
             </div>
           </div>
@@ -280,20 +283,20 @@ const MobileActionSheet: React.FC<MobileActionSheetProps> = ({
               </button>
 
               {index < actions.length - 1 && (
-                <div className="border-b border-gray-100 dark:border-gray-800 ml-10"></div>
+                <div className="border-b border-o-divider ml-10"></div>
               )}
             </div>
           ))}
         </div>
 
         {isAggregate && sources && sources.length > 0 && (
-          <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="px-4 py-3 border-t border-o-divider">
             <div className="mb-3">
               <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-                可用播放源
+                {t.availableSources}
               </h4>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                共 {sources.length} 个播放源
+                {t.sourcesCount(sources.length)}
               </p>
             </div>
 

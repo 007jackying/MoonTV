@@ -2,7 +2,7 @@
 
 'use client';
 
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, Play } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -153,11 +153,19 @@ function LoginPageClient() {
       <div className='absolute top-4 right-4'>
         <ThemeToggle />
       </div>
-      <div className='relative z-10 w-full max-w-md rounded-3xl bg-gradient-to-b from-white/90 via-white/70 to-white/40 dark:from-zinc-900/90 dark:via-zinc-900/70 dark:to-zinc-900/40 backdrop-blur-xl shadow-2xl p-10 dark:border dark:border-zinc-800'>
-        <h1 className='text-green-600 tracking-tight text-center text-3xl font-extrabold mb-8 bg-clip-text drop-shadow-sm'>
-          {siteName}
-        </h1>
-        <form onSubmit={handleSubmit} className='space-y-8'>
+      {/* 柔和的圆形装饰 */}
+      <div aria-hidden='true' className='pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-o-accent-200/70' />
+      <div aria-hidden='true' className='pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-o-sage-200/70' />
+      <div className='relative z-10 w-full max-w-md animate-o-rise rounded-[32px] bg-o-surface p-8 shadow-o-lg md:p-10'>
+        <div className='mb-8 flex items-center justify-center gap-2.5'>
+          <span className='flex h-10 w-10 items-center justify-center rounded-full bg-o-accent text-o-on-accent'>
+            <Play className='h-[17px] w-[17px] fill-current' strokeWidth={2.75} />
+          </span>
+          <h1 className='m-0 font-heading text-3xl tracking-[-0.015em]'>
+            {siteName}
+          </h1>
+        </div>
+        <form onSubmit={handleSubmit} className='space-y-5'>
           {shouldAskUsername && (
             <div>
               <label htmlFor='username' className='sr-only'>
@@ -167,7 +175,7 @@ function LoginPageClient() {
                 id='username'
                 type='text'
                 autoComplete='username'
-                className='block w-full rounded-lg border-0 py-3 px-4 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-white/60 dark:ring-white/20 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-green-500 focus:outline-none sm:text-base bg-white/60 dark:bg-zinc-800/60 backdrop-blur'
+                className='block w-full rounded-full border border-o-divider bg-o-bg px-5 py-3 text-o-ink placeholder:text-o-neutral-600 focus:border-o-accent focus:outline-none focus:ring-2 focus:ring-o-accent/30 sm:text-base'
                 placeholder='输入用户名'
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -183,7 +191,7 @@ function LoginPageClient() {
               id='password'
               type='password'
               autoComplete='current-password'
-              className='block w-full rounded-lg border-0 py-3 px-4 text-gray-900 dark:text-gray-100 shadow-sm ring-1 ring-white/60 dark:ring-white/20 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-green-500 focus:outline-none sm:text-base bg-white/60 dark:bg-zinc-800/60 backdrop-blur'
+              className='block w-full rounded-full border border-o-divider bg-o-bg px-5 py-3 text-o-ink placeholder:text-o-neutral-600 focus:border-o-accent focus:outline-none focus:ring-2 focus:ring-o-accent/30 sm:text-base'
               placeholder='输入访问密码'
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -191,7 +199,7 @@ function LoginPageClient() {
           </div>
 
           {error && (
-            <p className='text-sm text-red-600 dark:text-red-400'>{error}</p>
+            <p className='m-0 rounded-[16px] bg-o-accent-100 px-4 py-2.5 text-sm font-semibold text-o-accent-800'>{error}</p>
           )}
 
           {/* 登录 / 注册按钮 */}
@@ -201,7 +209,7 @@ function LoginPageClient() {
                 type='button'
                 onClick={handleRegister}
                 disabled={!password || !username || loading}
-                className='flex-1 inline-flex justify-center rounded-lg bg-blue-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50'
+                className='o-btn o-btn-secondary o-press flex-1 py-3 text-base'
               >
                 {loading ? '注册中...' : '注册'}
               </button>
@@ -210,7 +218,7 @@ function LoginPageClient() {
                 disabled={
                   !password || loading || (shouldAskUsername && !username)
                 }
-                className='flex-1 inline-flex justify-center rounded-lg bg-green-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:from-green-600 hover:to-blue-600 disabled:cursor-not-allowed disabled:opacity-50'
+                className='o-btn o-btn-primary o-press flex-1 py-3 text-base'
               >
                 {loading ? '登录中...' : '登录'}
               </button>
@@ -221,7 +229,7 @@ function LoginPageClient() {
               disabled={
                 !password || loading || (shouldAskUsername && !username)
               }
-              className='inline-flex w-full justify-center rounded-lg bg-green-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:from-green-600 hover:to-blue-600 disabled:cursor-not-allowed disabled:opacity-50'
+              className='o-btn o-btn-primary o-press w-full py-3 text-base'
             >
               {loading ? '登录中...' : '登录'}
             </button>

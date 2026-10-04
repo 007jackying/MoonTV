@@ -2,7 +2,20 @@
 
 'use client';
 
-import { Cat, Clover, Download, Film, History, Home, Search, Star, Trash2, Tv, X } from 'lucide-react';
+import {
+  Cat,
+  Clover,
+  Download,
+  Film,
+  History,
+  Home,
+  Play,
+  Search,
+  Star,
+  Trash2,
+  Tv,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useEffect, useRef, useState } from 'react';
@@ -16,6 +29,8 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 
+import { useI18n } from './LanguageProvider';
+import { LanguageToggle } from './LanguageToggle';
 import { useNavigationLoading } from './NavigationLoadingProvider';
 import SearchSuggestions from './SearchSuggestions';
 import { useSite } from './SiteProvider';
@@ -33,6 +48,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
   const searchParams = useSearchParams();
   const { siteName } = useSite();
   const { startLoading } = useNavigationLoading();
+  const { t } = useI18n();
 
   const [active, setActive] = useState(activePath || '/');
   const [searchQuery, setSearchQuery] = useState('');
@@ -49,8 +65,6 @@ const TopNav = ({ activePath }: TopNavProps) => {
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const historyPopupRef = useRef<HTMLDivElement>(null);
 
-  // 简洁模式搜索栏展开状态
-  const [showSearchBar, setShowSearchBar] = useState(false);
   const searchBarRef = useRef<HTMLDivElement>(null);
 
   // 下载任务数量统计
@@ -66,10 +80,10 @@ const TopNav = ({ activePath }: TopNavProps) => {
             const tasks = JSON.parse(saved);
             // 统计未完成的任务数量（下载中、暂停、等待、错误）
             const activeCount = tasks.filter(
-              (t: { status: string }) => 
-                t.status === 'downloading' || 
-                t.status === 'paused' || 
-                t.status === 'waiting' || 
+              (t: { status: string }) =>
+                t.status === 'downloading' ||
+                t.status === 'paused' ||
+                t.status === 'waiting' ||
                 t.status === 'error'
             ).length;
             setDownloadTaskCount(activeCount);
@@ -93,13 +107,19 @@ const TopNav = ({ activePath }: TopNavProps) => {
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handleStorageChange);
       // 自定义事件：当任务列表更新时
-      window.addEventListener('downloadTasksUpdated', handleStorageChange as EventListener);
+      window.addEventListener(
+        'downloadTasksUpdated',
+        handleStorageChange as EventListener
+      );
     }
 
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', handleStorageChange);
-        window.removeEventListener('downloadTasksUpdated', handleStorageChange as EventListener);
+        window.removeEventListener(
+          'downloadTasksUpdated',
+          handleStorageChange as EventListener
+        );
       }
     };
   }, []);
@@ -119,8 +139,11 @@ const TopNav = ({ activePath }: TopNavProps) => {
 
     // 加载搜索历史
     getSearchHistory().then(setSearchHistory);
-    const unsubscribe = subscribeToDataUpdates('searchHistoryUpdated', setSearchHistory);
-    
+    const unsubscribe = subscribeToDataUpdates(
+      'searchHistoryUpdated',
+      setSearchHistory
+    );
+
     return () => {
       unsubscribe();
     };
@@ -129,6 +152,10 @@ const TopNav = ({ activePath }: TopNavProps) => {
   useEffect(() => {
     if (activePath) {
       setActive(activePath);
+    } else if (pathname === '/play') {
+      // 播放页按影片类型高亮“电影 / 剧集”
+      const stype = searchParams.get('stype');
+      setActive(stype ? `/douban?type=${stype}` : pathname);
     } else {
       const queryString = searchParams.toString();
       const fullPath = queryString ? `${pathname}?${queryString}` : pathname;
@@ -145,7 +172,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
       } else {
         setSearchQuery('');
       }
-      
+
       const sources = searchParams.get('sources');
       if (sources) {
         setSearchSources(sources.split(','));
@@ -153,27 +180,13 @@ const TopNav = ({ activePath }: TopNavProps) => {
     }
   }, [pathname, searchParams]);
 
-  const [menuItems, setMenuItems] = useState([
-    {
-      icon: Film,
-      label: '电影',
-      href: '/douban?type=movie',
-    },
-    {
-      icon: Tv,
-      label: '剧集',
-      href: '/douban?type=tv',
-    },
-    {
-      icon: Cat,
-      label: '动漫',
-      href: '/douban?type=anime',
-    },
-    {
-      icon: Clover,
-      label: '综艺',
-      href: '/douban?type=show',
-    },
+  const [menuItems, setMenuItems] = useState<
+    { icon: typeof Film; labelKey: NavLabelKey; href: string }[]
+  >([
+    { icon: Film, labelKey: 'navMovie', href: '/douban?type=movie' },
+    { icon: Tv, labelKey: 'navTv', href: '/douban?type=tv' },
+    { icon: Cat, labelKey: 'navAnime', href: '/douban?type=anime' },
+    { icon: Clover, labelKey: 'navShow', href: '/douban?type=show' },
   ]);
 
   useEffect(() => {
@@ -181,11 +194,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
       if (categories.length > 0) {
         setMenuItems((prevItems) => [
           ...prevItems,
-          {
-            icon: Star,
-            label: '自定义',
-            href: '/douban?type=custom',
-          },
+          { icon: Star, labelKey: 'navCustom', href: '/douban?type=custom' },
         ]);
       }
     });
@@ -197,12 +206,12 @@ const TopNav = ({ activePath }: TopNavProps) => {
     if (trimmedQuery) {
       // 添加到搜索历史
       addSearchHistory(trimmedQuery);
-      
+
       // 如果不在搜索页面，触发加载动画
       if (pathname !== '/search') {
         startLoading();
       }
-      
+
       const params = new URLSearchParams();
       params.set('q', trimmedQuery);
       if (searchSources.length > 0) {
@@ -225,15 +234,15 @@ const TopNav = ({ activePath }: TopNavProps) => {
     setSearchQuery(suggestion);
     setShowSuggestions(false);
     setShowHistory(false); // 选择建议时关闭历史记录
-    
+
     // 添加到搜索历史
     addSearchHistory(suggestion);
-    
+
     // 如果不在搜索页面，触发加载动画
     if (pathname !== '/search') {
       startLoading();
     }
-    
+
     const params = new URLSearchParams();
     params.set('q', suggestion);
     if (searchSources.length > 0) {
@@ -258,15 +267,15 @@ const TopNav = ({ activePath }: TopNavProps) => {
   const handleHistoryClick = (item: string) => {
     setSearchQuery(item);
     setShowHistory(false);
-    
+
     // 添加到搜索历史（更新时间戳）
     addSearchHistory(item);
-    
+
     // 如果不在搜索页面，触发加载动画
     if (pathname !== '/search') {
       startLoading();
     }
-    
+
     const params = new URLSearchParams();
     params.set('q', item);
     if (searchSources.length > 0) {
@@ -285,17 +294,14 @@ const TopNav = ({ activePath }: TopNavProps) => {
     setShowHistory(false);
   };
 
-  // 点击外部关闭搜索栏
+  // 点击搜索栏外部时收起源选择与历史弹窗
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        showSearchBar &&
         searchBarRef.current &&
         !searchBarRef.current.contains(event.target as Node)
       ) {
-        setShowSearchBar(false);
         if (openFilter) setOpenFilter(null);
-        if (showHistory) setShowHistory(false);
       }
     };
 
@@ -303,7 +309,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showSearchBar, openFilter, showHistory]);
+  }, [openFilter]);
 
   // 点击外部关闭历史弹窗
   useEffect(() => {
@@ -325,233 +331,194 @@ const TopNav = ({ activePath }: TopNavProps) => {
     };
   }, [showHistory]);
 
-  // 搜索栏内容（简洁和非简洁模式复用）
-  const searchBarContent = (
-    <div className='flex-1 max-w-md flex items-center' ref={searchBarRef}>
-      {/* 搜索源选择器 */}
-      <div className='flex-shrink-0'>
-        <SourceSelector
-          selectedSources={searchSources}
-          onChange={setSearchSources}
-          openFilter={openFilter}
-          setOpenFilter={setOpenFilter}
-          size='compact'
-        />
-      </div>
+  const isMenuItemActive = (href: string) => {
+    const typeMatch = href.match(/type=([^&]+)/)?.[1];
+    const decodedActive = decodeURIComponent(active);
+    return (
+      decodedActive === decodeURIComponent(href) ||
+      (decodedActive.startsWith('/douban') &&
+        decodedActive.includes(`type=${typeMatch}`))
+    );
+  };
 
-      {/* 搜索框 */}
-      <div className='relative flex-1'>
-        <form onSubmit={handleSearch} className='relative'>
-          <Search className='absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500' />
-          <input
-            ref={searchInputRef}
-            type='text'
-            value={searchQuery}
-            onChange={handleInputChange}
-            onFocus={handleInputFocus}
-            placeholder='搜索电影、电视剧...'
-            className='w-full h-10 rounded-r-lg rounded-l-none bg-gray-100/80 py-2 pl-10 pr-20 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:bg-white transition-all duration-200 border border-gray-200/50 border-l-0 dark:bg-gray-800 dark:text-gray-300 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
-          />
-          <div className='absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1'>
-            {searchQuery && (
-              <button
-                type='button'
-                onClick={clearSearch}
-                className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
-              >
-                <X className='h-4 w-4' />
-              </button>
-            )}
-            {/* 历史记录按钮 */}
-            <button
-              ref={historyButtonRef}
-              type='button'
-              onClick={() => setShowHistory(!showHistory)}
-              className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors relative'
-              title='搜索历史'
+  const navItemClass =
+    'flex items-center gap-2 rounded-full px-4 py-[9px] text-sm font-semibold transition-colors text-o-ink hover:bg-o-ink/[0.07] data-[active=true]:bg-o-accent-200 data-[active=true]:text-o-accent-800';
+
+  return (
+    <header className='sticky top-0 z-50 hidden w-full bg-o-bg/90 backdrop-blur-xl md:block'>
+      <div className='flex h-[76px] items-center gap-4 px-6 lg:gap-[26px] lg:px-10'>
+        {/* Logo */}
+        <Link
+          href='/'
+          className='flex flex-none select-none items-center gap-2.5 transition-opacity hover:opacity-80'
+          onClick={() => {
+            if (active !== '/') startLoading();
+          }}
+        >
+          <span className='flex h-[34px] w-[34px] items-center justify-center rounded-full bg-o-accent text-o-on-accent'>
+            <Play
+              className='h-[15px] w-[15px] fill-current'
+              strokeWidth={2.75}
+            />
+          </span>
+          <span className='font-heading text-2xl tracking-[-0.015em]'>
+            {siteName}
+          </span>
+        </Link>
+
+        {/* 导航菜单 */}
+        {isClient && !simpleMode && (
+          <nav className='flex flex-none items-center gap-1'>
+            <Link
+              href='/'
+              onClick={() => {
+                if (active !== '/') startLoading();
+                setActive('/');
+              }}
+              data-active={active === '/'}
+              title={t.navHome}
+              className={navItemClass}
             >
-              <History className='h-4 w-4' />
-              {searchHistory.length > 0 && (
-                <span className='absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full'></span>
-              )}
-            </button>
-          </div>
-          <SearchSuggestions
-            query={searchQuery}
-            isVisible={showSuggestions}
-            onSelect={handleSuggestionSelect}
-            onClose={() => setShowSuggestions(false)}
-          />
-        </form>
+              <Home className='h-4 w-4' strokeWidth={2.75} />
+              {/* 窄屏只留图标，否则右侧按钮组会被挤出视口 */}
+              <span className='hidden xl:inline'>{t.navHome}</span>
+            </Link>
+            {menuItems.map((item) => {
+              const isActive = isMenuItemActive(item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => {
+                    if (!isActive) startLoading();
+                    setActive(item.href);
+                  }}
+                  data-active={isActive}
+                  title={t[item.labelKey]}
+                  className={navItemClass}
+                >
+                  <Icon className='h-4 w-4' strokeWidth={2.75} />
+                  <span className='hidden xl:inline'>{t[item.labelKey]}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
-        {/* 历史记录弹窗 */}
-        {showHistory && searchHistory.length > 0 && (
-          <div
-            ref={historyPopupRef}
-            className='absolute top-full right-0 mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-96 overflow-y-auto z-50'
+        {/* 搜索栏 */}
+        <div
+          ref={searchBarRef}
+          className='relative ml-auto flex h-11 min-w-[220px] max-w-[480px] flex-1 items-center gap-1.5 rounded-full border border-o-divider bg-o-surface px-1.5'
+        >
+          <SourceSelector
+            selectedSources={searchSources}
+            onChange={setSearchSources}
+            openFilter={openFilter}
+            setOpenFilter={setOpenFilter}
+            size='pill'
+          />
+          <form
+            onSubmit={handleSearch}
+            className='relative flex min-w-0 flex-1 items-center'
           >
-            <div className='p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between'>
-              <h3 className='text-sm font-semibold text-gray-700 dark:text-gray-300'>
-                搜索历史
-              </h3>
-              <button
-                onClick={handleClearAllHistory}
-                className='text-xs text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-500 transition-colors'
-              >
-                清空全部
-              </button>
-            </div>
-            <div className='p-2'>
+            <Search
+              className='ml-1.5 h-4 w-4 flex-none text-o-neutral-700'
+              strokeWidth={2.75}
+            />
+            <input
+              ref={searchInputRef}
+              type='text'
+              value={searchQuery}
+              onChange={handleInputChange}
+              onFocus={handleInputFocus}
+              placeholder={t.searchPlaceholder}
+              className='h-10 min-w-0 flex-1 border-0 bg-transparent px-2.5 text-sm text-o-ink placeholder:text-o-neutral-600 focus:outline-none focus:ring-0'
+            />
+            <SearchSuggestions
+              query={searchQuery}
+              isVisible={showSuggestions}
+              onSelect={handleSuggestionSelect}
+              onClose={() => setShowSuggestions(false)}
+            />
+          </form>
+          {searchQuery && (
+            <button
+              type='button'
+              onClick={clearSearch}
+              title={t.clear}
+              aria-label={t.clear}
+              className='flex h-8 w-8 flex-none items-center justify-center rounded-full text-o-neutral-700 transition-colors hover:bg-o-ink/[0.07]'
+            >
+              <X className='h-4 w-4' strokeWidth={2.75} />
+            </button>
+          )}
+          <button
+            ref={historyButtonRef}
+            type='button'
+            onClick={() => setShowHistory(!showHistory)}
+            className='relative flex h-8 w-8 flex-none items-center justify-center rounded-full text-o-neutral-700 transition-colors hover:bg-o-ink/[0.07]'
+            title={t.searchHistory}
+            aria-label={t.searchHistory}
+          >
+            <History className='h-4 w-4' strokeWidth={2.75} />
+            {searchHistory.length > 0 && (
+              <span className='absolute right-1 top-1 h-2 w-2 rounded-full bg-o-accent'></span>
+            )}
+          </button>
+
+          {/* 历史记录弹窗 */}
+          {showHistory && searchHistory.length > 0 && (
+            <div
+              ref={historyPopupRef}
+              className='absolute right-0 top-full z-50 mt-2 max-h-96 w-80 overflow-y-auto rounded-[28px] bg-o-surface p-2 shadow-o-lg'
+            >
+              <div className='flex items-center justify-between px-3 py-2'>
+                <h3 className='o-eyebrow'>{t.searchHistory}</h3>
+                <button
+                  onClick={handleClearAllHistory}
+                  className='o-btn o-btn-ghost text-[13px]'
+                >
+                  {t.clearAll}
+                </button>
+              </div>
               {searchHistory.map((item, index) => (
                 <div
                   key={`history-${item}-${index}`}
-                  className='group flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer'
+                  className='group flex cursor-pointer items-center justify-between rounded-2xl px-3 py-2 transition-colors hover:bg-o-bg'
                   onClick={() => handleHistoryClick(item)}
                 >
-                  <span className='text-sm text-gray-700 dark:text-gray-300 truncate flex-1'>
-                    {item}
-                  </span>
+                  <span className='flex-1 truncate text-sm'>{item}</span>
                   <button
                     onClick={(e) => handleDeleteHistory(item, e)}
-                    className='ml-2 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-500 transition-colors'
-                    title='删除'
+                    className='ml-2 text-o-neutral-600 transition-colors hover:text-o-accent'
+                    title={t.delete}
+                    aria-label={t.delete}
                   >
-                    <Trash2 className='h-3 w-3' />
+                    <Trash2 className='h-3.5 w-3.5' />
                   </button>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const searchButton = (
-    <button
-      onClick={() => {
-        setShowSearchBar(true);
-        setTimeout(() => searchInputRef.current?.focus(), 300);
-      }}
-      className='p-2 text-gray-700 hover:bg-gray-100/50 hover:text-green-600 rounded-lg transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 flex-shrink-0'
-      title='搜索'
-    >
-      <Search className='h-5 w-5' />
-    </button>
-  );
-
-  return (
-    <>
-    <header className='hidden md:block sticky top-0 z-50 w-full bg-white/80 backdrop-blur-xl border-b border-gray-200/50 shadow-sm dark:bg-gray-900/80 dark:border-gray-700/50'>
-      <div className='mx-auto px-6 h-16 flex items-center justify-between gap-3 lg:gap-6'>
-        {/* Logo */}
-        {simpleMode ? (
-          <div className='absolute left-1/2 transform -translate-x-1/2'>
-            <Link
-              href='/'
-              className='flex items-center justify-center select-none hover:opacity-80 transition-opacity duration-200'
-              onClick={() => {
-                if (active !== '/') {
-                  startLoading();
-                }
-              }}
-            >
-              <span className='text-2xl font-bold text-green-600 tracking-tight'>
-                {siteName}
-              </span>
-            </Link>
-          </div>
-        ) : (
-          <Link
-            href='/'
-            className='flex items-center justify-center select-none hover:opacity-80 transition-opacity duration-200 flex-shrink-0'
-            onClick={() => {
-              if (active !== '/') {
-                startLoading();
-              }
-            }}
-          >
-            <span className='text-2xl font-bold text-green-600 tracking-tight'>
-              {siteName}
-            </span>
-          </Link>
-        )}
-
-        {/* 导航菜单 */}
-        <nav className='flex items-center gap-1 flex-shrink-0'>
-        {isClient && !simpleMode && (
-          <Link
-            href='/'
-            onClick={() => {
-              if (active !== '/') {
-                startLoading();
-              }
-              setActive('/');
-            }}
-            data-active={active === '/'}
-            title='首页'
-            className='group flex items-center gap-2 px-3 lg:px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100/50 hover:text-green-600 data-[active=true]:bg-green-500/10 data-[active=true]:text-green-600 font-medium transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400'
-          >
-            <Home className='h-4 w-4' />
-            {/* 窄屏（md~lg）只留图标，否则右侧按钮组会被挤出视口 */}
-            <span className='hidden lg:inline'>首页</span>
-          </Link>
-        )}
-
-          {isClient && !simpleMode && menuItems.map((item) => {
-            const typeMatch = item.href.match(/type=([^&]+)/)?.[1];
-            const decodedActive = decodeURIComponent(active);
-            const decodedItemHref = decodeURIComponent(item.href);
-            const isActive =
-              decodedActive === decodedItemHref ||
-              (decodedActive.startsWith('/douban') &&
-                decodedActive.includes(`type=${typeMatch}`));
-            const Icon = item.icon;
-
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                onClick={() => {
-                  if (!isActive) {
-                    startLoading();
-                  }
-                  setActive(item.href);
-                }}
-                data-active={isActive}
-                title={item.label}
-                className='group flex items-center gap-2 px-3 lg:px-4 py-2 rounded-lg text-gray-700 hover:bg-gray-100/50 hover:text-green-600 data-[active=true]:bg-green-500/10 data-[active=true]:text-green-600 font-medium transition-colors duration-200 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-gray-700/50 dark:data-[active=true]:bg-green-500/10 dark:data-[active=true]:text-green-400'
-              >
-                <Icon className='h-4 w-4' />
-                <span className='hidden lg:inline'>{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* 中间占位区域 */}
-        <div className='flex-1'></div>
-
-        {/* 搜索栏 / 搜索按钮 */}
-        <div className='flex items-center justify-end'>
-          {showSearchBar && searchBarContent}
-          {!showSearchBar && searchButton}
+          )}
         </div>
 
         {/* 右侧按钮组 */}
-        <div className='flex items-center gap-2 flex-shrink-0'>
+        <div className='flex flex-none items-center gap-2'>
+          <LanguageToggle />
           <button
             onClick={() => {
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new Event('showDownloadManager'));
               }
             }}
-            className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors relative'
-            title='下载管理器'
+            className='relative flex h-10 w-10 items-center justify-center rounded-full border border-o-divider transition-colors hover:bg-o-ink/[0.07] active:bg-o-ink/[0.14]'
+            title={t.downloadManager}
+            aria-label={t.downloadManager}
           >
-            <Download className='h-5 w-5' />
+            <Download className='h-[18px] w-[18px]' strokeWidth={2.75} />
             {downloadTaskCount > 0 && (
-              <span className='absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center'>
+              <span className='absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-o-accent px-1 text-[11px] font-bold text-o-on-accent'>
                 {downloadTaskCount > 99 ? '99+' : downloadTaskCount}
               </span>
             )}
@@ -561,11 +528,11 @@ const TopNav = ({ activePath }: TopNavProps) => {
         </div>
       </div>
     </header>
-    </>
   );
 };
+
+type NavLabelKey = 'navMovie' | 'navTv' | 'navAnime' | 'navShow' | 'navCustom';
 
 // 使用 React.memo 优化，避免父组件更新时导致不必要的重新渲染
 // 由于 TopNav 主要依赖内部 hooks 和全局状态，不需要 props 比较函数
 export default memo(TopNav);
-

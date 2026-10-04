@@ -27,8 +27,8 @@ const ConditionalNav = () => {
 
   return (
     <>
-      {/* 移动端头部 - 固定在根布局，避免页面切换时重新渲染 */}
-      <MobileHeader showBackButton={false} />
+      {/* 移动端头部 - 固定在根布局，避免页面切换时重新渲染；播放页使用自己的标题栏 */}
+      {!pathname.startsWith('/play') && <MobileHeader showBackButton={false} />}
 
       {/* 桌面端顶部导航栏 - 固定在根布局，避免页面切换时重新渲染 */}
       <TopNav />

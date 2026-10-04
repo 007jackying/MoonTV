@@ -4,67 +4,48 @@ import { useEffect, useState } from 'react';
 
 import { useNavigationLoading } from './NavigationLoadingProvider';
 
+/**
+ * 页面跳转时顶部的细进度条：开始后快速推进到 ~80%，
+ * 新页面就绪后补满并淡出。不遮挡页面，也不拦截点击。
+ */
 export function NavigationLoadingIndicator() {
   const { isLoading } = useNavigationLoading();
-  const [visible, setVisible] = useState(false);
-  const [doorsClosed, setDoorsClosed] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'loading' | 'done'>('idle');
 
   useEffect(() => {
     if (isLoading) {
-      setVisible(true);
-      setDoorsClosed(true);
-    } else {
-      setDoorsClosed(false);
-      setVisible(false);
+      setPhase('loading');
+      return;
     }
+    setPhase((p) => (p === 'loading' ? 'done' : p));
+    const timer = setTimeout(() => setPhase('idle'), 400);
+    return () => clearTimeout(timer);
   }, [isLoading]);
 
-  if (!visible) return null;
+  if (phase === 'idle') return null;
 
   return (
-    <>
-      {/* 全屏加载遮罩 */}
+    <div
+      role='progressbar'
+      aria-busy={phase === 'loading'}
+      className='pointer-events-none fixed inset-x-0 top-0 z-[2000] h-[3px]'
+    >
       <div
-        className='fixed inset-0 z-[50] bg-white/90 backdrop-blur-xl transition-opacity duration-500 dark:bg-gray-900/90'
-        style={{
-          opacity: doorsClosed ? 1 : 0,
-          pointerEvents: doorsClosed ? 'auto' : 'none',
-        }}
-      >
-        {/* 中心加载动画 */}
-        <div className='flex items-center justify-center h-full'>
-        <div className='relative'>
-          {/* 月亮形状 */}
-          <div className='relative w-20 h-20'>
-            {/* 月亮主体 */}
-            <div className='absolute inset-0 bg-gradient-to-br from-yellow-300 to-yellow-500 dark:from-yellow-400 dark:to-yellow-600 rounded-full shadow-lg shadow-yellow-500/30 animate-bounce' 
-                 style={{ animationDuration: '2s' }}>
-              
-              {/* 月亮上的小坑 */}
-              <div className='absolute top-3 left-4 w-2 h-2 bg-yellow-600/40 dark:bg-yellow-700/40 rounded-full' />
-              <div className='absolute top-6 right-5 w-1.5 h-1.5 bg-yellow-600/40 dark:bg-yellow-700/40 rounded-full' />
-              <div className='absolute bottom-4 left-6 w-1 h-1 bg-yellow-600/40 dark:bg-yellow-700/40 rounded-full' />
-            </div>
-            
-            <div className='absolute -bottom-1 -left-1 w-2 h-2 bg-yellow-400 dark:bg-yellow-300 rounded-full animate-spin' 
-                 style={{ animationDuration: '4s', animationDirection: 'reverse' }}>
-              <div className='absolute inset-0 flex items-center justify-center'>
-                <div className='w-0.5 h-0.5 bg-yellow-600 dark:bg-yellow-500 rounded-full' />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 加载文字 */}
-        <div className='absolute mt-32 text-gray-700 dark:text-gray-300 font-medium text-sm'>
-          <span className='animate-pulse'>🌙</span>
-          <span className='animate-pulse' style={{ animationDelay: '0.2s' }}> 月亮正在努力加载中</span>
-          <span className='animate-pulse' style={{ animationDelay: '0.4s' }}> ✨</span>
-        </div>
-        </div>
-      </div>
-
-    </>
+        className='h-full rounded-r-full bg-o-accent shadow-[0_0_10px_rgb(var(--o-accent)/0.6)]'
+        style={
+          phase === 'loading'
+            ? {
+                width: '80%',
+                animation:
+                  'o-nav-progress 2.5s cubic-bezier(0.1, 0.7, 0.2, 1) both',
+              }
+            : {
+                width: '100%',
+                opacity: 0,
+                transition: 'width 0.2s ease, opacity 0.3s ease 0.15s',
+              }
+        }
+      />
+    </div>
   );
 }
-

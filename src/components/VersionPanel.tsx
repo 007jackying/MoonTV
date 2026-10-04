@@ -270,7 +270,7 @@ export const VersionPanel: React.FC<VersionPanelProps> = ({
       />
 
       {/* 版本面板 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] overflow-hidden'>
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-32px)] max-w-xl max-h-[90vh] bg-o-surface text-o-ink rounded-[32px] shadow-o-lg z-[1001] overflow-hidden'>
         {/* 标题栏 */}
         <div className='flex items-center justify-between p-3 sm:p-6 border-b border-gray-200 dark:border-gray-700'>
           <div className='flex items-center gap-2 sm:gap-3'>

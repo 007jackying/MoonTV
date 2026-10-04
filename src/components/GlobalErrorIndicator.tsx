@@ -62,16 +62,16 @@ export function GlobalErrorIndicator() {
     <div className='fixed top-4 right-4 z-[2000]'>
       {/* 错误卡片 */}
       <div
-        className={`bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between min-w-[300px] max-w-[400px] transition-all duration-300 ${
-          isReplacing ? 'scale-105 bg-red-400' : 'scale-100 bg-red-500'
+        className={`flex min-w-[280px] max-w-[400px] items-center justify-between rounded-[20px] bg-o-accent-700 px-4 py-3 text-o-accent-100 shadow-o-lg transition-all duration-300 ${
+          isReplacing ? 'scale-105' : 'scale-100'
         } animate-fade-in`}
       >
-        <span className='text-sm font-medium flex-1 mr-3'>
+        <span className='mr-3 flex-1 text-sm font-semibold'>
           {currentError.message}
         </span>
         <button
           onClick={handleClose}
-          className='text-white hover:text-red-100 transition-colors flex-shrink-0'
+          className='flex-shrink-0 opacity-80 transition-opacity hover:opacity-100'
           aria-label='关闭错误提示'
         >
           <svg

@@ -14,6 +14,7 @@ import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import { LanguageProvider } from '../components/LanguageProvider';
 import { NavigationLoadingIndicator } from '../components/NavigationLoadingIndicator';
 import { NavigationLoadingProvider } from '../components/NavigationLoadingProvider';
+import PageTransition from '../components/PageTransition';
 import ServiceWorkerRegistration from '../components/ServiceWorkerRegistration';
 import { SiteProvider } from '../components/SiteProvider';
 import SubscriptionAutoUpdate from '../components/SubscriptionAutoUpdate';
@@ -143,7 +144,7 @@ export default async function RootLayout({
                 <div className='relative w-full'>
                   {/* 底部留白仅为移动端底部导航预留，md 以上该导航不存在 */}
                   <main className='flex-1 pb-[calc(68px+env(safe-area-inset-bottom))] md:pb-0'>
-                    {children}
+                    <PageTransition>{children}</PageTransition>
                   </main>
                 </div>
 

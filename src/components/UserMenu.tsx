@@ -567,7 +567,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 菜单面板 */}
-      <div className='fixed top-14 right-4 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-xl z-[1001] border border-gray-200/50 dark:border-gray-700/50 overflow-hidden select-none'>
+      <div className='fixed top-[64px] right-4 w-60 animate-o-pop origin-top-right rounded-[24px] bg-o-surface text-o-ink shadow-o-lg z-[1001] overflow-hidden select-none md:top-[80px] md:right-10'>
         {/* 用户信息区域 */}
         <div className='px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-800/50'>
           <div className='space-y-1'>
@@ -687,7 +687,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 设置面板 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] p-6 overflow-y-auto'>
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-32px)] max-w-xl max-h-[90vh] bg-o-surface text-o-ink rounded-[32px] shadow-o-lg z-[1001] p-6 overflow-y-auto'>
         {/* 标题栏 */}
         <div className='flex items-center justify-between mb-6'>
           <div className='flex items-center gap-3'>
@@ -751,7 +751,7 @@ export const UserMenu: React.FC = () => {
 
               {/* 下拉选项列表 */}
               {isDoubanDropdownOpen && (
-                <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                <div className='absolute z-50 w-full mt-1 bg-o-bg rounded-[16px] shadow-o-lg max-h-60 overflow-auto'>
                   {doubanDataSourceOptions.map((option) => (
                     <button
                       key={option.value}
@@ -858,7 +858,7 @@ export const UserMenu: React.FC = () => {
 
               {/* 下拉选项列表 */}
               {isDoubanImageProxyDropdownOpen && (
-                <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+                <div className='absolute z-50 w-full mt-1 bg-o-bg rounded-[16px] shadow-o-lg max-h-60 overflow-auto'>
                   {doubanImageProxyTypeOptions.map((option) => (
                     <button
                       key={option.value}
@@ -1078,7 +1078,7 @@ export const UserMenu: React.FC = () => {
 
             {/* 下拉选项列表 */}
             {isDanmakuPlatformDropdownOpen && (
-              <div className='absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-auto'>
+              <div className='absolute z-50 w-full mt-1 bg-o-bg rounded-[16px] shadow-o-lg max-h-60 overflow-auto'>
                 {danmakuPlatformOptions.map((option) => (
                   <button
                     key={option.value}
@@ -1239,7 +1239,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 修改密码面板 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] p-6'>
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-32px)] max-w-md bg-o-surface text-o-ink rounded-[32px] shadow-o-lg z-[1001] p-6'>
         {/* 标题栏 */}
         <div className='flex items-center justify-between mb-6'>
           <h3 className='text-xl font-bold text-gray-800 dark:text-gray-200'>

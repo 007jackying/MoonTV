@@ -41,6 +41,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { formatEpisodeLabel } from '@/lib/i18n';
 import { formatClock, HlsModule } from '@/lib/player/engine';
 import { SearchResult } from '@/lib/types';
@@ -81,6 +82,8 @@ function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useI18n();
+  // 只渲染当前断点需要的布局（侧栏 / 移动端卡片），避免列表重复渲染两份
+  const isDesktop = useMediaQuery('(min-width: 1024px)', true);
   // 异步流程里使用最新的文案
   const tRef = useRef(t);
   tRef.current = t;
@@ -227,6 +230,7 @@ function PlayPageClient() {
   );
   const [pendingSourceKey, setPendingSourceKey] = useState<string | null>(null);
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const [playerFailed, setPlayerFailed] = useState(false);
   const [autoPicking, setAutoPicking] = useState(false);
   const cancelAutoPickRef = useRef(false);
 
@@ -965,18 +969,30 @@ function PlayPageClient() {
 
   const handleEnded = () => {
     const d = detailRef.current;
-    if (d && currentEpisodeIndexRef.current < d.episodes.length - 1) {
-      setTimeout(() => handleNextEpisode(), 1000);
+    const endedIndex = currentEpisodeIndexRef.current;
+    if (d && endedIndex < d.episodes.length - 1) {
+      // 1 秒内用户手动换了集或源就不再自动跳
+      const endedSource = currentSourceRef.current;
+      setTimeout(() => {
+        if (
+          currentEpisodeIndexRef.current === endedIndex &&
+          currentSourceRef.current === endedSource
+        ) {
+          handleEpisodeChange(endedIndex + 1);
+        }
+      }, 1000);
     }
   };
 
   const handlePlayerReady = () => {
+    setPlayerFailed(false);
     if (pendingSourceKey) setSourcesExpanded(false);
     setPendingSourceKey(null);
     setSwitchFromDetail(null);
   };
 
   const handlePlayerError = () => {
+    setPlayerFailed(true);
     setPendingSourceKey(null);
     setSwitchFromDetail(null);
   };
@@ -1197,6 +1213,7 @@ function PlayPageClient() {
     infoMap,
     isMeasuring,
     pendingSourceKey,
+    currentFailed: playerFailed && !pendingSourceKey,
     sourcesExpanded,
     onSourcesExpandedChange: setSourcesExpanded,
     onSourceSelect: (s) => {
@@ -1441,25 +1458,29 @@ function PlayPageClient() {
           </div>
 
           {/* 桌面侧栏：与播放器等高 */}
-          <div className='relative hidden lg:block'>
-            <div className='absolute inset-0'>
-              <PlaySidePanel {...panelProps} />
+          {isDesktop && (
+            <div className='relative hidden lg:block'>
+              <div className='absolute inset-0'>
+                <PlaySidePanel {...panelProps} />
+              </div>
             </div>
+          )}
+        </div>
+
+        {isDesktop ? (
+          /* 桌面详情 */
+          <div className='mt-8 hidden lg:block'>
+            <PlayDetailsDesktop {...detailsProps} />
           </div>
-        </div>
-
-        {/* 桌面详情 */}
-        <div className='mt-8 hidden lg:block'>
-          <PlayDetailsDesktop {...detailsProps} />
-        </div>
-
-        {/* 移动端 / 平板：播放器下方依次排列 */}
-        <div className='flex flex-col gap-[18px] px-4 pb-6 pt-[18px] md:px-0 lg:hidden'>
-          <PlayDetailsMobileHead {...detailsProps} />
-          <PlayMobileSourceCard {...panelProps} />
-          <PlayMobileEpisodes {...panelProps} />
-          <PlayDescriptionMobile desc={detail?.desc} />
-        </div>
+        ) : (
+          /* 移动端 / 平板：播放器下方依次排列 */
+          <div className='flex flex-col gap-[18px] px-4 pb-6 pt-[18px] md:px-0 lg:hidden'>
+            <PlayDetailsMobileHead {...detailsProps} />
+            <PlayMobileSourceCard {...panelProps} />
+            <PlayMobileEpisodes {...panelProps} />
+            <PlayDescriptionMobile desc={detail?.desc} />
+          </div>
+        )}
       </div>
 
       {/* 添加下载弹窗 */}

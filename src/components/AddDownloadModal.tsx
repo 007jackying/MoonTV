@@ -224,7 +224,7 @@ const AddDownloadModal = ({ isOpen, onClose, onAddTask, initialUrl = '', initial
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-      <div className="relative w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
+      <div className="relative max-h-[90vh] w-full max-w-2xl animate-o-pop overflow-y-auto rounded-[28px] bg-o-surface p-6 text-o-ink shadow-o-lg">
         {/* 关闭按钮 */}
         <button
           onClick={handleClose}

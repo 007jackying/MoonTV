@@ -28,6 +28,7 @@ import {
   useState,
 } from 'react';
 
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import {
   AttachedStream,
   attachStream,
@@ -111,18 +112,6 @@ const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 const VOLUME_KEY = 'moontv_volume';
 const HIDE_CONTROLS_MS = 2600;
 
-function useIsCompact() {
-  const [compact, setCompact] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    const update = () => setCompact(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return compact;
-}
-
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
   if (!el) return false;
@@ -156,7 +145,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       children,
     } = props;
     const { t } = useI18n();
-    const compact = useIsCompact();
+    const compact = useMediaQuery('(max-width: 767px)');
 
     const containerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -372,6 +361,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         Hls,
         blockAd,
         isCurrent,
+        // 首次加载失败直接报错；播放过程中的网络抖动才尝试恢复
+        canRecover: () => phaseRef.current === 'ready',
         onManifestLoaded: () => setManifestLoaded(true),
         onRecoverableError: () => showNotice(t.playbackError),
         onFatalError: () => {
@@ -744,6 +735,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           !showChrome ? 'cursor-none' : ''
         } ${isFullscreen ? 'bg-black' : ''}`}
         onMouseMove={revealControls}
+        // 键盘用户 Tab 到控件时也显示控制栏
+        onFocusCapture={revealControls}
         onMouseLeave={() => {
           if (!videoRef.current?.paused) setControlsVisible(false);
         }}
@@ -1159,7 +1152,7 @@ function SwitchingCard({
     <div
       role='status'
       aria-live='polite'
-      className={`pointer-events-none mx-4 flex max-w-[calc(100%-32px)] flex-col rounded-[32px] bg-[rgb(46_43_37/0.92)] text-o-video-paper shadow-o-lg ${
+      className={`pointer-events-none mx-4 flex max-w-[calc(100%-32px)] animate-o-pop flex-col rounded-[32px] bg-[rgb(46_43_37/0.92)] text-o-video-paper shadow-o-lg ${
         compact ? 'w-[320px] gap-3 p-4' : 'w-[400px] gap-4 p-7'
       }`}
     >
@@ -1324,7 +1317,7 @@ function PopoverMenu({
   return (
     <div
       role='menu'
-      className={`absolute bottom-full right-0 z-30 mb-3 max-h-[min(60vh,360px)] overflow-y-auto rounded-[20px] bg-[rgb(46_43_37/0.95)] p-1.5 text-o-video-paper shadow-o-lg ${
+      className={`absolute bottom-full right-0 z-30 mb-3 origin-bottom-right animate-o-pop max-h-[min(60vh,360px)] overflow-y-auto rounded-[20px] bg-[rgb(46_43_37/0.95)] p-1.5 text-o-video-paper shadow-o-lg ${
         wide ? 'w-64' : 'w-28'
       }`}
       onPointerUp={(e) => e.stopPropagation()}

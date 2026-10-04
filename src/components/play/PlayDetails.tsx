@@ -157,7 +157,7 @@ export function MoreMenu({
       {open && (
         <div
           role='menu'
-          className={`absolute top-full z-40 mt-2 w-60 rounded-[20px] bg-o-surface p-1.5 shadow-o-lg ${
+          className={`absolute top-full z-40 mt-2 w-60 animate-o-pop rounded-[20px] bg-o-surface p-1.5 shadow-o-lg ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >

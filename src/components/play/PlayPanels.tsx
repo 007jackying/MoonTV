@@ -19,6 +19,7 @@ import {
 } from './PlayPanelParts';
 import { sourceKeyOf, VideoInfo } from './useSourceSpeedTest';
 import { useI18n } from '../LanguageProvider';
+import { staggerStyle } from '../ui/Organic';
 
 export interface PlayPanelProps {
   detail: SearchResult | null;
@@ -31,6 +32,8 @@ export interface PlayPanelProps {
   isMeasuring: (s: SearchResult) => boolean;
   /** 正在切换到的源（显示“切换中…”） */
   pendingSourceKey: string | null;
+  /** 当前源无法播放 */
+  currentFailed?: boolean;
   sourcesExpanded: boolean;
   onSourcesExpandedChange: (expanded: boolean) => void;
   onSourceSelect: (source: SearchResult) => void;
@@ -38,6 +41,15 @@ export interface PlayPanelProps {
   onAutoPick: () => void;
   onCancelAutoPick: () => void;
   onWrongMatch: () => void;
+}
+
+function FailedTag() {
+  const { t } = useI18n();
+  return (
+    <span className='o-tag o-tag-accent ml-auto flex-none font-bold'>
+      {t.cannotPlay}
+    </span>
+  );
 }
 
 function useOtherSources(props: PlayPanelProps) {
@@ -82,20 +94,22 @@ function OtherSourceRows({
   if (others.length === 0) return <SourceListStatus props={props} />;
   return (
     <>
-      {others.map((s) => {
+      {others.map((s, i) => {
         const key = sourceKeyOf(s);
         return (
-          <SourceRow
-            key={key}
-            source={s}
-            info={props.infoMap.get(key)}
-            measuring={props.isMeasuring(s)}
-            pending={props.pendingSourceKey === key}
-            currentTitle={props.detail?.title || ''}
-            disabled={!!props.pendingSourceKey}
-            onSelect={() => props.onSourceSelect(s)}
-            tone={tone}
-          />
+          <div key={key} className='animate-o-rise' style={staggerStyle(i)}>
+            <SourceRow
+              key={key}
+              source={s}
+              info={props.infoMap.get(key)}
+              measuring={props.isMeasuring(s)}
+              pending={props.pendingSourceKey === key}
+              currentTitle={props.detail?.title || ''}
+              disabled={!!props.pendingSourceKey}
+              onSelect={() => props.onSourceSelect(s)}
+              tone={tone}
+            />
+          </div>
         );
       })}
     </>
@@ -145,11 +159,15 @@ export function PlaySidePanel(props: PlayPanelProps) {
             }`}
           >
             <div className='flex min-w-0 items-center gap-2.5'>
-              <SourceDot dim={switching} />
+              <SourceDot dim={switching || !!props.currentFailed} />
               <span className='truncate font-heading text-lg leading-tight'>
                 {detail.source_name}
               </span>
-              <QualityTag info={currentInfo} />
+              {props.currentFailed ? (
+                <FailedTag />
+              ) : (
+                <QualityTag info={currentInfo} />
+              )}
             </div>
             <SourceStats
               info={currentInfo}
@@ -249,11 +267,15 @@ export function PlayMobileSourceCard(props: PlayPanelProps) {
           switching ? 'opacity-60' : ''
         }`}
       >
-        <SourceDot dim={switching} />
+        <SourceDot dim={switching || !!props.currentFailed} />
         <span className='truncate font-heading text-[17px] leading-tight'>
           {detail.source_name}
         </span>
-        <QualityTag info={currentInfo} />
+        {props.currentFailed ? (
+          <FailedTag />
+        ) : (
+          <QualityTag info={currentInfo} />
+        )}
       </div>
       <SourceStats
         info={currentInfo}

@@ -24,7 +24,22 @@ export interface AttachOptions {
   onFatalError?: (detail: string) => void;
   /** 预览缩略图用的轻量配置 */
   lightweight?: boolean;
+  /**
+   * 是否允许在致命错误后重新拉流。首次加载阶段返回 false，
+   * 让坏掉的源尽快报错（几秒内），而不是反复重试一两分钟。
+   */
+  canRecover?: () => boolean;
 }
+
+// 加载策略：失败快一点，便于及时提示换源
+const loadPolicy = (timeoutMs: number) => ({
+  default: {
+    maxTimeToFirstByteMs: timeoutMs,
+    maxLoadTimeMs: timeoutMs * 2,
+    timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
+    errorRetry: { maxNumRetry: 2, retryDelayMs: 800, maxRetryDelayMs: 3000 },
+  },
+});
 
 export interface AttachedStream {
   hls: HlsInstance | null;
@@ -91,6 +106,9 @@ export function attachStream(
       backBufferLength: opts.lightweight ? 0 : 30,
       maxBufferSize: 60 * 1000 * 1000,
       startLevel: opts.lightweight ? 0 : undefined,
+      manifestLoadPolicy: loadPolicy(10000),
+      playlistLoadPolicy: loadPolicy(10000),
+      fragLoadPolicy: loadPolicy(15000),
       loader: opts.blockAd
         ? (createAdFilterLoader(Hls) as any)
         : Hls.DefaultConfig.loader,
@@ -106,6 +124,11 @@ export function attachStream(
 
     hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
       if (!isCurrent() || !data?.fatal) return;
+      const recoverable = opts.canRecover ? opts.canRecover() : true;
+      if (!recoverable) {
+        opts.onFatalError?.(String(data.details || data.type));
+        return;
+      }
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRetries < 3) {
         networkRetries += 1;
         opts.onRecoverableError?.();

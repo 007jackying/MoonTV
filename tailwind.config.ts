@@ -12,6 +12,50 @@ const ramp = (role: string) =>
     ])
   );
 
+// 旧组件（后台、用户菜单、下载管理等）仍使用 gray / green / blue 等 Tailwind 色板。
+// 这里把它们重映射到 Organic 的暖色阶，使未重写的界面也与新设计一致：
+// green/emerald → 陶土主色，blue → 鼠尾草绿，gray → 暖灰。这些是固定色值，不随主题翻转，
+// 因为旧代码自己用 dark: 前缀处理深色模式。
+const legacyAccent = {
+  50: '#fff8f3',
+  100: '#fff2eb',
+  200: '#ffe1d0',
+  300: '#ffc6a5',
+  400: '#f6a06b',
+  500: '#c67139',
+  600: '#b2622d',
+  700: '#8c491a',
+  800: '#643312',
+  900: '#402310',
+  950: '#2a160a',
+};
+const legacySage = {
+  50: '#f6fbef',
+  100: '#f0fae1',
+  200: '#e1eecc',
+  300: '#ccdbb2',
+  400: '#aebf92',
+  500: '#7a8a5e',
+  600: '#6b7a51',
+  700: '#56633f',
+  800: '#3d472b',
+  900: '#272e1b',
+  950: '#1a1f12',
+};
+const legacyGray = {
+  50: '#fbf8f3',
+  100: '#f4ede2',
+  200: '#eae0cf',
+  300: '#dcd3c4',
+  400: '#c0b6a5',
+  500: '#a19786',
+  600: '#82796a',
+  700: '#645c50',
+  800: '#3a352e',
+  900: '#26221d',
+  950: '#1a1714',
+};
+
 const config: Config = {
   darkMode: 'class',
   content: [
@@ -50,6 +94,11 @@ const config: Config = {
           900: '#0c4a6e',
         },
         dark: '#222222',
+        green: legacyAccent,
+        emerald: legacyAccent,
+        pink: legacyAccent,
+        blue: legacySage,
+        gray: legacyGray,
         o: {
           bg: organic('bg'),
           surface: organic('surface'),
@@ -96,6 +145,22 @@ const config: Config = {
           '0%': { transform: 'translateY(-10px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
+        oPageIn: {
+          '0%': { opacity: '0', transform: 'translateY(6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        oPopIn: {
+          '0%': { opacity: '0', transform: 'translateY(4px) scale(0.97)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        oRise: {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        oSheetIn: {
+          '0%': { opacity: '0', transform: 'translateY(24px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
         slideInFromRight: {
           '0%': { transform: 'translateX(100%)', opacity: '0' },
           '100%': { transform: 'translateX(0)', opacity: '1' },
@@ -108,6 +173,10 @@ const config: Config = {
         'slide-up': 'slideUp 0.3s ease-in-out',
         'slide-down': 'slideDown 0.3s ease-in-out',
         'slide-in-from-right': 'slideInFromRight 0.3s ease-out',
+        'o-page': 'oPageIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards',
+        'o-pop': 'oPopIn 0.18s cubic-bezier(0.22, 1, 0.36, 1) backwards',
+        'o-rise': 'oRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards',
+        'o-sheet': 'oSheetIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards',
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

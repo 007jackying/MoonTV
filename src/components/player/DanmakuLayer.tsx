@@ -75,10 +75,10 @@ export default function DanmakuLayer({
     if (!visible || !active) clearScreen();
   }, [visible, active]);
 
-  // 发射循环
+  // 发射循环（没有弹幕地址时不启动 rAF，避免空转）
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !url) return;
 
     const fontSize = compact ? 16 : 24;
     const lineHeight = Math.round(fontSize * 1.35);
@@ -214,7 +214,7 @@ export default function DanmakuLayer({
       video.removeEventListener('playing', playAll);
       video.removeEventListener('seeking', onSeeking);
     };
-  }, [videoRef, visible, active, compact]);
+  }, [videoRef, url, visible, active, compact]);
 
   useEffect(() => clearScreen, []);
 

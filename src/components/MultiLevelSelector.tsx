@@ -3,6 +3,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { optionLabel } from '@/lib/i18n';
+
+import { useI18n } from './LanguageProvider';
+
 interface MultiLevelOption {
   label: string;
   value: string;
@@ -24,6 +28,7 @@ const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
   onChange,
   contentType = 'movie',
 }) => {
+  const { lang } = useI18n();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{
     x: number;
@@ -504,46 +509,48 @@ const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
   return (
     <>
       {/* 胶囊样式筛选栏 */}
-      <div className='relative inline-flex rounded-full p-0.5 sm:p-1 bg-transparent gap-1 sm:gap-2'>
-        {categories.map((category) => (
-          <div
-            key={category.key}
-            ref={(el) => {
-              categoryRefs.current[category.key] = el;
-            }}
-            className='relative'
-          >
-            <button
-              onClick={() => handleCategoryClick(category.key)}
-              className={`relative z-10 px-1.5 py-0.5 sm:px-2 sm:py-1 md:px-4 md:py-2 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap ${
-                activeCategory === category.key
-                  ? isDefaultValue(category.key)
-                    ? 'text-gray-900 dark:text-gray-100 cursor-default'
-                    : 'text-green-600 dark:text-green-400 cursor-default'
-                  : isDefaultValue(category.key)
-                  ? 'text-gray-700 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 cursor-pointer'
-                  : 'text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 cursor-pointer'
-              }`}
+      <div className='flex gap-1.5 md:flex-wrap'>
+        {categories.map((category) => {
+          const open = activeCategory === category.key;
+          const changed = !isDefaultValue(category.key);
+          return (
+            <div
+              key={category.key}
+              ref={(el) => {
+                categoryRefs.current[category.key] = el;
+              }}
+              className='relative flex-none'
             >
-              <span>{getDisplayText(category.key)}</span>
-              <svg
-                className={`inline-block w-2.5 h-2.5 sm:w-3 sm:h-3 ml-0.5 sm:ml-1 transition-transform duration-200 ${
-                  activeCategory === category.key ? 'rotate-180' : ''
+              <button
+                type='button'
+                onClick={() => handleCategoryClick(category.key)}
+                aria-expanded={open}
+                className={`o-press flex items-center gap-1 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-semibold transition-colors duration-200 md:py-[7px] md:text-sm ${
+                  changed
+                    ? 'border-o-accent-300 bg-o-accent-100 text-o-accent-800'
+                    : 'border-o-divider text-o-ink hover:bg-o-ink/[0.07]'
                 }`}
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
               >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth={2}
-                  d='M19 9l-7 7-7-7'
-                />
-              </svg>
-            </button>
-          </div>
-        ))}
+                <span>{optionLabel(lang, getDisplayText(category.key))}</span>
+                <svg
+                  className={`h-3 w-3 transition-transform duration-200 ${
+                    open ? 'rotate-180' : ''
+                  }`}
+                  fill='none'
+                  stroke='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    strokeWidth={2.75}
+                    d='M19 9l-7 7-7-7'
+                  />
+                </svg>
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* 展开的筛选选项 - 悬浮显示 */}
@@ -551,7 +558,7 @@ const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
-            className='fixed z-[9999] bg-white/95 dark:bg-gray-800/95 rounded-xl border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-sm'
+            className='fixed z-[9999] mt-2 animate-o-pop rounded-[24px] bg-o-surface text-o-ink shadow-o-lg'
             style={{
               left: `${dropdownPosition.x}px`,
               top: `${dropdownPosition.y}px`,
@@ -562,8 +569,8 @@ const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
               position: 'fixed',
             }}
           >
-            <div className='p-2 sm:p-4'>
-              <div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1 sm:gap-2'>
+            <div className='max-h-[50vh] overflow-y-auto p-2 sm:p-3'>
+              <div className='grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5'>
                 {categories
                   .find((cat) => cat.key === activeCategory)
                   ?.options.map((option) => (
@@ -572,13 +579,13 @@ const MultiLevelSelector: React.FC<MultiLevelSelectorProps> = ({
                       onClick={() =>
                         handleOptionSelect(activeCategory, option.value)
                       }
-                      className={`px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm rounded-lg transition-all duration-200 text-left ${
+                      className={`truncate rounded-full px-3 py-1.5 text-center text-[13px] font-semibold transition-colors duration-200 ${
                         isOptionSelected(activeCategory, option.value)
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-700'
-                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-700/80'
+                          ? 'bg-o-accent text-o-on-accent'
+                          : 'bg-o-bg hover:bg-o-accent-100'
                       }`}
                     >
-                      {option.label}
+                      {optionLabel(lang, option.label)}
                     </button>
                   ))}
               </div>

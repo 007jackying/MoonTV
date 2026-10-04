@@ -264,3 +264,129 @@ body {
 ::view-transition-new(root) {
   animation-name: fade-in;
 }
+
+/* ===================== Organic 动效 ===================== */
+
+/* 骨架屏：在 surface 上流动的柔和高光 */
+.o-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--o-surface));
+}
+.o-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--o-neutral-100) / 0.65) 50%,
+    transparent 100%
+  );
+  animation: o-shimmer 1.4s ease-in-out infinite;
+}
+.dark .o-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(var(--o-neutral-300) / 0.35) 50%,
+    transparent 100%
+  );
+}
+@keyframes o-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 海报：默认轻微 “washed”，悬停时恢复原色 */
+.o-washed {
+  filter: saturate(0.82) contrast(0.94) brightness(1.03);
+  transition: filter 0.35s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.group:hover .o-washed,
+.group:focus-visible .o-washed {
+  filter: none;
+}
+
+/* 按下反馈 */
+.o-press {
+  transition: transform 0.15s ease;
+}
+.o-press:active {
+  transform: scale(0.97);
+}
+
+/* 尊重系统的“减少动态效果”设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ===================== SweetAlert2 主题 ===================== */
+.swal2-popup {
+  border-radius: 32px !important;
+  background: rgb(var(--o-surface)) !important;
+  color: rgb(var(--o-ink)) !important;
+  font-family: var(--font-body), system-ui, sans-serif !important;
+  box-shadow: var(--o-shadow-lg) !important;
+}
+.swal2-popup.swal2-toast {
+  border-radius: 999px !important;
+}
+.swal2-title {
+  font-family: var(--font-heading), system-ui, sans-serif !important;
+  font-weight: 400 !important;
+  color: rgb(var(--o-ink)) !important;
+}
+.swal2-html-container {
+  color: rgb(var(--o-neutral-800)) !important;
+}
+.swal2-styled.swal2-confirm {
+  border-radius: 999px !important;
+  background: rgb(var(--o-accent)) !important;
+  color: rgb(var(--o-on-accent)) !important;
+  font-family: var(--font-heading), system-ui, sans-serif !important;
+}
+.swal2-styled.swal2-cancel,
+.swal2-styled.swal2-deny {
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: rgb(var(--o-ink)) !important;
+  border: 1px solid var(--o-divider) !important;
+  font-family: var(--font-heading), system-ui, sans-serif !important;
+}
+.swal2-styled:focus {
+  box-shadow: 0 0 0 2px rgb(var(--o-accent) / 0.5) !important;
+}
+.swal2-timer-progress-bar {
+  background: rgb(var(--o-accent)) !important;
+}
+.swal2-container.swal2-backdrop-show:not(.swal2-top-end):not(.swal2-top):not(.swal2-bottom-end) {
+  background: rgb(32 30 29 / 0.5) !important;
+}
+.swal2-popup.swal2-toast {
+  padding: 10px 20px !important;
+  box-shadow: var(--o-shadow-lg) !important;
+}
+.swal2-popup.swal2-toast .swal2-title {
+  font-size: 15px !important;
+  margin: 0 !important;
+}
+
+/* 顶部导航进度条 */
+@keyframes o-nav-progress {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 80%;
+  }
+}

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { withAdultFilterParam } from '@/lib/adult-filter.client';
+
 interface SearchSuggestionsProps {
   query: string;
   isVisible: boolean;
@@ -36,7 +38,9 @@ export default function SearchSuggestions({
   
     try {
       const response = await fetch(
-        `/api/search/suggestions?q=${encodeURIComponent(searchQuery)}`,
+        withAdultFilterParam(
+          `/api/search/suggestions?q=${encodeURIComponent(searchQuery)}`
+        ),
         { signal: controller.signal }
       );
   

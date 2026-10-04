@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import { getAvailableApiSitesForRequest, getCacheTime } from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
 
 export const runtime = 'edge';
@@ -19,7 +19,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const apiSites = await getAvailableApiSites();
+    // filterAdult=1 时 AV 源视为无效来源
+    const apiSites = await getAvailableApiSitesForRequest(searchParams);
     const apiSite = apiSites.find((site) => site.key === sourceCode);
 
     if (!apiSite) {

@@ -12,6 +12,9 @@
 /.next/
 /out/
 
+# e2e harness build dir (tests/e2e/serve.mjs, see NEXT_DIST_DIR in next.config.js)
+/.next-e2e/
+
 # production
 /build
 

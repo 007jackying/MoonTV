@@ -11,6 +11,13 @@ const nextConfig = {
   reactStrictMode: false,
   swcMinify: true,
 
+  // Build output directory. The e2e harness overrides this (see
+  // tests/e2e/serve.mjs) so a harness run cannot collide with a `next dev` you
+  // already have going: two dev servers sharing one .next overwrite each other's
+  // on-demand-compile manifests, which surfaces as ENOENT / 500s on random
+  // routes rather than anything to do with the code under test.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
+
   // Uncoment to add domain whitelist
   images: {
     unoptimized: true,

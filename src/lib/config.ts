@@ -3,6 +3,7 @@
 import { getStorage } from '@/lib/db';
 
 import { AdminConfig } from './admin.types';
+import { filterAdultSources, parseAdultFilterParam } from './adult-filter';
 import runtimeConfig from './runtime';
 
 export interface ApiSite {
@@ -10,6 +11,8 @@ export interface ApiSite {
   api: string;
   name: string;
   detail?: string;
+  /** config.json 中标记的成人源，用于 AV 源过滤 */
+  is_adult?: boolean;
 }
 
 interface ConfigFileStruct {
@@ -63,10 +66,11 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
   apiSiteEntries.forEach(([key, site]) => {
     const existingSource = sourceConfigMap.get(key);
     if (existingSource) {
-      // 如果已存在，只覆盖 name、api、detail 和 from
+      // 如果已存在，只覆盖 name、api、detail、is_adult 和 from
       existingSource.name = site.name;
       existingSource.api = site.api;
       existingSource.detail = site.detail;
+      existingSource.is_adult = site.is_adult;
       existingSource.from = 'config';
     } else {
       // 如果不存在，创建新条目
@@ -75,6 +79,7 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
         name: site.name,
         api: site.api,
         detail: site.detail,
+        is_adult: site.is_adult,
         from: 'config',
         disabled: false,
       });
@@ -206,6 +211,7 @@ async function initConfig() {
             name: site.name,
             api: site.api,
             detail: site.detail,
+            is_adult: site.is_adult,
             from: 'config',
             disabled: false,
           });
@@ -352,6 +358,7 @@ async function initConfig() {
               name: site.name,
               api: site.api,
               detail: site.detail,
+              is_adult: site.is_adult,
               from: 'config',
               disabled: false,
             })
@@ -412,6 +419,7 @@ async function initConfig() {
         name: site.name,
         api: site.api,
         detail: site.detail,
+        is_adult: site.is_adult,
         from: 'config',
         disabled: false,
       })),
@@ -521,10 +529,11 @@ export async function getConfig(): Promise<AdminConfig> {
     apiSiteEntries.forEach(([key, site]) => {
       const existingSource = sourceConfigMap.get(key);
       if (existingSource) {
-        // 如果已存在，只覆盖 name、api、detail 和 from
+        // 如果已存在，只覆盖 name、api、detail、is_adult 和 from
         existingSource.name = site.name;
         existingSource.api = site.api;
         existingSource.detail = site.detail;
+        existingSource.is_adult = site.is_adult;
         existingSource.from = 'config';
       } else {
         // 如果不存在，创建新条目
@@ -533,6 +542,7 @@ export async function getConfig(): Promise<AdminConfig> {
           name: site.name,
           api: site.api,
           detail: site.detail,
+          is_adult: site.is_adult,
           from: 'config',
           disabled: false,
         });
@@ -796,6 +806,7 @@ export async function resetConfig() {
       name: site.name,
       api: site.api,
       detail: site.detail,
+      is_adult: site.is_adult,
       from: 'config',
       disabled: false,
     })),
@@ -832,50 +843,62 @@ export async function getCacheTime(): Promise<number> {
   return config.SiteConfig.SiteInterfaceCacheTime || 7200;
 }
 
+/**
+ * 可用采集源（按 disabled 标记 + 用户分组的 sourceKeys 过滤）。
+ * 不感知用户偏好；搜索/加载路由请用下面的 getAvailableApiSitesForRequest()。
+ */
 export async function getAvailableApiSites(
   username?: string
 ): Promise<ApiSite[]> {
   const config = await getConfig();
   const all = config.SourceConfig.filter((s) => !s.disabled);
+  const toApiSite = (s: (typeof all)[number]): ApiSite => ({
+    key: s.key,
+    name: s.name,
+    api: s.api,
+    detail: s.detail,
+    is_adult: s.is_adult,
+  });
   if (
     !username ||
     !config.UserConfig?.Groups ||
     config.UserConfig.Groups.length === 0
   ) {
-    return all.map((s) => ({
-      key: s.key,
-      name: s.name,
-      api: s.api,
-      detail: s.detail,
-    }));
+    return all.map(toApiSite);
   }
   const user = config.UserConfig.Users.find((u) => u.username === username);
   const groupName = user?.group;
   if (!groupName) {
-    return all.map((s) => ({
-      key: s.key,
-      name: s.name,
-      api: s.api,
-      detail: s.detail,
-    }));
+    return all.map(toApiSite);
   }
   const group = config.UserConfig.Groups.find((g) => g.name === groupName);
   if (!group) {
-    return all.map((s) => ({
-      key: s.key,
-      name: s.name,
-      api: s.api,
-      detail: s.detail,
-    }));
+    return all.map(toApiSite);
   }
   const allowed = new Set(group.sourceKeys);
   const filtered = all.filter((s) => allowed.has(s.key));
-  return filtered.map((s) => ({
-    key: s.key,
-    name: s.name,
-    api: s.api,
-    detail: s.detail,
-  }));
+  return filtered.map(toApiSite);
+}
+
+/**
+ * 搜索 / 加载类接口取采集源的**统一入口**：先按用户分组与 disabled 过滤，
+ * 再按请求上的 `filterAdult` 参数决定是否剔除 AV 源。
+ *
+ * 参数缺省时不过滤，因此不带该参数的外部调用方（TVBox、OrionTV、定时刷新）
+ * 行为与之前完全一致；Web 端由 src/lib/adult-filter.client.ts 负责追加参数。
+ *
+ * 已接入的路由：/api/search、/api/search/one、/api/search/ws、
+ * /api/search/suggestions、/api/detail。
+ */
+export async function getAvailableApiSitesForRequest(
+  searchParams: Pick<URLSearchParams, 'get'>,
+  username?: string
+): Promise<ApiSite[]> {
+  const sites = await getAvailableApiSites(username);
+  if (!parseAdultFilterParam(searchParams)) {
+    return sites;
+  }
+  return filterAdultSources(sites);
 }
 
 export async function setCachedConfig(config: AdminConfig) {

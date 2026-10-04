@@ -21,6 +21,7 @@ import {
   useState,
 } from 'react';
 
+import { withAdultFilterParam } from '@/lib/adult-filter.client';
 import {
   AnimeOption,
   extractEpisodeNumber,
@@ -374,9 +375,11 @@ function PlayPageClient() {
       try {
         const timeoutSeconds = getRequestTimeout();
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(
-            query.trim()
-          )}&timeout=${timeoutSeconds}&stream=1`
+          withAdultFilterParam(
+            `/api/search?q=${encodeURIComponent(
+              query.trim()
+            )}&timeout=${timeoutSeconds}&stream=1`
+          )
         );
         if (!response.ok) throw new Error('搜索失败');
 

@@ -1,6 +1,17 @@
 import type { Config } from 'tailwindcss';
 import defaultTheme from 'tailwindcss/defaultTheme';
 
+// Organic 设计系统：颜色以 RGB 通道变量定义在 globals.css（浅色 :root / 深色 .dark），
+// 这里映射为 o-* 命名空间，支持 bg-o-accent/20 这类透明度写法
+const organic = (name: string) => `rgb(var(--o-${name}) / <alpha-value>)`;
+const ramp = (role: string) =>
+  Object.fromEntries(
+    [100, 200, 300, 400, 500, 600, 700, 800, 900].map((step) => [
+      step,
+      organic(`${role}-${step}`),
+    ])
+  );
+
 const config: Config = {
   darkMode: 'class',
   content: [
@@ -17,6 +28,13 @@ const config: Config = {
       },
       fontFamily: {
         primary: ['Inter', ...defaultTheme.fontFamily.sans],
+        heading: ['var(--font-heading)', ...defaultTheme.fontFamily.sans],
+        body: ['var(--font-body)', ...defaultTheme.fontFamily.sans],
+      },
+      boxShadow: {
+        'o-sm': 'var(--o-shadow-sm)',
+        'o-md': 'var(--o-shadow-md)',
+        'o-lg': 'var(--o-shadow-lg)',
       },
       colors: {
         primary: {
@@ -32,6 +50,19 @@ const config: Config = {
           900: '#0c4a6e',
         },
         dark: '#222222',
+        o: {
+          bg: organic('bg'),
+          surface: organic('surface'),
+          ink: organic('ink'),
+          'on-accent': organic('on-accent'),
+          divider: 'var(--o-divider)',
+          // 视频画面上的浅色/深色，不随主题变化
+          'video-ink': organic('video-ink'),
+          'video-paper': organic('video-paper'),
+          accent: { DEFAULT: organic('accent'), ...ramp('accent') },
+          sage: { DEFAULT: organic('sage'), ...ramp('sage') },
+          neutral: ramp('neutral'),
+        },
       },
       keyframes: {
         flicker: {

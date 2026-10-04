@@ -1,10 +1,12 @@
 'use client';
 
-import { Download } from 'lucide-react';
+import { Download, Play } from 'lucide-react';
 import Link from 'next/link';
 import { memo, useEffect, useState } from 'react';
 
 import { BackButton } from './BackButton';
+import { useI18n } from './LanguageProvider';
+import { LanguageToggle } from './LanguageToggle';
 import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
@@ -15,7 +17,8 @@ interface MobileHeaderProps {
 
 const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
   const { siteName } = useSite();
-  
+  const { t } = useI18n();
+
   // 下载任务数量统计
   const [downloadTaskCount, setDownloadTaskCount] = useState(0);
 
@@ -29,10 +32,10 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
             const tasks = JSON.parse(saved);
             // 统计未完成的任务数量（下载中、暂停、等待、错误）
             const activeCount = tasks.filter(
-              (t: { status: string }) => 
-                t.status === 'downloading' || 
-                t.status === 'paused' || 
-                t.status === 'waiting' || 
+              (t: { status: string }) =>
+                t.status === 'downloading' ||
+                t.status === 'paused' ||
+                t.status === 'waiting' ||
                 t.status === 'error'
             ).length;
             setDownloadTaskCount(activeCount);
@@ -56,56 +59,62 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', handleStorageChange);
       // 自定义事件：当任务列表更新时
-      window.addEventListener('downloadTasksUpdated', handleStorageChange as EventListener);
+      window.addEventListener(
+        'downloadTasksUpdated',
+        handleStorageChange as EventListener
+      );
     }
 
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('storage', handleStorageChange);
-        window.removeEventListener('downloadTasksUpdated', handleStorageChange as EventListener);
+        window.removeEventListener(
+          'downloadTasksUpdated',
+          handleStorageChange as EventListener
+        );
       }
     };
   }, []);
 
   return (
-    <>
-    <header className='md:hidden relative w-full bg-white/70 backdrop-blur-xl border-b border-gray-200/50 shadow-sm dark:bg-gray-900/70 dark:border-gray-700/50'>
-      <div className='h-12 flex items-center justify-between px-4'>
-        {/* 左侧：Logo 和返回按钮 */}
-        <div className='flex items-center gap-3'>
-          {showBackButton && <BackButton />}
-          <Link
-            href='/'
-            className='text-xl font-bold text-green-600 tracking-tight hover:opacity-80 transition-opacity'
-          >
-            {siteName}
-          </Link>
-        </div>
+    <header className='relative w-full bg-o-bg md:hidden'>
+      <div className='flex h-[60px] items-center gap-2 px-4'>
+        {showBackButton && <BackButton />}
+        <Link
+          href='/'
+          className='mr-auto flex min-w-0 items-center gap-2 transition-opacity hover:opacity-80'
+        >
+          <span className='flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full bg-o-accent text-o-on-accent'>
+            <Play
+              className='h-[13px] w-[13px] fill-current'
+              strokeWidth={2.75}
+            />
+          </span>
+          <span className='truncate font-heading text-[21px]'>{siteName}</span>
+        </Link>
 
-        {/* 右侧按钮 */}
-        <div className='flex items-center gap-2'>
-          <button
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(new Event('showDownloadManager'));
-              }
-            }}
-            className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors relative'
-            title='下载管理器'
-          >
-            <Download className='h-5 w-5' />
-            {downloadTaskCount > 0 && (
-              <span className='absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center'>
-                {downloadTaskCount > 9 ? '9+' : downloadTaskCount}
-              </span>
-            )}
-          </button>
-          <ThemeToggle />
-          <UserMenu />
-        </div>
+        <LanguageToggle size='sm' />
+        <button
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new Event('showDownloadManager'));
+            }
+          }}
+          className='relative flex h-9 w-9 flex-none items-center justify-center rounded-full transition-colors hover:bg-o-ink/[0.07]'
+          title={t.downloadManager}
+          aria-label={t.downloadManager}
+        >
+          <Download className='h-[18px] w-[18px]' strokeWidth={2.75} />
+          {downloadTaskCount > 0 && (
+            <span className='absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-o-accent px-1 text-[10px] font-bold text-o-on-accent'>
+              {downloadTaskCount > 9 ? '9+' : downloadTaskCount}
+            </span>
+          )}
+        </button>
+        <ThemeToggle className='h-9 w-9 border-0' />
+        <UserMenu />
       </div>
     </header>
-    </>
   );
 };
 

@@ -32,12 +32,6 @@ importers:
       '@upstash/redis':
         specifier: ^1.25.0
         version: 1.35.3
-      artplayer:
-        specifier: ^5.2.5
-        version: 5.3.0
-      artplayer-plugin-danmuku:
-        specifier: ^5.2.0
-        version: 5.2.0
       clsx:
         specifier: ^2.0.0
         version: 2.1.1
@@ -2372,12 +2366,6 @@ packages:
     resolution: {integrity: sha512-3CYzex9M9FGQjCGMGyi6/31c8GJbgb0qGyrx5HWxPd0aCwh4cB2YjMb2Xf9UuoogrMrlO9cTqnB5rI5GHZTcUA==}
     engines: {node: '>=0.10.0'}
 
-  artplayer-plugin-danmuku@5.2.0:
-    resolution: {integrity: sha512-iHHSGEc0J+gl7imX4nmLqqC7LXmv8xeGf2lUevhhyUCoiCRZplecpKQICHjErVb1Yqyp1xCy6Sp8eYN+EpFWFw==}
-
-  artplayer@5.3.0:
-    resolution: {integrity: sha512-yExO39MpEg4P+bxgChxx1eJfiUPE4q1QQRLCmqGhlsj+ANuaoEkR8hF93LdI5ZyrAcIbJkuEndxEiUoKobifDw==}
-
   as-table@1.0.55:
     resolution: {integrity: sha512-xvsWESUJn0JN421Xb9MQw6AsMHRCUknCe0Wjlxvjud80mU4E6hQf1A6NzQKcYNmYw62MfzEtXc+badstZP3JpQ==}
 
@@ -4463,9 +4451,6 @@ packages:
   onetime@5.1.2:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
-
-  option-validator@2.0.6:
-    resolution: {integrity: sha512-tmZDan2LRIRQyhUGvkff68/O0R8UmF+Btmiiz0SmSw2ng3CfPZB9wJlIjHpe/MKUZqyIZkVIXCrwr1tIN+0Dzg==}
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -8235,12 +8220,6 @@ snapshots:
 
   arrify@1.0.1: {}
 
-  artplayer-plugin-danmuku@5.2.0: {}
-
-  artplayer@5.3.0:
-    dependencies:
-      option-validator: 2.0.6
-
   as-table@1.0.55:
     dependencies:
       printable-characters: 1.0.42
@@ -10767,10 +10746,6 @@ snapshots:
   onetime@5.1.2:
     dependencies:
       mimic-fn: 2.1.0
-
-  option-validator@2.0.6:
-    dependencies:
-      kind-of: 6.0.3
 
   optionator@0.9.4:
     dependencies:

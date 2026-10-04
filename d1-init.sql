@@ -1,5 +1,5 @@
 -- D1 数据库初始化脚本
--- 为 MoonTV 应用创建所有必要的表结构
+-- 为 DreamTV 应用创建所有必要的表结构
 
 -- 创建用户表
 CREATE TABLE IF NOT EXISTS users (

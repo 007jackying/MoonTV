@@ -11,13 +11,16 @@ const publicDir = path.join(projectRoot, 'public');
 const manifestPath = path.join(publicDir, 'manifest.json');
 
 // 从环境变量获取站点名称
-const siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV';
+const siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'DreamTV';
+
+// 应用描述，需与 src/app/layout.tsx 中的 SITE_DESCRIPTION 保持一致
+const siteDescription = 'DreamTV · 开箱即用的跨平台影视聚合播放器';
 
 // manifest.json 模板
 const manifestTemplate = {
   name: siteName,
   short_name: siteName,
-  description: '影视聚合',
+  description: siteDescription,
   start_url: '/',
   scope: '/',
   display: 'standalone',

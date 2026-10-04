@@ -1,12 +1,14 @@
-# MoonTV(Branch)
+# DreamTV
 
-原项目地址https://github.com/MoonTechLab/LunaTV
+> 本项目原名 **MoonTV**，自 v3.9.0 起更名为 **DreamTV**。应用内所有默认站点名称、页面标题、PWA 名称与备份文件名均已同步更新。GitHub 仓库名与 Docker 官方镜像名暂时保持原样，以免破坏现有部署与自动同步；如需自定义站点名称，请设置环境变量 `NEXT_PUBLIC_SITE_NAME`。
+
+上游项目：[Stardm0/MoonTV](https://github.com/Stardm0/MoonTV)（其前身项目为 [MoonTechLab/LunaTV](https://github.com/MoonTechLab/LunaTV)）
 
 <div align="center">
-  <img src="public/logo.png" alt="LibreTV Logo" width="120">
+  <img src="public/logo.png" alt="DreamTV Logo" width="120">
 </div>
 
-> 🎬 **MoonTV** 是一个开箱即用的、跨平台的影视聚合播放器。它基于 **Next.js 14** + **Tailwind&nbsp;CSS** + **TypeScript** 构建，支持多资源搜索、在线播放、收藏同步、播放记录、本地/云端存储，让你可以随时随地畅享海量免费影视内容。
+> 🎬 **DreamTV** 是一个开箱即用的、跨平台的影视聚合播放器。它基于 **Next.js 14** + **Tailwind&nbsp;CSS** + **TypeScript** 构建，支持多资源搜索、在线播放、收藏同步、播放记录、本地/云端存储，让你可以随时随地畅享海量免费影视内容。
 
 <div align="center">
 
@@ -45,7 +47,7 @@
 
 ## 🗺 目录
 
-- [MoonTV(Branch)](#moontvbranch)
+- [DreamTV](#dreamtv)
   - [✨ 功能特性](#-功能特性)
     - [注意：部署后项目为空壳项目，无内置播放源，需要自行收集，需要弹幕请自行部署后端](#注意部署后项目为空壳项目无内置播放源需要自行收集需要弹幕请自行部署后端)
   - [🗺 目录](#-目录)
@@ -216,6 +218,14 @@ pnpm build        # 生产构建
 
 ### Docker 部署
 
+> 下列示例默认拉取上游发布的镜像 `ghcr.io/stardm0/moontv:latest`（镜像名保持原样，未随品牌更名而改动）。
+> 若要运行本仓库的代码，请先自行构建镜像：
+>
+> ```bash
+> docker build -t dreamtv:latest .
+> docker run -d --name dreamtv -p 3000:3000 --env PASSWORD=your_password dreamtv:latest
+> ```
+
 #### 直接运行（最简单，localstorage）
 
 ```bash
@@ -225,7 +235,7 @@ docker pull ghcr.io/stardm0/moontv:latest
 
 # 运行容器
 # -d: 后台运行  -p: 映射端口 3000 -> 3000
-docker run -d --name moontv -p 3000:3000 --env PASSWORD=your_password ghcr.io/stardm0/moontv:latest
+docker run -d --name dreamtv -p 3000:3000 --env PASSWORD=your_password ghcr.io/stardm0/moontv:latest
 ```
 
 #### Docker Compose
@@ -234,9 +244,9 @@ docker run -d --name moontv -p 3000:3000 --env PASSWORD=your_password ghcr.io/st
 
 ```yaml
 services:
-  startv-core:
+  dreamtv-core:
     image: ghcr.io/stardm0/moontv:latest
-    container_name: startv-core
+    container_name: dreamtv-core
     restart: on-failure
     ports:
       - '3000:3000'
@@ -248,9 +258,9 @@ services:
 
 ```yml
 services:
-  moontv-core:
+  dreamtv-core:
     image: ghcr.io/stardm0/moontv:latest
-    container_name: moontv-core
+    container_name: dreamtv-core
     restart: on-failure
     ports:
       - '3000:3000'
@@ -258,21 +268,21 @@ services:
       - USERNAME=admin
       - PASSWORD=admin_password
       - NEXT_PUBLIC_STORAGE_TYPE=kvrocks
-      - KVROCKS_URL=redis://moontv-kvrocks:6666
+      - KVROCKS_URL=redis://dreamtv-kvrocks:6666
     networks:
-      - moontv-network
+      - dreamtv-network
     depends_on:
-      - moontv-kvrocks
-  moontv-kvrocks:
+      - dreamtv-kvrocks
+  dreamtv-kvrocks:
     image: apache/kvrocks
-    container_name: moontv-kvrocks
+    container_name: dreamtv-kvrocks
     restart: unless-stopped
     volumes:
       - kvrocks-data:/var/lib/kvrocks
     networks:
-      - moontv-network
+      - dreamtv-network
 networks:
-  moontv-network:
+  dreamtv-network:
     driver: bridge
 volumes:
   kvrocks-data:
@@ -282,9 +292,9 @@ volumes:
 
 ```yml
 services:
-  moontv-core:
+  dreamtv-core:
     image: ghcr.io/stardm0/moontv:latest
-    container_name: moontv-core
+    container_name: dreamtv-core
     restart: on-failure
     ports:
       - '3000:3000'
@@ -292,22 +302,22 @@ services:
       - USERNAME=admin
       - PASSWORD=admin_password
       - NEXT_PUBLIC_STORAGE_TYPE=redis
-      - REDIS_URL=redis://moontv-redis:6379
+      - REDIS_URL=redis://dreamtv-redis:6379
     networks:
-      - moontv-network
+      - dreamtv-network
     depends_on:
-      - moontv-redis
-  moontv-redis:
+      - dreamtv-redis
+  dreamtv-redis:
     image: redis:alpine
-    container_name: moontv-redis
+    container_name: dreamtv-redis
     restart: unless-stopped
     networks:
-      - moontv-network
+      - dreamtv-network
     # 请开启持久化，否则升级/重启后数据丢失
     volumes:
       - ./data:/data
 networks:
-  moontv-network:
+  dreamtv-network:
     driver: bridge
 ```
 
@@ -315,9 +325,9 @@ networks:
 
 ```yaml
 services:
-  startv-core:
+  dreamtv-core:
     image: ghcr.io/stardm0/moontv:latest
-    container_name: startv-core
+    container_name: dreamtv-core
     restart: on-failure
     ports:
       - '3000:3000'
@@ -335,7 +345,7 @@ services:
 | ----------------------------------- | -------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | USERNAME                            | 非 localstorage 部署时的管理员账号           | 任意字符串                       | （空）                                                                                                                     |
 | PASSWORD                            | 非 localstorage 部署时为管理员密码           | 任意字符串                       | （空）                                                                                                                     |
-| NEXT_PUBLIC_SITE_NAME               | 站点名称                                     | 任意字符串                       | MoonTV                                                                                                                     |
+| NEXT_PUBLIC_SITE_NAME               | 站点名称                                     | 任意字符串                       | DreamTV                                                                                                                    |
 | ANNOUNCEMENT                        | 站点公告                                     | 任意字符串                       | 本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。 |
 | NEXT_PUBLIC_STORAGE_TYPE            | 播放记录/收藏的存储方式                      | localstorage、redis、d1、upstash | localstorage                                                                                                               |
 | REDIS_URL                           | redis 连接 url                               | 连接 url                         | 空                                                                                                                         |
@@ -348,7 +358,7 @@ services:
 | NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE | 豆瓣图片代理类型                             | 见下方                           | direct                                                                                                                     |
 | NEXT_PUBLIC_DOUBAN_IMAGE_PROXY      | 自定义豆瓣图片代理 URL                       | url prefix                       | (空)                                                                                                                       |
 | NEXT_PUBLIC_DISABLE_YELLOW_FILTER   | 关闭色情内容过滤                             | true/false                       | false                                                                                                                      |
-| NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址                             | 接口地址                       | (空)                                                                                                                      |
+| NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址                                 | 接口地址                         | (空)                                                                                                                       |
 
 NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 
@@ -412,7 +422,7 @@ custom_category 支持的自定义分类已知如下：
 
 也可输入如 "哈利波特" 效果等同于豆瓣搜索
 
-MoonTV 支持标准的苹果 CMS V10 API 格式。
+DreamTV 支持标准的苹果 CMS V10 API 格式。
 
 修改后 **无需重新构建**，服务会在启动时读取一次。
 
@@ -474,10 +484,12 @@ MoonTV 支持标准的苹果 CMS V10 API 格式。
 
 ## License
 
-[MIT](LICENSE) © 2025 MoonTV & Contributors
+[MIT](LICENSE) © 2025 DreamTV & Contributors
 
 ## 致谢
 
+- [Stardm0/MoonTV](https://github.com/Stardm0/MoonTV) — 本项目（DreamTV）的上游项目，提供本仓库的大部分代码基础。
+- [MoonTechLab/LunaTV](https://github.com/MoonTechLab/LunaTV) — 更早的前身项目。
 - [ts-nextjs-tailwind-starter](https://github.com/theodorusclarence/ts-nextjs-tailwind-starter) — 项目最初基于该脚手架。
 - [LibreTV](https://github.com/LibreSpark/LibreTV) — 由此启发，站在巨人的肩膀上。
 - [ArtPlayer](https://github.com/zhw2590582/ArtPlayer) — 早期版本使用的网页视频播放器。
@@ -490,4 +502,4 @@ MoonTV 支持标准的苹果 CMS V10 API 格式。
 
 ## ⭐ Star 趋势
 
-[![Stargazers over time](https://starchart.cc/stardm0/MoonTV.svg?variant=adaptive)](https://starchart.cc/stardm0/MoonTV)
+[![Stargazers over time](https://starchart.cc/007jackying/MoonTV.svg?variant=adaptive)](https://starchart.cc/007jackying/MoonTV)

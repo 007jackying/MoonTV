@@ -23,6 +23,10 @@ import UserOnlineUpdate from '../components/UserOnlineUpdate';
 
 export const runtime = 'edge';
 
+// 应用默认名称与描述，未配置 NEXT_PUBLIC_SITE_NAME 时生效。
+// SITE_DESCRIPTION 需与 scripts/generate-manifest.js 中的 description 保持一致。
+const SITE_DESCRIPTION = 'DreamTV · 开箱即用的跨平台影视聚合播放器';
+
 // Organic 设计系统字体：Caprasimo 用于标题与按钮，Figtree 用于正文
 const caprasimo = Caprasimo({
   weight: '400',
@@ -37,7 +41,7 @@ const figtree = Figtree({
 
 // 动态生成 metadata，支持配置更新后的标题变化
 export async function generateMetadata(): Promise<Metadata> {
-  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV';
+  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'DreamTV';
   if (process.env.NEXT_PUBLIC_STORAGE_TYPE !== 'localstorage') {
     const config = await getConfig();
     siteName = config.SiteConfig.SiteName;
@@ -45,7 +49,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: siteName,
-    description: '影视聚合',
+    description: SITE_DESCRIPTION,
     manifest: '/manifest.json',
   };
 }
@@ -61,7 +65,7 @@ export default async function RootLayout({
 }) {
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
 
-  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'MoonTV';
+  let siteName = process.env.NEXT_PUBLIC_SITE_NAME || 'DreamTV';
   let announcement =
     process.env.ANNOUNCEMENT ||
     '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';

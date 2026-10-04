@@ -6,7 +6,12 @@ import { AlertCircle, CheckCircle, Play } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
-import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
+import {
+  checkForUpdates,
+  CURRENT_VERSION,
+  REPO_URL,
+  UpdateStatus,
+} from '@/lib/version';
 
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -33,20 +38,19 @@ function VersionDisplay() {
 
   return (
     <button
-      onClick={() =>
-        window.open('https://github.com/Stardm0/MoonTV', '_blank')
-      }
+      onClick={() => window.open(REPO_URL, '_blank')}
       className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-colors cursor-pointer'
     >
       <span className='font-mono'>v{CURRENT_VERSION}</span>
       {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
         <div
-          className={`flex items-center gap-1.5 ${updateStatus === UpdateStatus.HAS_UPDATE
+          className={`flex items-center gap-1.5 ${
+            updateStatus === UpdateStatus.HAS_UPDATE
               ? 'text-yellow-600 dark:text-yellow-400'
               : updateStatus === UpdateStatus.NO_UPDATE
-                ? 'text-green-600 dark:text-green-400'
-                : ''
-            }`}
+              ? 'text-green-600 dark:text-green-400'
+              : ''
+          }`}
         >
           {updateStatus === UpdateStatus.HAS_UPDATE && (
             <>
@@ -154,12 +158,21 @@ function LoginPageClient() {
         <ThemeToggle />
       </div>
       {/* 柔和的圆形装饰 */}
-      <div aria-hidden='true' className='pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-o-accent-200/70' />
-      <div aria-hidden='true' className='pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-o-sage-200/70' />
+      <div
+        aria-hidden='true'
+        className='pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-o-accent-200/70'
+      />
+      <div
+        aria-hidden='true'
+        className='pointer-events-none absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-o-sage-200/70'
+      />
       <div className='relative z-10 w-full max-w-md animate-o-rise rounded-[32px] bg-o-surface p-8 shadow-o-lg md:p-10'>
         <div className='mb-8 flex items-center justify-center gap-2.5'>
           <span className='flex h-10 w-10 items-center justify-center rounded-full bg-o-accent text-o-on-accent'>
-            <Play className='h-[17px] w-[17px] fill-current' strokeWidth={2.75} />
+            <Play
+              className='h-[17px] w-[17px] fill-current'
+              strokeWidth={2.75}
+            />
           </span>
           <h1 className='m-0 font-heading text-3xl tracking-[-0.015em]'>
             {siteName}
@@ -199,7 +212,9 @@ function LoginPageClient() {
           </div>
 
           {error && (
-            <p className='m-0 rounded-[16px] bg-o-accent-100 px-4 py-2.5 text-sm font-semibold text-o-accent-800'>{error}</p>
+            <p className='m-0 rounded-[16px] bg-o-accent-100 px-4 py-2.5 text-sm font-semibold text-o-accent-800'>
+              {error}
+            </p>
           )}
 
           {/* 登录 / 注册按钮 */}

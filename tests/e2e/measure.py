@@ -80,6 +80,8 @@ def login(page, base):
 def run(pw, base, scenario, timeout_ms):
     browser = pw.chromium.launch(
         headless=True,
+        # See tests/e2e/README.md: optional preinstalled Chromium.
+        executable_path=os.environ.get("E2E_CHROMIUM") or None,
         args=["--autoplay-policy=no-user-gesture-required", "--mute-audio"],
     )
     ctx = browser.new_context(viewport={"width": 1440, "height": 900})

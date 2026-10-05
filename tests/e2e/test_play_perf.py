@@ -70,6 +70,8 @@ def browser():
     with sync_playwright() as p:
         b = p.chromium.launch(
             headless=True,
+            # See tests/e2e/README.md: optional preinstalled Chromium.
+            executable_path=os.environ.get("E2E_CHROMIUM") or None,
             args=["--autoplay-policy=no-user-gesture-required", "--mute-audio"],
         )
         # Warm-up: the first navigation to /play in a fresh browser pays for

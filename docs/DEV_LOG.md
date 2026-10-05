@@ -6,6 +6,47 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-05 — Husky hooks made executable
+
+`.husky/pre-commit`, `.husky/commit-msg` and `.husky/post-merge` were committed
+as mode `100644`. Git only runs executable hooks, so on every clone it printed
+"hook was ignored because it's not set as executable" and skipped lint-staged
+and commitlint entirely.
+
+_Decision:_ set them to `100755` in the index (`git update-index --chmod=+x`)
+so the bit travels with the repository, rather than adding a `chmod` step to
+`prepare` that would only fix the machine that ran it.
+
+A fresh clone now gets the hooks as `-rwxr-xr-x`. Checked on a branch cut
+from `main`:
+
+- a commit message without a conventional type is rejected by commitlint
+  (`type-empty`);
+- a staged `.ts` file with a `console.log` is rejected by lint-staged
+  (`eslint --max-warnings=0`, `no-console`);
+- a conventional commit with clean files goes through.
+
+Worth knowing: `post-merge` runs `pnpm install` after every `git pull` or
+merge. That was always the intent of the hook; it simply never ran before.
+
+Found in review (#12): `public/sw.js` and `public/workbox-*.js` are tracked
+next-pwa build output that every `next build` rewrites. With the hooks live,
+the first `git commit -a` after a local build failed in pre-commit on the
+minified worker (`importScripts` / `define` are not defined, `no-undef`).
+_Decision:_ move the lint-staged config from `package.json` to
+`lint-staged.config.js` and filter those two paths out of eslint and prettier.
+`.eslintignore` cannot do it: ESLint 8 reports an explicitly passed ignored
+file as a warning, and `--max-warnings=0` fails on that. The config file is
+deliberately not a dotfile (`.lintstagedrc.js`): ESLint ignores dotfiles by
+default, so editing it would trip the same warning.
+
+Also worth knowing: commitlint's `subject-case` rejects a capitalised subject
+(`feat: Organic redesign …`). Of the last 40 non-merge commits on `main`, 6
+would now be rejected (2 `subject-case`, 1 unknown type `remove`, 3 with no
+type). Commits made in the GitHub web UI do not run hooks.
+
+---
+
 ## 2026-10-05 — #11 follow-up: label sources pinned by the config file
 
 Re-review of #11 with a feature e2e against a production build: localstorage
@@ -193,9 +234,9 @@ Test-suite decisions:
 
 ### Open / not done
 
-- `.husky/*` hooks are committed without the executable bit, so git skips them
-  on a fresh clone. Pre-existing; lint and prettier were run by hand for this
-  PR.
+- ~~`.husky/*` hooks are committed without the executable bit, so git skips
+  them on a fresh clone.~~ Fixed in the entry above; for this PR lint and
+  prettier were run by hand.
 - The `faster` advisory path cannot be exercised end to end: every mock source
   shares one of two ladder URLs, so equal-quality sources always measure
   identically. It is covered by the `decideSuggestion` unit tests.

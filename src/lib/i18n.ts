@@ -90,6 +90,8 @@ const zh = {
   moreSources: (n: number) => `另有 ${n} 个源`,
   collapse: '收起',
   changeShort: '换源',
+  dismiss: '关闭',
+  betterSourceFound: '发现更快的源:',
   epsCount: (n: number) => `${n} 集`,
   episodes: '选集',
   sortReverse: '倒序',
@@ -117,7 +119,6 @@ const zh = {
 
   // 页面加载 / 错误
   loadSearching: '正在搜索播放源…',
-  loadPreferring: '正在优选播放源…',
   loadFetching: '正在获取视频详情…',
   loadReady: '准备就绪，即将开始播放…',
   errorTitle: '哎呀，出现了一些问题',
@@ -291,6 +292,8 @@ const en: Messages = {
   moreSources: (n) => `${n} more source${n === 1 ? '' : 's'}`,
   collapse: 'Collapse',
   changeShort: 'Change',
+  dismiss: 'Dismiss',
+  betterSourceFound: 'Faster source found:',
   epsCount: (n) => `${n} eps`,
   episodes: 'Episodes',
   sortReverse: 'Reverse order',
@@ -316,7 +319,6 @@ const en: Messages = {
   untitled: 'Untitled',
 
   loadSearching: 'Searching sources…',
-  loadPreferring: 'Picking the best source…',
   loadFetching: 'Loading details…',
   loadReady: 'Ready, starting playback…',
   errorTitle: 'Something went wrong',
@@ -379,7 +381,8 @@ const en: Messages = {
   clearFilters: 'Clear filters',
   moreResults: 'More results',
   noResults: 'No results',
-  noResultsHint: 'Try another keyword, or select more sources under “All sources”.',
+  noResultsHint:
+    'Try another keyword, or select more sources under “All sources”.',
   loadingMore: 'Loading…',
   backToTop: 'Back to top',
   sourcesFailed: (n) => `${n} source${n === 1 ? '' : 's'} failed`,
@@ -535,6 +538,7 @@ const OPTION_EN: Record<string, string> = {
 export function optionLabel(lang: Lang, label: string): string {
   if (lang !== 'en') return label;
   const decade = label.match(/^(\d+)年代$/);
-  if (decade) return `${decade[1].length === 2 ? '19' + decade[1] : decade[1]}s`;
+  if (decade)
+    return `${decade[1].length === 2 ? '19' + decade[1] : decade[1]}s`;
   return OPTION_EN[label] || label;
 }

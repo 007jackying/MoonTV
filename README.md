@@ -122,6 +122,35 @@
 - 设置菜单：去广告、跳过片头片尾（设为当前位置）、弹幕开关与弹幕源。
 - 快捷键：空格播放 / 暂停，← / → 快退 / 快进 10 秒，↑ / ↓ 调节音量，F 全屏，Alt + ← / → 上一集 / 下一集。
 
+### 首帧关键路径
+
+播放页有两条互不阻塞的时间线：**关键路径只负责“拿到一个可播放地址”**，其余全部延后。
+
+| 阶段     | 行为                                                                                                                                    |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 关键路径 | URL 带 `source`+`id`（从搜索结果点进来）时，直接请求 `/api/detail` 取该源详情；否则用多源搜索流，**第一个匹配结果就开播**，不等整轮扇出 |
+| 后台     | 多源搜索继续跑完，只为把其它源填进侧栏；搜索期间侧栏显示骨架行                                                                          |
+| 播完之后 | 测速在后台进行，发现明显更优的源时给出提示条（可一键换源 / 关闭），**默认不自动切换**，以免丢进度、重置续播、打断弹幕                   |
+
+开启「自动优选播放源」时仍会自动换到最优源，但发生在首帧之后。
+
+页面只在“连一个地址都没拿到”时才显示整页骨架；其余情况海报、标题、选集、侧栏立即可见，`<video>` 用自己的 poster 与切换卡表示加载中。卡片悬停 / 按下时会预热 `/api/detail`，把 DNS、TLS 与上游连接的耗时挪到点击之前。
+
+### 播放源测速
+
+测速实现在 `src/lib/source-metrics.ts`。排序只需要三个信号，都不必解码任何视频：
+
+- **分辨率**：解析 master playlist 里 `#EXT-X-STREAM-INF` 的 `RESOLUTION`（阈值与历史实现一致，按**宽度**判定）
+- **延迟**：manifest 请求的 TTFB
+- **带宽**：对首个分片做一次有上限的 GET 后立即取消（不带自定义头，避免 CORS 预检）
+
+其它细节：
+
+- 结果按地址缓存在 `localStorage` 5 分钟，复访即时显示；测的是**当前集**的实际地址，而不是固定第 2 集。
+- 统一并发上限 6，当前集的源优先入队，不再分两批串行。
+- 综合评分 = 分辨率 40% + 速度 40% + 延迟 20%，三者都归一化到 0–100。
+- 无 `CORS` 头的源无法用轻量方式测量，会标记为错误 —— 这类流本来也无法在浏览器里播放。
+
 ## 开发与测试
 
 ```bash
@@ -129,7 +158,7 @@ pnpm install
 pnpm dev          # 本地开发
 pnpm typecheck    # 类型检查
 pnpm lint         # ESLint
-pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言、AV 源过滤）
+pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言、测速与评分、AV 源过滤）
 pnpm build        # 生产构建
 ```
 
@@ -140,16 +169,29 @@ pnpm build        # 生产构建
 ```bash
 ./tests/e2e/run-av-filter.sh                   # AV 源过滤（API + 浏览器两套，共 44 项断言）
 E2E_MODE=dev ./tests/e2e/run-av-filter.sh      # 用 next dev 起（更快但更容易 flaky）
-node tests/e2e/serve.mjs               # 启动 mock + next dev（性能基线用）
-python tests/e2e/measure.py --scenario clicked   # 首帧耗时
+./tests/e2e/make-media.sh                      # 生成 HLS 测试流（需要 ffmpeg）
+node tests/e2e/serve.mjs                       # 启动 mock + next dev（性能基线用）
+node tests/e2e/serve.mjs --build               # 或对生产构建跑
+python -m pytest tests/e2e/test_play_perf.py -v    # 播放页 16 个用例
+python tests/e2e/measure.py --scenario clicked     # 首帧耗时
 ```
 
 `run-av-filter.sh` 默认走生产构建（`next build` + `next start`）：`next dev` 的按需编译
 会让首次访问 `/search`、`/play` 慢上十几秒，长跑时还可能返回空结果或卡死，因此只有
 `E2E_MODE=dev` 才用开发模式。
 
+`perf` 档位给每个源配了可复现的上游延迟（`fast` 60ms … `slow2` 4000ms），因此
+「页面是否在等最慢的源」是确定性问题。`test_play_perf.py` 覆盖三种进入方式的首帧预算、
+`/api/detail` 确实在关键路径上、搜索仍在后台进行、加载期无整页骨架、始终只有一个
+`<video>`、提示条的出现与关闭、换集、快捷键，以及「后台测速永远不会把页面换成错误页」
+这条回归。
+
+首帧实测（同一 mock，生产构建，多次运行）：点击搜索结果 ≈0.4s、从豆瓣卡片进入 ≈0.4s、
+开启自动优选 ≈0.5s；改造前分别为 2.0s / 5.0s / 5.3s（`next dev` 下测得，两侧 mock
+延迟完全一致，因此差值可信）。<video> 的挂载时间从 ~1.9–4.9s 降到 ~0.1s。
+
 详见 [`tests/e2e/README.md`](tests/e2e/README.md)：包含 harness 组成、两种源配置档位
-（`perf` / `avfilter`）、Playwright 安装方式，以及几处已知怪癖的规避方式。
+（`perf` / `avfilter`）、Playwright 安装方式，以及几处已知的 `next dev` 怪癖的规避方式。
 浏览器套件需要 Playwright，API 套件只用 node。
 
 Harness 会把 HLS 片段落在 `tests/e2e/media/`（`.gitignore` 忽略，也在 `tsconfig.json`

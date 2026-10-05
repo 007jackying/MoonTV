@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  X,
   Zap,
 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -45,8 +46,16 @@ import {
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { formatEpisodeLabel } from '@/lib/i18n';
 import { formatClock, HlsModule } from '@/lib/player/engine';
+import {
+  boundsFor,
+  decideSuggestion,
+  mapWithConcurrency,
+  measureSource,
+  scoreMetrics,
+  SourceMetrics,
+} from '@/lib/source-metrics';
 import { SearchResult } from '@/lib/types';
-import { getRequestTimeout, getVideoResolutionFromM3u8 } from '@/lib/utils';
+import { getRequestTimeout } from '@/lib/utils';
 
 import AddDownloadModal from '@/components/AddDownloadModal';
 import DanmakuSelector from '@/components/DanmakuSelector';
@@ -94,7 +103,7 @@ function PlayPageClient() {
   // -----------------------------------------------------------------------------
   const [loading, setLoading] = useState(true);
   const [loadingStage, setLoadingStage] = useState<
-    'searching' | 'preferring' | 'fetching' | 'ready'
+    'searching' | 'fetching' | 'ready'
   >('searching');
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<SearchResult | null>(null);
@@ -235,16 +244,23 @@ function PlayPageClient() {
   const [autoPicking, setAutoPicking] = useState(false);
   const cancelAutoPickRef = useRef(false);
 
+  // 后台测速发现明显更好的源时给出的非侵入式建议（不自动切，避免打断播放）
+  const [betterSource, setBetterSource] = useState<{
+    detail: SearchResult;
+    metrics: SourceMetrics;
+  } | null>(null);
+
   // 播放进度保存相关
   const lastSaveTimeRef = useRef<number>(0);
 
   // 测速（当前源始终测；展开源列表后测其余源）
-  const { infoMap, isMeasuring } = useSourceSpeedTest(
-    availableSources,
-    detail,
-    sourcesExpanded || totalEpisodes <= 1,
-    precomputedVideoInfo
-  );
+  const { infoMap, isMeasuring } = useSourceSpeedTest({
+    sources: availableSources,
+    current: detail,
+    testAll: sourcesExpanded || totalEpisodes <= 1,
+    precomputed: precomputedVideoInfo,
+    episodeIndex: currentEpisodeIndex,
+  });
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -259,89 +275,53 @@ function PlayPageClient() {
 
     if (isCancelled?.()) throw new Error('优选已取消');
 
-    // 将播放源均分为两批，并发测速各批，避免一次性过多请求
-    const batchSize = Math.ceil(sources.length / 2);
-    const allResults: Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    } | null> = [];
+    // 测速：全部并发（上限 MEASURE_CONCURRENCY），当前集优先入队。
+    // 旧实现分两批串行，最坏情况要等 2 × 4s。
+    const episodeIndex = currentEpisodeIndexRef.current;
+    // 只测当前集确实有地址的源；没有地址的源保持原位排到最后。
+    const ordered = orderByCurrentEpisodeFirst(sources, episodeIndex);
+    const measurable = ordered.filter(
+      (s) => episodeUrlOf(s, episodeIndex) !== ''
+    );
+    const metrics = await mapWithConcurrency(
+      measurable,
+      MEASURE_CONCURRENCY,
+      (source) => measureSource(episodeUrlOf(source, episodeIndex))
+    );
 
-    for (let start = 0; start < sources.length; start += batchSize) {
-      if (isCancelled?.()) throw new Error('优选已取消');
-      const batchSources = sources.slice(start, start + batchSize);
-      const batchResults = await Promise.all(
-        batchSources.map(async (source) => {
-          try {
-            if (!source.episodes || source.episodes.length === 0) {
-              console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
-              return null;
-            }
-            const episodeUrl =
-              source.episodes.length > 1
-                ? source.episodes[1]
-                : source.episodes[0];
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-            return { source, testResult };
-          } catch (error) {
-            return null;
-          }
-        })
-      );
-      allResults.push(...batchResults);
-    }
+    if (isCancelled?.()) throw new Error('优选已取消');
 
     // 保存所有测速结果，供面板展示
     const newVideoInfoMap = new Map<string, VideoInfo>();
-    allResults.forEach((result, index) => {
-      const source = sources[index];
-      if (result) newVideoInfoMap.set(sourceKeyOf(source), result.testResult);
+    metrics.forEach((m, i) => {
+      newVideoInfoMap.set(sourceKeyOf(measurable[i]), m);
     });
-
-    const successfulResults = allResults.filter(Boolean) as Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    }>;
-
-    if (isCancelled?.()) throw new Error('优选已取消');
     setPrecomputedVideoInfo(newVideoInfoMap);
 
-    if (successfulResults.length === 0) {
+    const scored = measurable
+      .map((source, i) => ({ source, metrics: metrics[i] }))
+      .filter((x) => !x.metrics.hasError);
+    if (scored.length === 0) {
       console.warn('所有播放源测速都失败，使用第一个播放源');
       setAvailableSources(sources);
       return sources[0];
     }
 
-    // 找出所有有效速度的最大值，用于线性映射
-    const validSpeeds = successfulResults
-      .map((result) => parseSpeedKBps(result.testResult.loadSpeed))
-      .filter((speed) => speed > 0);
-    const maxSpeed = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024;
-
-    // 找出所有有效延迟的最小值和最大值，用于线性映射
-    const validPings = successfulResults
-      .map((result) => result.testResult.pingTime)
-      .filter((ping) => ping > 0);
-    const minPing = validPings.length > 0 ? Math.min(...validPings) : 50;
-    const maxPing = validPings.length > 0 ? Math.max(...validPings) : 1000;
-
-    const resultsWithScore = successfulResults
-      .map((result) => ({
-        ...result,
-        score: calculateSourceScore(
-          result.testResult,
-          maxSpeed,
-          minPing,
-          maxPing
-        ),
+    const { maxSpeed, minPing, maxPing } = boundsFor(
+      scored.map((x) => x.metrics)
+    );
+    const resultsWithScore = scored
+      .map((x) => ({
+        ...x,
+        score: scoreMetrics(x.metrics, maxSpeed, minPing, maxPing),
       }))
       .sort((a, b) => b.score - a.score);
 
-    const scoreMap = new Map<string, number>();
-    resultsWithScore.forEach((result) => {
-      scoreMap.set(sourceKeyOf(result.source), result.score);
-    });
-
     // 为所有源（包括测速失败的）排序，失败源评分设为 -1，评分相同保持原顺序
+    const scoreMap = new Map<string, number>();
+    resultsWithScore.forEach((r) =>
+      scoreMap.set(sourceKeyOf(r.source), r.score)
+    );
     const sortedSources = sources
       .map((source, index) => ({
         source,
@@ -503,25 +483,39 @@ function PlayPageClient() {
       let allResults: SearchResult[] = [];
       let hasInitialized = false;
 
-      await fetchSourcesData(videoTitle, (newResults) => {
+      // 从 URL 直接取当前源的详情，避开一次多源搜索。
+      const adopt = (d: SearchResult) => {
+        if (detailData) return;
+        detailData = d;
+        initDetail(d);
+        hasInitialized = true;
+      };
+
+      // ── 关键路径：单个源的详情请求 ────────────────────────────────────────
+      // 用户从搜索结果点进来时 URL 里已经有 source+id，那个源我们刚验证过
+      // 存在，所以只需要问它要一次详情。旧实现要等整个多源搜索扇出跑完。
+      if (currentSource && currentId) {
+        const fetched = await fetchDirectDetail(currentSource, currentId);
+        if (fetched) adopt(fetched);
+      }
+
+      // ── 后台：多源搜索，只为填充侧栏 ──────────────────────────────────────
+      // 不 await：找到结果就往面板里追加，不阻塞播放。
+      const searchPromise = fetchSourcesData(videoTitle, (newResults) => {
         allResults = [...allResults, ...newResults];
-        if (!detailData && currentSource && currentId) {
-          const match = newResults.find(
-            (item) => item.source === currentSource && item.id === currentId
-          );
-          if (match) {
-            detailData = match;
-            // 未启用优选时立即开始播放，否则等所有源收集完再优选
-            if (!enablePreferBestSourceFromStorage) {
-              initDetail(detailData);
-              hasInitialized = true;
-            }
-          }
+        // URL 里没带 source/id（从豆瓣卡片进来）时，第一个可用源直接开播，
+        // 不再等整个搜索流结束。
+        if (!detailData && newResults.length > 0) {
+          adopt(newResults[0]);
         }
       });
 
+      await searchPromise;
+
       // 目标源没找到时退回第一个结果
-      if (!detailData && allResults.length > 0) detailData = allResults[0];
+      if (!detailData && allResults.length > 0) {
+        detailData = allResults[0];
+      }
 
       if (!detailData) {
         setError(tRef.current.errNotFound);
@@ -529,16 +523,31 @@ function PlayPageClient() {
         return;
       }
 
-      if (enablePreferBestSourceFromStorage && allResults.length > 1) {
-        setLoadingStage('preferring');
-        try {
-          detailData = await preferBestSource(allResults);
-        } catch (err) {
-          console.error('优选播放源失败:', err);
+      if (!hasInitialized) initDetail(detailData);
+
+      // 优选不再阻塞首帧：搜索结束后在后台跑，只在确实明显更好时才提示换源。
+      if (allResults.length > 1) {
+        if (enablePreferBestSourceFromStorage) {
+          // 兼容旧开关：仍然自动换到最优源，但发生在首帧之后。
+          void (async () => {
+            try {
+              const best = await preferBestSource(allResults);
+              if (
+                best &&
+                (best.source !== detailRef.current?.source ||
+                  best.id !== detailRef.current?.id)
+              ) {
+                handleSourceChange(best);
+              }
+            } catch (err) {
+              console.error('优选播放源失败:', err);
+            }
+          })();
+        } else {
+          // 默认路径：只提示，不自动切，避免打断正在看的画面
+          void suggestBetterSource(allResults);
         }
       }
-
-      if (!hasInitialized) initDetail(detailData);
     };
 
     initAll();
@@ -820,16 +829,23 @@ function PlayPageClient() {
   const handleNextEpisode = () =>
     handleEpisodeChange(currentEpisodeIndexRef.current + 1);
 
-  const handleSourceChange = async (
-    newSource: string,
-    newId: string,
-    newTitle: string
-  ) => {
-    const newDetail = availableSources.find(
-      (source) => source.source === newSource && source.id === newId
-    );
-    if (!newDetail) {
-      setError(tRef.current.errNotFound);
+  /**
+   * 切换播放源。
+   *
+   * 接收 SearchResult 对象而不是 (source, id)：早先的实现从 `availableSources`
+   * 闭包里查目标源，而后台自动优选是在 useEffect([]) 的闭包里触发的——那份
+   * 闭包捕获的是首帧渲染的 `availableSources`（空数组），于是查不到就
+   * setError(errNotFound)，把正在播放的页面整个打成错误页。直接传对象同时
+   * 避开了这个问题和 setState 尚未提交导致的时序竞争。
+   */
+  const handleSourceChange = async (newDetail: SearchResult) => {
+    const newSource = newDetail.source;
+    const newId = newDetail.id;
+
+    // 没有可用地址就别切，保留当前播放状态。
+    if (!newDetail.episodes?.length) {
+      setPendingSourceKey(null);
+      setSwitchFromDetail(null);
       return;
     }
 
@@ -880,7 +896,7 @@ function PlayPageClient() {
       window.history.replaceState({}, '', newUrl.toString());
 
       setSwitchKind('source');
-      setVideoTitle(newDetail.title || newTitle);
+      setVideoTitle(newDetail.title);
       setVideoYear(newDetail.year);
       setVideoCover(newDetail.poster);
       setVideoDoubanId(newDetail.douban_id || 0);
@@ -906,7 +922,7 @@ function PlayPageClient() {
       .then((best) => {
         if (cancelAutoPickRef.current || !best) return;
         if (best.source !== currentSource || best.id !== currentId) {
-          handleSourceChange(best.source, best.id, best.title);
+          handleSourceChange(best);
         }
       })
       .catch(() => undefined)
@@ -919,6 +935,68 @@ function PlayPageClient() {
   const goToSearch = () => {
     const q = searchTitle || videoTitle;
     if (q) router.push(`/search?q=${encodeURIComponent(q)}`);
+  };
+
+  /**
+   * 后台测速：只在明显更优时才给建议，绝不自动换源。
+   * 自动切换会丢进度、重置续播、打断弹幕，所以默认路径是"提示"而不是"替换"。
+   */
+  const suggestBetterSource = async (sources: SearchResult[]) => {
+    if (sources.length < 2) return;
+    const episodeIndex = currentEpisodeIndexRef.current;
+    const currentKey = sourceKeyOf({
+      source: currentSourceRef.current,
+      id: currentIdRef.current,
+    });
+
+    const measurable = orderByCurrentEpisodeFirst(sources, episodeIndex).filter(
+      (s) => episodeUrlOf(s, episodeIndex) !== ''
+    );
+    if (measurable.length < 2) return;
+    const metrics = await mapWithConcurrency(
+      measurable,
+      MEASURE_CONCURRENCY,
+      (s) => measureSource(episodeUrlOf(s, episodeIndex))
+    );
+
+    const usable = measurable
+      .map((source, i) => ({ source, metrics: metrics[i] }))
+      .filter((x) => !x.metrics.hasError);
+    if (usable.length < 2) return;
+
+    const { maxSpeed, minPing, maxPing } = boundsFor(
+      usable.map((x) => x.metrics)
+    );
+    const scored = usable
+      .map((x) => ({
+        ...x,
+        score: scoreMetrics(x.metrics, maxSpeed, minPing, maxPing),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const best = scored[0];
+    if (!best) return;
+    if (sourceKeyOf(best.source) === currentKey) return;
+
+    // 门槛由 decideSuggestion 统一裁决：分辨率升档直接建议，纯速度领先则
+    // 要求分差达到 MIN_SUGGEST_GAP 才打扰用户。
+    const current = scored.find((x) => sourceKeyOf(x.source) === currentKey);
+    const decision = decideSuggestion(
+      best.metrics,
+      current?.metrics ?? best.metrics,
+      false,
+      best.score,
+      current?.score ?? best.score
+    );
+    if (!decision.suggest) return;
+
+    setBetterSource({ detail: best.source, metrics: best.metrics });
+  };
+
+  const acceptBetterSource = () => {
+    const b = betterSource;
+    setBetterSource(null);
+    if (b) void handleSourceChange(b.detail);
   };
 
   // ---------------------------------------------------------------------------
@@ -1221,7 +1299,7 @@ function PlayPageClient() {
     onSourcesExpandedChange: setSourcesExpanded,
     onSourceSelect: (s) => {
       if (pendingSourceKey) return;
-      handleSourceChange(s.source, s.id, s.title || s.source_name || '');
+      handleSourceChange(s);
     },
     autoPicking,
     onAutoPick: handleAutoPick,
@@ -1257,22 +1335,25 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 渲染
   // ---------------------------------------------------------------------------
-  if (loading) {
-    const stages = ['searching', 'preferring', 'ready'] as const;
-    const stageIndex =
-      loadingStage === 'fetching' ? 0 : stages.indexOf(loadingStage as any);
+  // 关键路径只覆盖"第一个可播放地址到手"这一小段。
+  // 那之后页面必须立刻可见：海报、标题、选集、侧栏骨架都先渲染出来，
+  // <video> 用自己的 poster + 切换卡表示加载中。旧实现在这里挡了整页，
+  // 用户只能看到一个转圈。
+  //
+  // 只有连一个地址都没拿到时才退回整页骨架（URL 里什么参数都没有的情况）。
+  const showBlockingSkeleton = loading && !detail;
+
+  if (showBlockingSkeleton) {
+    const stages = ['searching', 'fetching', 'ready'] as const;
+    const stageIndex = stages.indexOf(loadingStage as any);
     const StageIcon =
-      loadingStage === 'preferring'
-        ? Zap
-        : loadingStage === 'ready'
+      loadingStage === 'ready'
         ? Sparkles
         : loadingStage === 'fetching'
         ? Film
         : Search;
     const message =
-      loadingStage === 'preferring'
-        ? t.loadPreferring
-        : loadingStage === 'ready'
+      loadingStage === 'ready'
         ? t.loadReady
         : loadingStage === 'fetching'
         ? t.loadFetching
@@ -1394,6 +1475,35 @@ function PlayPageClient() {
         <div className='grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]'>
           {/* 播放器 */}
           <div className='relative aspect-video w-full overflow-hidden md:rounded-[28px]'>
+            {betterSource && (
+              <div className='absolute right-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full bg-o-video-ink/88 px-3 py-2 text-[13px] font-semibold text-o-video-paper shadow-lg backdrop-blur'>
+                <Zap
+                  className='h-4 w-4 shrink-0 text-o-accent-300'
+                  strokeWidth={2.75}
+                />
+                <span className='truncate'>
+                  {t.betterSourceFound}{' '}
+                  {betterSource.metrics.quality !== '未知'
+                    ? `${betterSource.metrics.quality} · ${betterSource.metrics.loadSpeed}`
+                    : betterSource.metrics.loadSpeed}
+                </span>
+                <button
+                  type='button'
+                  onClick={acceptBetterSource}
+                  className='shrink-0 rounded-full bg-o-accent px-3 py-1 text-[12px] font-bold text-o-on-accent transition-transform hover:scale-105'
+                >
+                  {t.changeShort}
+                </button>
+                <button
+                  type='button'
+                  aria-label={t.dismiss}
+                  onClick={() => setBetterSource(null)}
+                  className='shrink-0 opacity-70 transition-opacity hover:opacity-100'
+                >
+                  <X className='h-4 w-4' strokeWidth={2.75} />
+                </button>
+              </div>
+            )}
             <VideoPlayer
               ref={playerRef}
               src={videoUrl}
@@ -1512,52 +1622,56 @@ function PlayPageClient() {
   );
 }
 
-// 下载速度字符串统一换算为 KB/s
-function parseSpeedKBps(speedStr: string): number {
-  const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-  if (!match) return 0;
-  const value = parseFloat(match[1]);
-  return match[2] === 'MB/s' ? value * 1024 : value;
+/** 测速并发上限。超过这个数的源排队，避免一次性打爆连接数。 */
+const MEASURE_CONCURRENCY = 6;
+
+/**
+ * 取某个源在指定集数的播放地址。
+ * 旧实现固定用 episodes[1]，于是看第 12 集时测的却是第 2 集的码率和分辨率。
+ */
+function episodeUrlOf(source: SearchResult, index: number): string {
+  const eps = source.episodes || [];
+  if (eps.length === 0) return '';
+  return eps[Math.min(Math.max(0, index), eps.length - 1)] || '';
 }
 
-// 计算播放源综合评分：分辨率 40%、速度 40%、延迟 20%
-function calculateSourceScore(
-  testResult: { quality: string; loadSpeed: string; pingTime: number },
-  maxSpeed: number,
-  minPing: number,
-  maxPing: number
-): number {
-  const qualityScore =
-    (
-      {
-        '4K': 100,
-        '2K': 85,
-        '1080p': 75,
-        '720p': 60,
-        '480p': 40,
-        SD: 20,
-      } as Record<string, number>
-    )[testResult.quality] ?? 0;
+/** 把当前集有地址的源排到前面，让"当前源"的结果最先落地。 */
+function orderByCurrentEpisodeFirst(
+  sources: SearchResult[],
+  index: number
+): SearchResult[] {
+  const playable = sources.filter((s) => episodeUrlOf(s, index) !== '');
+  const rest = sources.filter((s) => episodeUrlOf(s, index) === '');
+  return [...playable, ...rest];
+}
 
-  const speedKBps = parseSpeedKBps(testResult.loadSpeed);
-  const speedScore =
-    speedKBps > 0
-      ? Math.min(100, Math.max(0, (speedKBps / maxSpeed) * 100))
-      : 30;
-
-  const ping = testResult.pingTime;
-  const pingScore =
-    ping <= 0
-      ? 0
-      : maxPing === minPing
-      ? 100
-      : Math.min(
-          100,
-          Math.max(0, ((maxPing - ping) / (maxPing - minPing)) * 100)
-        );
-
-  const score = qualityScore * 0.4 + speedScore * 0.4 + pingScore * 0.2;
-  return Math.round(score * 100) / 100;
+/**
+ * 只问一个源要详情，作为首帧的关键路径。
+ * URL 里带 source+id 时说明用户刚从搜索结果点进来，这个源我们刚验证过存在。
+ */
+async function fetchDirectDetail(
+  source: string,
+  id: string
+): Promise<SearchResult | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const res = await fetch(
+      withAdultFilterParam(
+        `/api/detail?source=${encodeURIComponent(
+          source
+        )}&id=${encodeURIComponent(id)}`
+      ),
+      { signal: ctrl.signal }
+    );
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = (await res.json()) as SearchResult;
+    if (!data?.episodes?.length) return null;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 export default function PlayPage() {

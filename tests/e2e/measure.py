@@ -109,7 +109,6 @@ def run(pw, base, scenario, timeout_ms):
     else:
         url = f"{base}/play?source=fast&id=fast-1&title={TITLE}&year={YEAR}"
 
-    t_start = page.evaluate("performance.now()") if False else None
     page.goto(url, wait_until="commit")
 
     # Wait for a decoded frame, or bail out.

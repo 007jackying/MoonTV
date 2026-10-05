@@ -1133,6 +1133,9 @@ const VideoSourceConfig = ({
     }
   };
 
+  // 注意：config.json 的 api_site 里写了 disabled 的源，这里的切换不会真正生效——
+  // 下次配置重载时配置里的 disabled 会再次覆盖（见 lib/config.ts）。恢复这类源只能
+  // 改 config.json，见 docs/broken-sources.md。
   const handleToggleEnable = (key: string) => {
     const target = sources.find((s) => s.key === key);
     if (!target) return;

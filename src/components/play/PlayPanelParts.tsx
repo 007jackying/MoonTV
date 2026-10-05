@@ -42,6 +42,16 @@ export function QualityTag({ info }: { info?: VideoInfo }) {
   );
 }
 
+/** 在播放器里实际播放失败（区别于"检测失败"：那只是轻量测速没通过） */
+export function FailedTag() {
+  const { t } = useI18n();
+  return (
+    <span className='o-tag o-tag-accent ml-auto flex-none font-bold'>
+      {t.cannotPlay}
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 测速数据：速度 / 延迟 / 集数（保留原始数值）
 // ---------------------------------------------------------------------------
@@ -121,6 +131,7 @@ export function SourceRow({
   info,
   measuring,
   pending,
+  failed = false,
   currentTitle,
   disabled,
   onSelect,
@@ -130,6 +141,8 @@ export function SourceRow({
   info?: VideoInfo;
   measuring: boolean;
   pending: boolean;
+  /** 在播放器里实际播放失败过 */
+  failed?: boolean;
   currentTitle: string;
   disabled: boolean;
   onSelect: () => void;
@@ -151,7 +164,7 @@ export function SourceRow({
           : tone === 'bg'
           ? 'bg-o-bg hover:bg-o-accent-100'
           : 'bg-o-surface hover:bg-o-accent-100'
-      }`}
+      } ${failed && !pending ? 'opacity-60' : ''}`}
     >
       <div className='flex w-full min-w-0 items-center gap-2.5'>
         <span className='truncate text-[15px] font-bold'>
@@ -162,7 +175,7 @@ export function SourceRow({
             {source.title}
           </span>
         )}
-        <QualityTag info={info} />
+        {failed ? <FailedTag /> : <QualityTag info={info} />}
       </div>
       <SourceStats
         info={info}

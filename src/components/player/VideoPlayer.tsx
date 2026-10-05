@@ -98,9 +98,16 @@ interface VideoPlayerProps {
   onTimeUpdate?: (time: number, duration: number) => void;
   onPause?: () => void;
   onReady?: () => void;
-  /** 当前这一路无法播放（已放弃恢复） */
+  /**
+   * 当前这一路无法播放（首次加载失败，或播放中放弃恢复）。
+   * 播放页据此自动切换到下一个可用的源。
+   */
   onError?: () => void;
   errorAction?: { label: string; onClick: () => void };
+  /** 失败卡片上的补充说明（如"正在自动换源…"） */
+  errorDetail?: string;
+  /** 失败后正在自动处理：显示转圈 */
+  errorBusy?: boolean;
   settings: PlayerSettingItem[];
   danmakuUrl: string | null;
   danmakuVisible: boolean;
@@ -139,6 +146,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       hasNext,
       nextLabel,
       errorAction,
+      errorDetail,
+      errorBusy = false,
       settings,
       danmakuUrl,
       danmakuVisible,
@@ -844,6 +853,21 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 <div className='font-heading text-lg leading-tight md:text-[22px]'>
                   {t.playbackFailed}
                 </div>
+                {errorDetail && (
+                  <div
+                    role='status'
+                    aria-live='polite'
+                    className='flex items-center gap-2 text-[13px] font-semibold text-o-video-paper/80'
+                  >
+                    {errorBusy && (
+                      <Loader2
+                        className='h-4 w-4 shrink-0 animate-spin'
+                        strokeWidth={2.75}
+                      />
+                    )}
+                    {errorDetail}
+                  </div>
+                )}
                 {errorAction && (
                   <button
                     type='button'

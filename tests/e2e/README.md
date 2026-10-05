@@ -16,10 +16,11 @@ proxy does not fail a test (see _Console errors_ below).
 | File                 | Purpose                                                                                                                                                                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mock-cms.mjs`       | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.             |
-| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                        |
+| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                    |
 | `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                       |
 | `measure.py`         | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                   |
 | `test_play_perf.py`  | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest. |
+| `test_failover.py`   | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                          |
 | `test_av_filter.mjs` | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                     |
 | `test_av_filter.py`  | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                      |
 | `run-av-filter.sh`   | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                          |
@@ -77,6 +78,14 @@ PYTHON=.e2e-venv/bin/python ./tests/e2e/run-av-filter.sh
 
 The runner skips the browser suite (and says so) if `$PYTHON` cannot import
 `playwright`. `--api-only` skips it unconditionally.
+
+If Playwright cannot find its own browser build (for example an image that
+ships a preinstalled Chromium of a different revision), point every browser
+suite and `measure.py` at it instead of downloading one:
+
+```bash
+E2E_CHROMIUM=/opt/pw-browsers/chromium python -m pytest tests/e2e/test_failover.py -v
+```
 
 ### What the API suite checks
 
@@ -139,7 +148,7 @@ flakiness.
   before serving.
 - **Chromium without H.264.** Open-source Chromium builds (some Playwright/CI
   images among them) ship without proprietary codecs: `canPlayType('video/mp4;
-  codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
+codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
   ever renders, so every TTFF test times out. Regenerate the fixtures as VP9 +
   Opus in fMP4 with `CODEC=vp9 bash tests/e2e/make-media.sh`; the playlist
   names are unchanged, so nothing else needs to know.
@@ -212,6 +221,46 @@ them. The suite asserts
   is the one the click reads;
 - an episode switch keeps exactly one `<video>` and it actually plays (its
   `currentTime` advances).
+
+### Failover suite
+
+```bash
+node tests/e2e/serve.mjs --build
+python -m pytest tests/e2e/test_failover.py -v
+```
+
+Runs on the `perf` profile with no harness changes: each test aborts the mock
+CMS's `/media/720p/` (or all of its `/media/`) with Playwright request routing,
+so the breakage is per browser context and the other suites never see it. The
+patterns are scoped to the mock origin; a bare `**/media/**` would also abort
+Next's `/_next/static/media/` fonts. With
+720p blocked, `fast`, `dead` and `slow1` fail for the player _and_ the speed
+test — what a dead upstream looks like — leaving `mid` and `slow2` (1080p).
+
+The page rewrites `?source=` with `history.replaceState` on load and on every
+switch, so an init script wraps `replaceState` and records the exact sequence
+of sources tried (`window.__sources`). Text that flashes by too quickly to
+poll — the "switching to the next source" status disappears as soon as a
+tested source exists — is recorded by a `MutationObserver` (`window.__seen`).
+The suite asserts
+
+- landing on a dead source ends up playing a working one, with the failover
+  status shown first and a "switched to X" notice after;
+- with speed tests on, exactly one switch, straight to a tested source:
+  `dead` arrives first in list order but measures broken, so it is skipped;
+- after the switch the panel is sorted by health (tested → untested → test
+  failed → failed in the player), with `fast` last and tagged 无法播放;
+- a source that failed in the player is never switched back to;
+- with `enableOptimization=false` it walks the list but never revisits a source;
+- with every source broken it stops after at most five switches, keeps the
+  play page (not the error screen) and the manual 换源 button, and says so;
+- the "better source" banner never appears during failover;
+- failing over on first load (opened from 继续观看) resumes the next source at
+  the saved position, and the play record moves to it instead of being lost.
+
+The first seven fail on the commit before failover was added; the last one
+failed on `1bb3029`, before the resume fix. This suite does not
+check console errors: the aborted media requests are the point of the test.
 
 ### Console errors
 

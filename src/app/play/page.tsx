@@ -75,6 +75,7 @@ import {
   PlayPanelProps,
   PlaySidePanel,
 } from '@/components/play/PlayPanels';
+import { pickFailoverSource } from '@/components/play/sourceHealth';
 import {
   episodeUrlOf,
   measurableCurrentFirst,
@@ -222,6 +223,10 @@ function PlayPageClient() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  // 本次加载开始时续播到的位置（takeResumeTime 交给播放器的值）。当前源还没
+  // 放起来就失败时，播放器的 currentTime 还是 0，换源要用这个值续播，否则
+  // 「继续观看」进来遇到坏源、自动换源后会从头播，还会删掉原来的播放记录。
+  const loadStartTimeRef = useRef(0);
 
   // 换源相关状态
   const [availableSources, setAvailableSources] = useState<SearchResult[]>([]);
@@ -246,6 +251,21 @@ function PlayPageClient() {
   const [autoPicking, setAutoPicking] = useState(false);
   const cancelAutoPickRef = useRef(false);
 
+  // 在播放器里实际播放失败过的（源, 集），键为 failureKeyOf。同一个源换一集
+  // 可能就能放，所以只在对应集数下视为失败。ref 供首帧闭包里的优选 / 建议读取。
+  const [failedSources, setFailedSources] = useState<Set<string>>(new Set());
+  const failedSourcesRef = useRef(failedSources);
+  const playerFailedRef = useRef(false);
+  // 当前源失败后正在自动寻找下一个可用源
+  const [failoverActive, setFailoverActive] = useState(false);
+  // 自动换源都试完了仍然没有能放的
+  const [failoverExhausted, setFailoverExhausted] = useState(false);
+  // 等测速结果太久时不再等，直接按顺序挑
+  const [failoverWaitExpired, setFailoverWaitExpired] = useState(false);
+  const failoverAttemptsRef = useRef(0);
+  // 播放器就绪时提示"已自动切换到 X"
+  const autoSwitchedRef = useRef(false);
+
   // 后台测速发现明显更好的源时给出的非侵入式建议（不自动切，避免打断播放）
   const [betterSource, setBetterSource] = useState<{
     detail: SearchResult;
@@ -257,11 +277,16 @@ function PlayPageClient() {
   // 播放进度保存相关
   const lastSaveTimeRef = useRef<number>(0);
 
-  // 测速（当前源始终测；展开源列表后测其余源）
-  const { infoMap, isMeasuring } = useSourceSpeedTest({
+  // 测速（当前源始终测；展开源列表或当前源失败后测其余源，
+  // 失败时要靠这些结果挑下一个源）
+  const {
+    infoMap,
+    isMeasuring,
+    enabled: speedTestEnabled,
+  } = useSourceSpeedTest({
     sources: availableSources,
     current: detail,
-    testAll: sourcesExpanded || totalEpisodes <= 1,
+    testAll: sourcesExpanded || totalEpisodes <= 1 || playerFailed,
     precomputed: precomputedVideoInfo,
     episodeIndex: currentEpisodeIndex,
   });
@@ -308,10 +333,14 @@ function PlayPageClient() {
     const scored = measurable
       .map((source, i) => ({ source, metrics: metrics[i] }))
       .filter((x) => !x.metrics.hasError);
+    // 播放器里已经放不了的源，测速通过也不再选
+    const failedHere = (s: SearchResult) =>
+      failedSourcesRef.current.has(failureKeyOf(s, episodeIndex));
+
     if (scored.length === 0) {
       console.warn('所有播放源测速都失败，使用第一个播放源');
       setAvailableSources(sources);
-      return sources[0];
+      return sources.find((s) => !failedHere(s)) ?? sources[0];
     }
 
     const { maxSpeed, minPing, maxPing } = boundsFor(
@@ -343,7 +372,9 @@ function PlayPageClient() {
     if (isCancelled?.()) throw new Error('优选已取消');
     setAvailableSources(sortedSources);
 
-    return resultsWithScore[0].source;
+    // 测速通过的源都放不了时留在当前源（调用方只在结果不同于当前源时才换）
+    const best = resultsWithScore.find((r) => !failedHere(r.source));
+    return best ? best.source : detailRef.current ?? resultsWithScore[0].source;
   };
 
   // -----------------------------------------------------------------------------
@@ -853,6 +884,7 @@ function PlayPageClient() {
     }
     // 建议是针对上一集测出来的，换集后不再成立
     setBetterSource(null);
+    resetFailover();
     setSwitchKind('episode');
     setCurrentEpisodeIndex(episodeIndex);
   };
@@ -886,7 +918,11 @@ function PlayPageClient() {
     setBetterSource(null);
 
     try {
-      const currentPlayTime = playerRef.current?.getCurrentTime() || 0;
+      const playerTime = playerRef.current?.getCurrentTime() || 0;
+      const currentPlayTime =
+        playerTime > 1
+          ? playerTime
+          : Math.max(playerTime, loadStartTimeRef.current);
       setSwitchFromDetail(detailRef.current);
       setPendingSourceKey(sourceKeyOf(newDetail));
       setSourcesExpanded(true);
@@ -978,7 +1014,8 @@ function PlayPageClient() {
    * 自动切换会丢进度、重置续播、打断弹幕，所以默认路径是"提示"而不是"替换"。
    */
   const suggestBetterSource = async (sources: SearchResult[]) => {
-    if (sources.length < 2) return;
+    // 当前源已经放不了时由自动换源接手，不再给"更好"的建议
+    if (sources.length < 2 || playerFailedRef.current) return;
     const episodeIndex = currentEpisodeIndexRef.current;
     const currentKey = sourceKeyOf({
       source: currentSourceRef.current,
@@ -999,8 +1036,12 @@ function PlayPageClient() {
 
     const usable = measurable
       .map((source, i) => ({ source, metrics: metrics[i] }))
-      .filter((x) => !x.metrics.hasError);
-    if (usable.length < 2) return;
+      .filter(
+        (x) =>
+          !x.metrics.hasError &&
+          !failedSourcesRef.current.has(failureKeyOf(x.source, episodeIndex))
+      );
+    if (usable.length < 2 || playerFailedRef.current) return;
 
     const { maxSpeed, minPing, maxPing } = boundsFor(
       usable.map((x) => x.metrics)
@@ -1060,6 +1101,7 @@ function PlayPageClient() {
   const takeResumeTime = useCallback(() => {
     const v = resumeTimeRef.current || 0;
     resumeTimeRef.current = null;
+    loadStartTimeRef.current = v;
     return v;
   }, []);
 
@@ -1121,17 +1163,112 @@ function PlayPageClient() {
   };
 
   const handlePlayerReady = () => {
+    playerFailedRef.current = false;
     setPlayerFailed(false);
     if (pendingSourceKey) setSourcesExpanded(false);
     setPendingSourceKey(null);
     setSwitchFromDetail(null);
+    if (autoSwitchedRef.current && detailRef.current) {
+      playerRef.current?.showNotice(
+        tRef.current.autoSwitchedTo(detailRef.current.source_name)
+      );
+    }
+    resetFailover();
   };
 
   const handlePlayerError = () => {
+    playerFailedRef.current = true;
     setPlayerFailed(true);
     setPendingSourceKey(null);
     setSwitchFromDetail(null);
+    // 提示条建议的是"更好"的源，当前源都放不了了，这个前提已不成立
+    setBetterSource(null);
+    const d = detailRef.current;
+    if (d) {
+      // 同步写 ref：后台优选 / 建议可能在下一次提交前读取
+      const next = new Set(failedSourcesRef.current).add(
+        failureKeyOf(d, currentEpisodeIndexRef.current)
+      );
+      failedSourcesRef.current = next;
+      setFailedSources(next);
+    }
+    // 不管是首次进入还是播放中途放弃恢复，都自动去找下一个能放的源
+    if (failoverAttemptsRef.current < MAX_AUTO_FAILOVERS) {
+      setFailoverActive(true);
+      setFailoverExhausted(false);
+      setFailoverWaitExpired(false);
+    } else {
+      setFailoverActive(false);
+      setFailoverExhausted(true);
+    }
   };
+
+  function resetFailover() {
+    failoverAttemptsRef.current = 0;
+    autoSwitchedRef.current = false;
+    setFailoverActive(false);
+    setFailoverExhausted(false);
+    setFailoverWaitExpired(false);
+  }
+
+  // 当前集下播放失败过的源，键为 sourceKeyOf
+  const failedKeys = useMemo(() => {
+    const suffix = `#${currentEpisodeIndex}`;
+    const keys = new Set<string>();
+    failedSources.forEach((k) => {
+      if (k.endsWith(suffix)) keys.add(k.slice(0, -suffix.length));
+    });
+    return keys;
+  }, [failedSources, currentEpisodeIndex]);
+
+  // 自动换源：测速结果、搜索结果每更新一次就重新挑一次，
+  // 有测速通过的源就立刻切，没有就等结果。
+  useEffect(() => {
+    if (!failoverActive || !playerFailed || pendingSourceKey || !detail) {
+      return;
+    }
+    const decision = pickFailoverSource({
+      sources: availableSources,
+      currentKey: sourceKeyOf(detail),
+      episodeIndex: currentEpisodeIndex,
+      infoMap,
+      failedKeys,
+      speedTestEnabled: speedTestEnabled && !failoverWaitExpired,
+      searchLoading: sourceSearchLoading,
+    });
+    if (decision.kind === 'wait') return;
+    if (decision.kind === 'exhausted') {
+      setFailoverActive(false);
+      setFailoverExhausted(true);
+      return;
+    }
+    failoverAttemptsRef.current += 1;
+    autoSwitchedRef.current = true;
+    setFailoverActive(false);
+    void handleSourceChange(decision.source);
+  }, [
+    failoverActive,
+    playerFailed,
+    pendingSourceKey,
+    detail,
+    availableSources,
+    currentEpisodeIndex,
+    infoMap,
+    failedKeys,
+    speedTestEnabled,
+    failoverWaitExpired,
+    sourceSearchLoading,
+  ]);
+
+  // 测速有自己的超时，这里再兜一层：等太久就不再等测速结果
+  useEffect(() => {
+    if (!failoverActive || failoverWaitExpired) return;
+    const timer = setTimeout(
+      () => setFailoverWaitExpired(true),
+      FAILOVER_MAX_WAIT_MS
+    );
+    return () => clearTimeout(timer);
+  }, [failoverActive, failoverWaitExpired]);
 
   // ---------------------------------------------------------------------------
   // 跳过片头片尾配置
@@ -1350,10 +1487,15 @@ function PlayPageClient() {
     isMeasuring,
     pendingSourceKey,
     currentFailed: playerFailed && !pendingSourceKey,
+    failedKeys,
+    // 出过播放失败后，把测速通过的源排到最前面
+    prioritizeHealthy: playerFailed || failedKeys.size > 0,
     sourcesExpanded,
     onSourcesExpandedChange: setSourcesExpanded,
     onSourceSelect: (s) => {
       if (pendingSourceKey) return;
+      // 用户手动选了源：自动换源让位，失败后重新计数
+      resetFailover();
       handleSourceChange(s);
     },
     autoPicking,
@@ -1585,6 +1727,14 @@ function PlayPageClient() {
               onPause={saveCurrentPlayProgress}
               onReady={handlePlayerReady}
               onError={handlePlayerError}
+              errorDetail={
+                failoverActive
+                  ? t.findingNextSource
+                  : failoverExhausted
+                  ? t.allSourcesFailed
+                  : undefined
+              }
+              errorBusy={failoverActive}
               errorAction={
                 availableSources.length > 1
                   ? {
@@ -1681,6 +1831,18 @@ function PlayPageClient() {
 
 /** 测速并发上限。超过这个数的源排队，避免一次性打爆连接数。 */
 const MEASURE_CONCURRENCY = 6;
+
+/** 播放失败记录的键："源 + 集"，与测速结果的记法一致 */
+const failureKeyOf = (
+  s: { source: string; id: string },
+  episodeIndex: number
+) => `${sourceKeyOf(s)}#${episodeIndex}`;
+
+/** 一次失败后最多连续自动换几个源，避免在一堆坏源之间来回跳 */
+const MAX_AUTO_FAILOVERS = 5;
+
+/** 自动换源时最多等测速结果多久 */
+const FAILOVER_MAX_WAIT_MS = 8000;
 
 /**
  * 只问一个源要详情，作为首帧的关键路径。

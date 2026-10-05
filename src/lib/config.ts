@@ -88,9 +88,10 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
       if (site.is_adult !== undefined) {
         existingSource.is_adult = site.is_adult;
       }
-      // disabled 同理：config.json 显式写了才覆盖，这样后台管理里手动停用/启用
-      // 的状态不会因为一次配置重载就被冲掉；而 config.json 里钉死的 disabled
-      // 始终优先于存储值（见 docs/broken-sources.md）。
+      // disabled 同理：配置显式写了才覆盖，这样后台管理里手动停用/启用的状态
+      // 不会因为一次配置重载就被冲掉；而配置里钉死的 disabled 始终优先于存储值。
+      // 反过来，删掉 disabled 字段不会重新启用一个已存为停用的源——恢复要写
+      // false（见 docs/broken-sources.md）。
       if (site.disabled !== undefined) {
         existingSource.disabled = site.disabled;
       }

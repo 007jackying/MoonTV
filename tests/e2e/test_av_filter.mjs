@@ -302,7 +302,9 @@ async function main() {
     (allSources || []).length
   );
 
-  // --- 8. explicit filterAdult=0 --------------------------------------------
+  // --- 8. explicit filterAdult=0 / off / unrecognised values -----------------
+  // Only 1 / true / on turn filtering on. A value this code does not recognise
+  // must leave filtering OFF rather than silently enabling it.
   console.log('\n/api/search filterAdult=0');
   const off = await api(
     '/api/search',
@@ -314,6 +316,36 @@ async function main() {
     sourceNames(off.body?.results).some(isAv),
     `source_name values: ${JSON.stringify(sourceNames(off.body?.results))}`
   );
+
+  for (const value of ['no', '2', '', 'yes']) {
+    await cmsReset();
+    await api(
+      '/api/search',
+      { q: QUERY, stream: 0, timeout: 30, filterAdult: value },
+      cookie
+    );
+    const hits = await cmsHits(QUERY);
+    ok(
+      `filterAdult=${JSON.stringify(value)} is not treated as "on"`,
+      hits.some((k) => avSources.some((s) => s.key === k)),
+      `queried: ${JSON.stringify(hits)}`
+    );
+  }
+
+  for (const value of ['on', 'TRUE', ' true ']) {
+    await cmsReset();
+    await api(
+      '/api/search',
+      { q: QUERY, stream: 0, timeout: 30, filterAdult: value },
+      cookie
+    );
+    const hits = await cmsHits(QUERY);
+    ok(
+      `filterAdult=${JSON.stringify(value)} turns filtering on`,
+      !hits.some((k) => avSources.some((s) => s.key === k)),
+      `queried: ${JSON.stringify(hits)}`
+    );
+  }
 
   // --- report ----------------------------------------------------------------
   console.log(`\n${passed} passed, ${failed} failed`);

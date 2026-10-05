@@ -78,14 +78,5 @@
     "typescript": "^4.9.5",
     "wrangler": "^4.103.0"
   },
-  "lint-staged": {
-    "**/*.{js,jsx,ts,tsx}": [
-      "eslint --max-warnings=0",
-      "prettier -w"
-    ],
-    "**/*.{json,css,scss,md,webmanifest}": [
-      "prettier -w"
-    ]
-  },
   "packageManager": "pnpm@10.14.0"
 }

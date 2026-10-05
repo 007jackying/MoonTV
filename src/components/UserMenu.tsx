@@ -1032,7 +1032,8 @@ export const UserMenu: React.FC = () => {
                 过滤 AV 资源
               </h4>
               <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                全局隐藏 AV-* 采集源，搜索、换源与搜索建议均不再使用
+                全局隐藏成人采集源（config.json 里标记为 is_adult 的源，以及名称以
+                AV- 开头的源），搜索、换源与搜索建议均不再使用
               </p>
             </div>
             <label className='flex items-center cursor-pointer'>

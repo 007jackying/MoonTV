@@ -13,6 +13,18 @@ export interface ApiSite {
   detail?: string;
   /** config.json 中标记的成人源，用于 AV 源过滤 */
   is_adult?: boolean;
+  /**
+   * config.json 里把某个源停用。不写或写 false 都视为启用。
+   *
+   * 用来「停用而不删除」：源站失效时保留条目与备注，等它恢复后把这里改回
+   * false 即可重新启用，不必重新找回 key / 名称 / 详情页地址。
+   */
+  disabled?: boolean;
+  /**
+   * 纯备注字段，不参与任何运行时逻辑，只留在 config.json 里给人看。
+   * 约定用来记录停用原因与实测时间。
+   */
+  note?: string;
 }
 
 interface ConfigFileStruct {
@@ -66,11 +78,23 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
   apiSiteEntries.forEach(([key, site]) => {
     const existingSource = sourceConfigMap.get(key);
     if (existingSource) {
-      // 如果已存在，只覆盖 name、api、detail、is_adult 和 from
+      // 如果已存在，只覆盖 name、api、detail、is_adult、disabled 和 from
       existingSource.name = site.name;
       existingSource.api = site.api;
       existingSource.detail = site.detail;
-      existingSource.is_adult = site.is_adult;
+      // config.json 没写 is_adult 时保留已有值。直接赋 undefined 会把存储里已有的
+      // 标记抹掉，而 getConfig() 每次请求都会跑一遍这个合并。要取消标记请在
+      // config.json 里显式写 is_adult: false。
+      if (site.is_adult !== undefined) {
+        existingSource.is_adult = site.is_adult;
+      }
+      // disabled 同理：配置显式写了才覆盖，这样后台管理里手动停用/启用的状态
+      // 不会因为一次配置重载就被冲掉；而配置里钉死的 disabled 始终优先于存储值。
+      // 反过来，删掉 disabled 字段不会重新启用一个已存为停用的源——恢复要写
+      // false（见 docs/broken-sources.md）。
+      if (site.disabled !== undefined) {
+        existingSource.disabled = site.disabled;
+      }
       existingSource.from = 'config';
     } else {
       // 如果不存在，创建新条目
@@ -81,7 +105,7 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
         detail: site.detail,
         is_adult: site.is_adult,
         from: 'config',
-        disabled: false,
+        disabled: site.disabled === true,
       });
     }
   });
@@ -213,7 +237,7 @@ async function initConfig() {
             detail: site.detail,
             is_adult: site.is_adult,
             from: 'config',
-            disabled: false,
+            disabled: site.disabled === true,
           });
         });
 
@@ -360,7 +384,7 @@ async function initConfig() {
               detail: site.detail,
               is_adult: site.is_adult,
               from: 'config',
-              disabled: false,
+              disabled: site.disabled === true,
             })
           ),
           CustomCategories: (fileConfig.custom_category || []).map(
@@ -421,7 +445,7 @@ async function initConfig() {
         detail: site.detail,
         is_adult: site.is_adult,
         from: 'config',
-        disabled: false,
+        disabled: site.disabled === true,
       })),
       CustomCategories:
         fileConfig.custom_category?.map((category) => ({
@@ -529,11 +553,19 @@ export async function getConfig(): Promise<AdminConfig> {
     apiSiteEntries.forEach(([key, site]) => {
       const existingSource = sourceConfigMap.get(key);
       if (existingSource) {
-        // 如果已存在，只覆盖 name、api、detail、is_adult 和 from
+        // 如果已存在，只覆盖 name、api、detail、is_adult、disabled 和 from
         existingSource.name = site.name;
         existingSource.api = site.api;
         existingSource.detail = site.detail;
-        existingSource.is_adult = site.is_adult;
+        // 同 refineConfig：config.json 没写 is_adult 时不要用 undefined 覆盖掉
+        // 存储里已有的标记。
+        if (site.is_adult !== undefined) {
+          existingSource.is_adult = site.is_adult;
+        }
+        // 同上，disabled 也只在 config.json 显式声明时才覆盖存储值。
+        if (site.disabled !== undefined) {
+          existingSource.disabled = site.disabled;
+        }
         existingSource.from = 'config';
       } else {
         // 如果不存在，创建新条目
@@ -544,7 +576,7 @@ export async function getConfig(): Promise<AdminConfig> {
           detail: site.detail,
           is_adult: site.is_adult,
           from: 'config',
-          disabled: false,
+          disabled: site.disabled === true,
         });
       }
     });
@@ -808,7 +840,7 @@ export async function resetConfig() {
       detail: site.detail,
       is_adult: site.is_adult,
       from: 'config',
-      disabled: false,
+      disabled: site.disabled === true,
     })),
     CustomCategories:
       storageType === 'redis'

@@ -3,7 +3,7 @@ import { ChevronDown, Save, Server, Settings, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Swal from 'sweetalert2';
 
-import { getAvailableApiSitesClient } from '@/lib/config.client';
+import { fetchApiSites, trimForLocalPreference } from '@/lib/config.client';
 import { getRequestTimeout } from '@/lib/utils';
 
 import { useI18n } from './LanguageProvider';
@@ -26,6 +26,10 @@ export default function SourceSelector({
 }: SourceSelectorProps) {
   const { t } = useI18n();
   const [availableSources, setAvailableSources] = useState<{ key: string; name: string }[]>([]);
+  // 未按本地偏好裁剪的源 key。用来区分"这个源真的不存在了"（已禁用/被分组限制，
+  // 可以从 savedSources 里删掉）和"这个源只是被当前偏好藏起来了"（AV 过滤，
+  // 关掉偏好就该回来，不能删）。availableSources 为空时它也可能非空。
+  const [allSourceKeys, setAllSourceKeys] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeoutSeconds, setTimeoutSeconds] = useState<number>(30);
   const [enableSearchSuggestions, setEnableSearchSuggestions] = useState<boolean>(true);
@@ -41,16 +45,29 @@ export default function SourceSelector({
   // 又把保存的选择覆盖回去。
   const selectedSourcesRef = useRef(selectedSources);
   selectedSourcesRef.current = selectedSources;
+  // 是否已经用 savedSources 播种过。父组件的状态可能来自 ?sources= 链接（用户对
+  // 本次访问的明确指定），那种情况下只能裁剪、不能替换；只有父级还空着的时候才
+  // 播种一次（例如导航栏的搜索源状态初始就是空的）。
+  const seededRef = useRef(false);
 
   /**
-   * 加载可用的搜索源（getAvailableApiSitesClient 已按本地偏好过滤掉 AV 源）。
-   * 只在客户端执行，SSR 时直接返回，由下面的 effect 收尾。
+   * 加载可用的搜索源。
+   *
+   * 同时保留两份列表：availableSources 是按本地偏好（AV 过滤）裁剪后给用户选的，
+   * allSourceKeys 是不裁剪的原始 key 集合，供下面的清理逻辑判断某个保存的源是否
+   * 真的已经不存在了。只在客户端执行，SSR 时直接返回，由下面的 effect 收尾。
    */
   const loadSources = useCallback(async () => {
     if (typeof window === 'undefined') return;
     try {
-      const sites = await getAvailableApiSitesClient();
-      setAvailableSources(sites.map(site => ({ key: site.key, name: site.name })));
+      const sites = await fetchApiSites();
+      setAllSourceKeys(sites.map((site) => site.key));
+      setAvailableSources(
+        trimForLocalPreference(sites).map((site) => ({
+          key: site.key,
+          name: site.name,
+        }))
+      );
     } catch (error) {
       console.error('Failed to load sources:', error);
       setAvailableSources([]); // 确保不会因为错误导致状态未更新
@@ -131,32 +148,49 @@ export default function SourceSelector({
     }));
   };
 
-  // 加载保存的搜索源，并清理不存在的源
+  // 加载保存的搜索源，并裁掉当前不可用的源
   useEffect(() => {
+    // availableSources 为空有两种可能：还没加载出来，或者 /api/config/sources
+    // 请求失败。这两种情况下都不能动父级的选择，否则一次网络抖动就会把
+    // ?sources=a,b 这样的链接清空。
     if (typeof window !== 'undefined' && availableSources.length > 0) {
+      const availableKeys = new Set(availableSources.map((avail) => avail.key));
       const savedSources = localStorage.getItem('savedSources');
       if (savedSources) {
         try {
           const parsedSources = JSON.parse(savedSources);
-          // 确保保存的源在可用源列表中
+          // 在当前偏好下真正可用的保存源
           const validSources = parsedSources.filter((source: string) =>
-            availableSources.some(avail => avail.key === source)
+            availableKeys.has(source)
           );
-          
-          // 如果保存的源中有不存在的源（已禁用、已被分组限制或被 AV 过滤），更新本地存储
-          if (validSources.length !== parsedSources.length) {
-            localStorage.setItem('savedSources', JSON.stringify(validSources));
+
+          // 只有"确实不再存在"的源（已禁用、被分组限制）才写回本地存储。被 AV
+          // 过滤掉的源只是当前偏好下不可选，偏好随时可以关掉，写回存储会让用户
+          // 关掉过滤后也找不回这份选择。allSourceKeys 为空说明列表没加载出来，
+          // 此时不动存储。
+          if (allSourceKeys.length > 0) {
+            const permanentSources = parsedSources.filter((source: string) =>
+              allSourceKeys.includes(source)
+            );
+            if (permanentSources.length !== parsedSources.length) {
+              localStorage.setItem(
+                'savedSources',
+                JSON.stringify(permanentSources)
+              );
+            }
           }
 
-          // 无条件同步，确保被过滤掉的源不会残留（否则父级仍会把它
-          // 带上 sources= 参数发出去，得到一个空结果页）。内容相同时跳过，
-          // 避免无谓地让父级重渲染并回写 URL。
+          // 父级还空着的时候用保存的选择播种一次（导航栏的搜索源状态初始就是空
+          // 的）；已经拿到过选择就只做裁剪，这样显式的 ?sources=a,b 不会被
+          // savedSources 覆盖，清空后的选择也不会被重新填回来。
           const current = selectedSourcesRef.current;
-          const unchanged =
-            current.length === validSources.length &&
-            current.every((s, i) => s === validSources[i]);
-          if (!unchanged) {
-            onChange(validSources);
+          const base =
+            current.length === 0 && !seededRef.current ? validSources : current;
+          seededRef.current = true;
+          const next = base.filter((source: string) => availableKeys.has(source));
+          // next 始终是 base 的子序列，长度相同即内容相同
+          if (next.length !== current.length) {
+            onChange(next);
           }
         } catch (error) {
           console.error('Failed to parse saved sources:', error);
@@ -173,7 +207,7 @@ export default function SourceSelector({
         setEnableSearchSuggestions(savedEnableSearchSuggestions === 'true');
       }
     }
-  }, [availableSources, onChange]);
+  }, [availableSources, allSourceKeys, onChange]);
 
   // 计算弹窗位置，防止超出屏幕
   useEffect(() => {

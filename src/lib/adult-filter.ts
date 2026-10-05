@@ -13,7 +13,7 @@
  * 2. 源的展示名带 `AV-` / `AV ` / `av_` 前缀（自建源没有 is_adult 时的回退）
  */
 
-/** 请求参数名：1/true 开启过滤，0/false/off 关闭过滤，缺省表示不过滤 */
+/** 请求参数名：1 / true / on 开启过滤，其余取值（含缺省）都表示不过滤 */
 export const ADULT_FILTER_PARAM = 'filterAdult';
 
 /** localStorage 键名（用户偏好，存在浏览器本地） */
@@ -51,12 +51,20 @@ export function filterAdultSources<T extends AdultSourceLike>(sites: T[]): T[] {
   return sites.filter((site) => !isAdultSource(site));
 }
 
+/**
+ * 开启过滤的取值白名单。
+ *
+ * 用白名单而不是"除了 0/false/off 之外都算开"：这个参数决定内容可见性，
+ * 所以 `?filterAdult=2`、`?filterAdult=no` 或任何拼错的值都应该保持不过滤，
+ * 而不是意外地把成人源藏起来 / 让调用方以为过滤生效了。
+ */
+const ENABLED_VALUES = ['1', 'true', 'on'];
+
 /** 解析请求参数，判断本次请求是否需要过滤 AV 源；参数缺省时不过滤 */
 export function parseAdultFilterParam(
   searchParams: Pick<URLSearchParams, 'get'>
 ): boolean {
   const raw = searchParams.get(ADULT_FILTER_PARAM);
-  if (raw === null || raw === '') return false;
-  const normalized = raw.trim().toLowerCase();
-  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+  if (raw === null) return false;
+  return ENABLED_VALUES.includes(raw.trim().toLowerCase());
 }

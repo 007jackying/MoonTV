@@ -167,7 +167,7 @@ pnpm build        # 生产构建
 端到端测试跑在本地：内置的 mock CMS V10 服务器提供接口和真实 HLS 测试流，Harness 会临时换成只含本地源的 `config.json`，退出时自动还原。**测试数据全部来自本地**；应用自身的外网请求（版本检查、首页豆瓣/Bangumi）在离线环境下失败不会让用例失败。
 
 ```bash
-./tests/e2e/run-av-filter.sh                   # AV 源过滤（API + 浏览器两套，共 44 项断言）
+./tests/e2e/run-av-filter.sh                   # AV 源过滤（API 24 项 + 浏览器 31 项断言）
 E2E_MODE=dev ./tests/e2e/run-av-filter.sh      # 用 next dev 起（更快但更容易 flaky）
 ./tests/e2e/make-media.sh                      # 生成 HLS 测试流（需要 ffmpeg）
 CODEC=vp9 ./tests/e2e/make-media.sh            # 浏览器不支持 H.264 时（开源 Chromium）改用 VP9
@@ -208,9 +208,9 @@ Harness 会把 HLS 片段落在 `tests/e2e/media/`（`.gitignore` 忽略，也�
 采集源里成人站占了不小比例。DreamTV 默认把它们排除在搜索之外，并且这个开关是**每个浏览器本地**的，不影响其他用户。
 
 - **开关位置**：导航栏头像 →「设置」→「本地设置」→「过滤 AV 资源」，默认开启。
-- **作用范围**：搜索页搜索、播放页选源 / 换源、搜索建议、搜索源选择器，以及手动加载详情。开启时 `savedSources` 里残留的成人源会被自动清理。
+- **作用范围**：搜索页搜索、播放页选源 / 换源、搜索建议、搜索源选择器，以及手动加载详情。`savedSources` 里残留的成人源不会被选中，但会保留在本地存储里——关掉开关就重新生效，不会丢选择。
 - **判定方式**：优先用 `config.json` 里的 `is_adult` 标记；没有该字段时回退到名称前缀 `AV-` / `AV ` / `av_`（`AVPlayer` 这类普通源不会被误伤）。
-- **不影响外部调用方**：接口默认不过滤，只有带 `filterAdult=1` 的请求才过滤，因此 TVBox、OrionTV、定时刷新等调用方的行为不变。
+- **不影响外部调用方**：接口默认不过滤，只有带 `filterAdult=1`（或 `true` / `on`）的请求才过滤，其余取值一律视为不过滤，因此 TVBox、OrionTV、定时刷新等调用方的行为不变。
 
 实现要点：
 
@@ -501,7 +501,7 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
   - `api`：资源站提供的 `vod` JSON API 根地址。
   - `name`：在人机界面中展示的名称。
   - `detail`：（可选）部分无法通过 API 获取剧集详情的站点，需要提供网页详情根 URL，用于爬取。
-  - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。
+  - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。这个字段只能在 `config.json` 里设置（后台的添加 / 编辑源表单没有它），后台新增的自建源只能靠 `AV-` 前缀识别。
 - `custom_category`：自定义分类配置，用于在导航中添加个性化的影视分类。以 type + query 作为唯一标识。支持以下字段：
   - `name`：分类显示名称（可选，如不提供则使用 query 作为显示名）
   - `type`：分类类型，支持 `movie`（电影）或 `tv`（电视剧）

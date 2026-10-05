@@ -6,6 +6,35 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-05 — #8 replayed onto `main` (AV filter review fixes)
+
+#8 (`feat/av-source-filter` → `main`) could not be merged: its head branch had
+been deleted, and it conflicted with `main` in 17 files.
+
+_Why it conflicted:_ #6 had already landed byte-identical copies of #8's first
+two commits on `main` (`427bff1` = `f03a470`, `c5b979d` = `de0bb19`, checked
+with `git patch-id`). The merge base was still `e220d13`, so git saw the whole
+e2e harness "added" on both sides.
+
+_Decision:_ replay only what #8 still adds — `6ea1390` (#5 review fixes),
+`5024fc5`, `d52070d` (workbox restore, doc sync) — onto `main` as
+`review/pr8-on-main`, instead of restoring the branch and merging. Only
+`tests/e2e/README.md` conflicted; both sides were kept, and the
+"`test_play_perf.py` is not in this tree" notes were dropped because #6 put it
+on `main`.
+
+_Also fixed:_ `d52070d` added six entries to the generated `src/lib/changelog.ts`
+without adding them to `CHANGELOG`, so the next regeneration would have
+deleted them. They are now in `CHANGELOG`; regenerating plus prettier
+reproduces `changelog.ts` byte for byte.
+
+Checks on `main` + this branch (production build, local mock CMS): `tsc` clean,
+jest 73/73, AV filter e2e 24/24 API + 31/31 browser, play-page e2e 21/21,
+`git status` clean after a full build-mode run (on `main` the same run leaves
+`public/sw.js` modified — that is what `d52070d` fixes).
+
+---
+
 ## 2026-10-05 — Review of #6: play page first frame (3.10.0)
 
 PR: <https://github.com/007jackying/MoonTV/pull/6> (`fix/play-page-first-frame`).

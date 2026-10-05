@@ -4,7 +4,11 @@ Local end-to-end harness: a mock Apple CMS V10 server with real HLS fixtures,
 plus a boot script that swaps in a mock-only `config.json` and runs `next dev`
 against it. Everything is restored on exit.
 
-Nothing here talks to the internet — the mock serves the API and the media.
+The test data never comes from the internet — the mock serves the API and the
+media. The app itself still makes a few outbound requests of its own (the
+version check on `raw.githubusercontent.com`, Douban/Bangumi on the home page);
+the suites are written so those failing offline or behind a TLS-intercepting
+proxy does not fail a test (see _Console errors_ below).
 
 ## Files
 
@@ -12,7 +16,7 @@ Nothing here talks to the internet — the mock serves the API and the media.
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mock-cms.mjs`       | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.             |
 | `serve.mjs`          | Boot harness: swaps `config.json`, regenerates `src/lib/runtime.ts`, starts the mock + `next dev`, restores everything on exit.                                                                                                          |
-| `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). Media is gitignored.                                                                                                                                                           |
+| `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                       |
 | `measure.py`         | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                   |
 | `test_play_perf.py`  | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest. |
 | `test_av_filter.mjs` | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                     |
@@ -106,7 +110,7 @@ hide every source but one behind a single grouped card.
 ### Why the runner defaults to a production build
 
 `E2E_MODE=build` (the default) runs `next build` and then `next start`. `next dev`
-is *not* reliable enough for a browser suite that drives the app for several
+is _not_ reliable enough for a browser suite that drives the app for several
 minutes: on-demand compilation means the first `/play` and `/search` cost many
 seconds, long-lived dev sessions intermittently returned empty search payloads,
 and the HLS proxy path wedges the process at 100% CPU. With a production build
@@ -127,6 +131,12 @@ flakiness.
   `.next` and overwrite each other's on-demand-compile manifests, which shows up
   as random `ENOENT … page_client-reference-manifest.js` / HTTP 500 on unrelated
   routes.
+- **Chromium without H.264.** Open-source Chromium builds (some Playwright/CI
+  images among them) ship without proprietary codecs: `canPlayType('video/mp4;
+codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
+  ever renders, so every TTFF test times out. Regenerate the fixtures as VP9 +
+  Opus in fMP4 with `CODEC=vp9 bash tests/e2e/make-media.sh`; the playlist
+  names are unchanged, so nothing else needs to know.
 - **`tsconfig.json` excludes `tests/e2e/media`.** The generated HLS segments are
   named `*.ts`; without the exclude both `pnpm typecheck` and `next build` try
   to compile them as TypeScript and fail with hundreds of `Invalid character`
@@ -165,10 +175,49 @@ them. The suite asserts
   the blocking `role=status` skeleton is gone once playback starts;
 - exactly one `<video>` exists, even after measurement has run;
 - the advisory banner appears for a better source, is dismissible, and does
-  **not** silently switch the source;
+  **not** silently switch the source; its copy says _sharper_ (更清晰) for a
+  resolution upgrade and _faster_ (更快) only for a speed lead;
+- the banner is cleared by an episode switch (it was measured for the old one);
+- the seeded metrics are really what the banner reads — `LADDER` must match the
+  mock's origin (`MOCK_PORT`, default 4010) or the seed silently does nothing;
 - background measurement can never replace the page with the error screen — a
   regression test for a bug where the auto-switch resolved its target from the
-  empty `availableSources` closure and blew up ~4 s into playback.
+  empty `availableSources` closure and blew up ~4 s into playback;
+- a stored play record pointing past the last episode resumes clamped instead
+  of showing the invalid-episode error screen;
+- the source panel says it is still searching (with skeleton rows) while slow
+  sources are pending, instead of "no sources available";
+- the search-card hover prefetch requests exactly the `/api/detail` URL the
+  play page then requests (including `filterAdult`), so the warmed cache entry
+  is the one the click reads;
+- an episode switch keeps exactly one `<video>` and it actually plays (its
+  `currentTime` advances).
+
+### Console errors
+
+Both browser suites fail on unexpected console errors, with two deliberate
+exemptions:
+
+- **External origins.** `test_play_perf.py` only counts errors located on the
+  app or mock origin. Chromium attributes a "Failed to load resource" message
+  to the failed resource's URL, so the app's own internet requests failing
+  offline do not count, while a failed `/api/...` request still does.
+- **Requests cancelled by a navigation.** Navigating while the previous page
+  still has fetches in flight cancels them, and the app logs each as
+  `TypeError: Failed to fetch`. `test_play_perf.py` avoids it by doing its
+  storage setup on `/login` instead of detouring through the home page;
+  `test_av_filter.py` drives one page through several phases, so it ignores a
+  "Failed to fetch" logged within 1.5 s of a navigation starting
+  (`NAVIGATION_ABORT_WINDOW_S`). It also opens the settings menu from `/search`
+  rather than the home page, which this suite does not test.
+
+Measured with `--build` on the same mock (first frame, ms):
+
+| entry path                    | before (`main`) | after |
+| ----------------------------- | --------------- | ----- |
+| clicked a search result       | 855             | ~400  |
+| clicked a Douban card (cold)  | 4558            | ~400  |
+| auto-pick-best-source enabled | 4737            | ~500  |
 
 Note that the perf numbers are dev-server numbers unless you pass `--build`;
 `next dev` pays lazy route compilation on the first hit, which the suite

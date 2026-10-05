@@ -3,7 +3,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { SourceMetrics } from '@/lib/source-metrics';
 import { SearchResult } from '@/lib/types';
 
-import { useSourceSpeedTest } from '@/components/play/useSourceSpeedTest';
+import {
+  measurableCurrentFirst,
+  useSourceSpeedTest,
+} from '@/components/play/useSourceSpeedTest';
 
 const pending = new Map<string, (m: SourceMetrics) => void>();
 const measureSource = jest.fn(
@@ -109,5 +112,29 @@ describe('useSourceSpeedTest', () => {
     expect(result.current.infoMap.has('fast-fast-1')).toBe(false);
     rerender({ ep: 1 });
     expect(result.current.infoMap.get('fast-fast-1')?.quality).toBe('4K');
+  });
+});
+
+describe('measurableCurrentFirst', () => {
+  const mk = (key: string, episodes: string[]) =>
+    ({ source: key, id: '1', episodes } as unknown as SearchResult);
+  const a = mk('a', ['https://x/a1', 'https://x/a2']);
+  const b = mk('b', ['https://x/b1']);
+  const c = mk('c', []);
+  const d = mk('d', ['https://x/d1', 'https://x/d2']);
+
+  it('puts the current source first and keeps the rest in order', () => {
+    const out = measurableCurrentFirst([a, b, d], 0, 'd-1');
+    expect(out.map((s) => s.source)).toEqual(['d', 'a', 'b']);
+  });
+
+  it('drops sources with no address for the episode', () => {
+    const out = measurableCurrentFirst([a, b, c, d], 0, 'a-1');
+    expect(out.map((s) => s.source)).toEqual(['a', 'b', 'd']);
+  });
+
+  it('keeps the original order when the current source is not listed', () => {
+    const out = measurableCurrentFirst([a, b, d], 1, 'zzz-1');
+    expect(out.map((s) => s.source)).toEqual(['a', 'b', 'd']);
   });
 });

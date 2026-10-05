@@ -124,6 +124,9 @@ async function throttle(buf) {
 const MIME = {
   '.m3u8': 'application/vnd.apple.mpegurl',
   '.ts': 'video/mp2t',
+  // CODEC=vp9 fixtures (make-media.sh): fMP4 init segment + media segments.
+  '.mp4': 'video/mp4',
+  '.m4s': 'video/iso.segment',
   '.svg': 'image/svg+xml',
 };
 

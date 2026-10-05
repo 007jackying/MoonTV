@@ -35,6 +35,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from urllib.parse import parse_qs, quote, urlparse
 
 from playwright.sync_api import sync_playwright
@@ -70,6 +71,13 @@ EXPECTED_CONSOLE_NOISE = (
     "manifestLoadError",
     "manifestParsingError",
 )
+
+# Navigating while the previous page still has fetches in flight cancels them,
+# and the app logs each one as "TypeError: Failed to fetch" (e.g. the header's
+# source list). That is the browser tearing the old page down, not an app bug,
+# so a "Failed to fetch" logged within this window after a navigation starts is
+# not counted. A failed fetch anywhere else still is.
+NAVIGATION_ABORT_WINDOW_S = 1.5
 
 # How long to let the dev server compile + the streaming search settle.
 SETTLE_MS = 3000
@@ -457,17 +465,33 @@ def run(pw, base):
     for pattern in MEDIA_GLOBS:
         page.route(pattern, lambda route: route.abort())
     console_errors = []
-    page.on(
-        "console",
-        lambda m: console_errors.append(m.text)
-        if m.type == "error"
-        and not any(n in m.text for n in EXPECTED_CONSOLE_NOISE)
-        else None,
-    )
+    last_navigation = [0.0]
+
+    def on_request(req):
+        if req.is_navigation_request() and req.frame == page.main_frame:
+            last_navigation[0] = time.monotonic()
+
+    def on_console(m):
+        if m.type != "error":
+            return
+        if any(n in m.text for n in EXPECTED_CONSOLE_NOISE):
+            return
+        if (
+            "Failed to fetch" in m.text
+            and time.monotonic() - last_navigation[0] < NAVIGATION_ABORT_WINDOW_S
+        ):
+            return
+        console_errors.append(m.text)
+
+    page.on("request", on_request)
+    page.on("console", on_console)
     capture = SearchCapture(page, base)
 
     login(page, base)
-    page.goto(base, wait_until="domcontentloaded")
+    # The settings menu is in the header on every page. Use /search rather than
+    # the home page: the home page pulls Douban/Bangumi from the internet, which
+    # this suite does not test and which fails (and logs errors) offline.
+    page.goto(f"{base}/search", wait_until="domcontentloaded")
     seed_prefs(page)
     page.reload(wait_until="domcontentloaded")
 
@@ -645,7 +669,7 @@ def run(pw, base):
     # ======================================================================
     print("\n[4] reset", flush=True)
     page.evaluate("(k) => localStorage.removeItem(k)", FILTER_KEY)
-    page.goto(base, wait_until="domcontentloaded")
+    page.goto(f"{base}/search", wait_until="domcontentloaded")
     page.reload(wait_until="domcontentloaded")
     open_settings(page)
     page.locator("button:has-text('重置'):visible").first.click()

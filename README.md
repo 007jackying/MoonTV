@@ -158,21 +158,22 @@ pnpm install
 pnpm dev          # 本地开发
 pnpm typecheck    # 类型检查
 pnpm lint         # ESLint
-pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言、测速与评分、AV 源过滤）
+pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言、测速与评分、测速 hook、AV 源过滤）
 pnpm build        # 生产构建
 ```
 
 ### 端到端测试
 
-端到端测试跑在本地：内置的 mock CMS V10 服务器提供接口和真实 HLS 测试流，Harness 会临时换成只含本地源的 `config.json`，退出时自动还原。**全程不访问外网。**
+端到端测试跑在本地：内置的 mock CMS V10 服务器提供接口和真实 HLS 测试流，Harness 会临时换成只含本地源的 `config.json`，退出时自动还原。**测试数据全部来自本地**；应用自身的外网请求（版本检查、首页豆瓣/Bangumi）在离线环境下失败不会让用例失败。
 
 ```bash
 ./tests/e2e/run-av-filter.sh                   # AV 源过滤（API + 浏览器两套，共 44 项断言）
 E2E_MODE=dev ./tests/e2e/run-av-filter.sh      # 用 next dev 起（更快但更容易 flaky）
 ./tests/e2e/make-media.sh                      # 生成 HLS 测试流（需要 ffmpeg）
+CODEC=vp9 ./tests/e2e/make-media.sh            # 浏览器不支持 H.264 时（开源 Chromium）改用 VP9
 node tests/e2e/serve.mjs                       # 启动 mock + next dev（性能基线用）
 node tests/e2e/serve.mjs --build               # 或对生产构建跑
-python -m pytest tests/e2e/test_play_perf.py -v    # 播放页 16 个用例
+python -m pytest tests/e2e/test_play_perf.py -v    # 播放页 21 个用例
 python tests/e2e/measure.py --scenario clicked     # 首帧耗时
 ```
 
@@ -183,16 +184,20 @@ python tests/e2e/measure.py --scenario clicked     # 首帧耗时
 `perf` 档位给每个源配了可复现的上游延迟（`fast` 60ms … `slow2` 4000ms），因此
 「页面是否在等最慢的源」是确定性问题。`test_play_perf.py` 覆盖三种进入方式的首帧预算、
 `/api/detail` 确实在关键路径上、搜索仍在后台进行、加载期无整页骨架、始终只有一个
-`<video>`、提示条的出现与关闭、换集、快捷键，以及「后台测速永远不会把页面换成错误页」
-这条回归。
+`<video>`、提示条的出现/关闭/换集后清除及文案（更清晰 vs 更快）、换集后确实在播放、
+快捷键、续播记录越界时夹紧、搜索未完成时源列表显示「正在搜索」、卡片预热与播放页请求
+同一个 `/api/detail` 地址，以及「后台测速永远不会把页面换成错误页」这条回归。
 
 首帧实测（同一 mock，生产构建，多次运行）：点击搜索结果 ≈0.4s、从豆瓣卡片进入 ≈0.4s、
-开启自动优选 ≈0.5s；改造前分别为 2.0s / 5.0s / 5.3s（`next dev` 下测得，两侧 mock
-延迟完全一致，因此差值可信）。<video> 的挂载时间从 ~1.9–4.9s 降到 ~0.1s。
+开启自动优选 ≈0.5s；改造前（`main`，同样是生产构建）分别为 0.86s / 4.6s / 4.7s。
+早先在 `next dev` 下测得的「改造前」为 2.0s / 5.0s / 5.3s，含按需编译开销，偏高。
+<video> 的挂载时间从 ~0.7–4.5s 降到 ~0.2s。
 
 详见 [`tests/e2e/README.md`](tests/e2e/README.md)：包含 harness 组成、两种源配置档位
 （`perf` / `avfilter`）、Playwright 安装方式，以及几处已知的 `next dev` 怪癖的规避方式。
 浏览器套件需要 Playwright，API 套件只用 node。
+
+评审记录、测试结论与设计决策见 [`docs/DEV_LOG.md`](docs/DEV_LOG.md)。
 
 Harness 会把 HLS 片段落在 `tests/e2e/media/`（`.gitignore` 忽略，也在 `tsconfig.json`
 的 `exclude` 里 —— 否则 ffmpeg 生成的二进制 `.ts` 会让 `pnpm typecheck` 报几百行

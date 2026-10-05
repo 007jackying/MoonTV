@@ -77,6 +77,7 @@ import {
 } from '@/components/play/PlayPanels';
 import {
   episodeUrlOf,
+  measurableCurrentFirst,
   PrecomputedVideoInfo,
   sourceKeyOf,
   useSourceSpeedTest,
@@ -249,6 +250,8 @@ function PlayPageClient() {
   const [betterSource, setBetterSource] = useState<{
     detail: SearchResult;
     metrics: SourceMetrics;
+    /** 建议的理由决定提示文案：分辨率更高 ≠ 更快。 */
+    reason: 'quality-upgrade' | 'faster';
   } | null>(null);
 
   // 播放进度保存相关
@@ -276,13 +279,16 @@ function PlayPageClient() {
 
     if (isCancelled?.()) throw new Error('优选已取消');
 
-    // 测速：全部并发（上限 MEASURE_CONCURRENCY），当前集优先入队。
+    // 测速：全部并发（上限 MEASURE_CONCURRENCY），当前源优先入队。
     // 旧实现分两批串行，最坏情况要等 2 × 4s。
     const episodeIndex = currentEpisodeIndexRef.current;
-    // 只测当前集确实有地址的源；没有地址的源保持原位排到最后。
-    const ordered = orderByCurrentEpisodeFirst(sources, episodeIndex);
-    const measurable = ordered.filter(
-      (s) => episodeUrlOf(s, episodeIndex) !== ''
+    const measurable = measurableCurrentFirst(
+      sources,
+      episodeIndex,
+      sourceKeyOf({
+        source: currentSourceRef.current,
+        id: currentIdRef.current,
+      })
     );
     const metrics = await mapWithConcurrency(
       measurable,
@@ -979,8 +985,10 @@ function PlayPageClient() {
       id: currentIdRef.current,
     });
 
-    const measurable = orderByCurrentEpisodeFirst(sources, episodeIndex).filter(
-      (s) => episodeUrlOf(s, episodeIndex) !== ''
+    const measurable = measurableCurrentFirst(
+      sources,
+      episodeIndex,
+      currentKey
     );
     if (measurable.length < 2) return;
     const metrics = await mapWithConcurrency(
@@ -1032,7 +1040,12 @@ function PlayPageClient() {
     );
     if (!decision.suggest) return;
 
-    setBetterSource({ detail: best.source, metrics: best.metrics });
+    setBetterSource({
+      detail: best.source,
+      metrics: best.metrics,
+      reason:
+        decision.reason === 'quality-upgrade' ? 'quality-upgrade' : 'faster',
+    });
   };
 
   const acceptBetterSource = () => {
@@ -1524,7 +1537,9 @@ function PlayPageClient() {
                   strokeWidth={2.75}
                 />
                 <span className='truncate'>
-                  {t.betterSourceFound}{' '}
+                  {betterSource.reason === 'quality-upgrade'
+                    ? t.sharperSourceFound
+                    : t.betterSourceFound}{' '}
                   {betterSource.metrics.quality !== '未知'
                     ? `${betterSource.metrics.quality} · ${betterSource.metrics.loadSpeed}`
                     : betterSource.metrics.loadSpeed}
@@ -1666,16 +1681,6 @@ function PlayPageClient() {
 
 /** 测速并发上限。超过这个数的源排队，避免一次性打爆连接数。 */
 const MEASURE_CONCURRENCY = 6;
-
-/** 把当前集有地址的源排到前面，让"当前源"的结果最先落地。 */
-function orderByCurrentEpisodeFirst(
-  sources: SearchResult[],
-  index: number
-): SearchResult[] {
-  const playable = sources.filter((s) => episodeUrlOf(s, index) !== '');
-  const rest = sources.filter((s) => episodeUrlOf(s, index) === '');
-  return [...playable, ...rest];
-}
 
 /**
  * 只问一个源要详情，作为首帧的关键路径。

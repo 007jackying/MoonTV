@@ -40,6 +40,22 @@ export function episodeUrlOf(source: SearchResult, index: number): string {
 }
 
 /**
+ * 当前集有地址的源（没有地址的测了也是错误结果，直接跳过），
+ * 当前源排第一：它的数字用户最先看到，并发打满时也不该排在后面。
+ * 评分相同时排序是稳定的，所以平分也会留在当前源上，不会无端建议换源。
+ */
+export function measurableCurrentFirst(
+  sources: SearchResult[],
+  episodeIndex: number,
+  currentKey: string
+): SearchResult[] {
+  const playable = sources.filter((s) => episodeUrlOf(s, episodeIndex) !== '');
+  const current = playable.filter((s) => sourceKeyOf(s) === currentKey);
+  const rest = playable.filter((s) => sourceKeyOf(s) !== currentKey);
+  return [...current, ...rest];
+}
+
+/**
  * 测速结果按"源 + 集"记：同一个源的不同集常常在不同的上游文件上，
  * 换集后沿用第 1 集的数字会是错的，而不只是旧的。
  */

@@ -112,6 +112,13 @@ LADDER = {
 }
 
 
+# The advisory says "sharper" for a resolution upgrade and "faster" for a speed
+# lead. Every mock pair differs in resolution (720p vs 1080p ladders), so the
+# suite always sees the "sharper" copy; BANNER_SHOWN accepts either.
+BANNER_SHOWN = "() => /发现更(快|清晰)的源/.test(document.body.innerText)"
+BANNER_GONE = "() => !/发现更(快|清晰)的源/.test(document.body.innerText)"
+
+
 def _seed_metrics(page, entries):
     """entries: {quality: (loadSpeed, pingTime)} -> write moontv_source_metrics."""
     page.evaluate(
@@ -425,8 +432,11 @@ def test_advisory_banner_offers_a_better_source(browser):
         page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
         _first_frame(page)
         page.wait_for_function(
-            "() => document.body.innerText.includes('发现更快的源')", timeout=25000
+            BANNER_SHOWN, timeout=25000
         )
+        # Same speed, higher resolution: the copy must say "sharper", not
+        # "faster" — it is not faster.
+        assert "发现更清晰的源" in page.inner_text("body")
         # ...and playback must not have been swapped out from under the user.
         # handleSourceChange rewrites ?source=, so the URL is the signal.
         assert "source=fast" in page.url, (
@@ -444,11 +454,11 @@ def test_advisory_can_be_dismissed(browser):
         page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
         _first_frame(page)
         page.wait_for_function(
-            "() => document.body.innerText.includes('发现更快的源')", timeout=25000
+            BANNER_SHOWN, timeout=25000
         )
         page.get_by_label("关闭").first.click()
         page.wait_for_function(
-            "() => !document.body.innerText.includes('发现更快的源')", timeout=5000
+            BANNER_GONE, timeout=5000
         )
     finally:
         ctx.close()
@@ -467,7 +477,7 @@ def test_seeded_metrics_are_what_the_advisory_reads(browser):
         page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
         _first_frame(page)
         page.wait_for_function(
-            "() => document.body.innerText.includes('发现更快的源')", timeout=25000
+            BANNER_SHOWN, timeout=25000
         )
         assert "1234 KB/s" in page.inner_text("body")
     finally:
@@ -483,11 +493,11 @@ def test_advisory_is_cleared_by_an_episode_switch(browser):
         page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
         _first_frame(page)
         page.wait_for_function(
-            "() => document.body.innerText.includes('发现更快的源')", timeout=25000
+            BANNER_SHOWN, timeout=25000
         )
         page.get_by_role("button", name="3", exact=True).first.click()
         page.wait_for_function(
-            "() => !document.body.innerText.includes('发现更快的源')", timeout=5000
+            BANNER_GONE, timeout=5000
         )
         assert "source=fast" in page.url
     finally:
@@ -587,18 +597,24 @@ def test_episode_switch_keeps_playing(browser):
             wait_until="commit",
         )
         _first_frame(page)
-        before = page.evaluate("document.querySelector('video').currentTime")
-        page.evaluate(
-            """() => {
-              const b = [...document.querySelectorAll('button')]
-                .find(x => x.innerText.trim() === '3');
-              b && b.click();
-            }"""
+        page.get_by_role("button", name="3", exact=True).first.click()
+        # The heading carries the current episode label.
+        page.wait_for_function(
+            "() => document.body.innerText.includes('第 3 集')", timeout=10000
         )
-        page.wait_for_timeout(3000)
-        after = page.evaluate("document.querySelector('video').currentTime")
+        # Still exactly one <video>, and it is actually playing the new episode:
+        # currentTime has to advance after the switch, not just exist.
+        page.wait_for_function(
+            """() => {
+                const v = document.querySelector('video');
+                if (!v || v.paused || v.readyState < 2) return false;
+                window.__epT0 ??= v.currentTime;  // not __t0: INIT_SCRIPT owns that
+                return v.currentTime > window.__epT0 + 0.5;
+            }""",
+            timeout=15000,
+        )
         assert page.locator("video").count() == 1
-        assert after != before or True  # currentTime may reset; just no crash
+        assert "选集索引无效" not in page.inner_text("body")
     finally:
         ctx.close()
 
@@ -620,12 +636,27 @@ def test_keyboard_shortcut_space_toggles_playback(browser):
         ctx.close()
 
 
+# The app itself reaches out to the internet on every page (the version check
+# on raw.githubusercontent.com, Douban/Bangumi on the home page). Those are not
+# what this suite is about, and offline or behind a TLS-intercepting proxy they
+# fail with "Failed to load resource". Chromium attributes that console message
+# to the failed resource's URL, so only errors located on our own origins count.
+LOCAL_ORIGINS = (BASE, MOCK_ORIGIN)
+
+
+def _is_local_error(msg) -> bool:
+    url = (msg.location or {}).get("url") or ""
+    return not url.startswith("http") or url.startswith(LOCAL_ORIGINS)
+
+
 def test_no_console_errors_during_playback(browser):
     ctx, page = _new_page(browser)
     errors = []
     page.on(
         "console",
-        lambda m: errors.append(m.text) if m.type == "error" else None,
+        lambda m: errors.append(f"{m.text} @ {(m.location or {}).get('url')}")
+        if m.type == "error" and _is_local_error(m)
+        else None,
     )
     page.on("pageerror", lambda e: errors.append(str(e)))
     try:

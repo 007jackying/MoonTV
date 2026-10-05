@@ -14,7 +14,10 @@ export const changelog: ChangelogEntry[] = [
     version: '3.10.1',
     date: '2026-10-04',
     added: [
-      // 无新增内容
+      'config.json 的 api_site 新增 `disabled` 与 `note` 字段: 停用一个失效的源而不用删掉它, `note` 纯作备注记录停用原因, 不参与运行时逻辑',
+      '停用 41 个实测连续两轮完全失效的采集源(源站关闭搜索/ DNS 解析失败 / 返回 HTML / 403 等), 保留条目并逐个写明原因, 详见 docs/broken-sources.md',
+      '新增量子资源采集源 cj.lzcaiji.com (取自上游 Stardm0/MoonTV), 已验证搜索与 JSON 详情接口均可用',
+      '单元测试覆盖 config.json 的 `disabled` 约定: 停用项必须带 note, 且 `disabled` 能正确透传到 SourceConfig',
     ],
     changed: [
       'e2e harness 退出时不再删除 `.next-e2e/`, 需要清理可显式传 `--clean`',
@@ -25,6 +28,8 @@ export const changelog: ChangelogEntry[] = [
       '修复 `filterAdult` 把 `no` / `2` 之类取值当成开启过滤: 现在只认 `1` / `true` / `on` 白名单, 其余取值一律视为不过滤',
       '修复每次请求都用 `undefined` 覆盖 `config.json` 里的 `is_adult`, 导致成人源标记在 `config.json` 省略该字段时丢失',
       '修复 e2e harness 把 next-pwa 生成的 `public/sw.js` 与 `public/workbox-*.js` 留在改动状态; 现在一并快照并在退出时还原, 跑完 `git status` 保持干净',
+      '搜索不再反复打向已失效的采集源: 原先每次搜索都会等这些源超时, 并在日志里抛出 `Unexpected token ... is not valid JSON` 之类的裸 JSON 解析异常',
+      '修复 config.json 无法停用采集源的问题: 此前所有构造 SourceConfig 的路径都写死 `disabled: false`, 配置里写什么都不影响启停',
     ],
   },
   {
@@ -79,10 +84,6 @@ export const changelog: ChangelogEntry[] = [
       '首批单元测试: 播放器引擎、弹幕解析、界面语言',
       '全局过滤 AV 采集源: 本地设置新增「过滤 AV 资源」开关(默认开启), 覆盖搜索、播放页选源/换源、搜索建议与搜索源选择器',
       'config.json 的 api_site 新增 `is_adult` 字段, 用于标记成人源; 缺省时回退到按 `AV-` 名称前缀识别',
-      'config.json 的 api_site 新增 `disabled` 与 `note` 字段: 停用一个失效的源而不用删掉它, `note` 纯作备注记录停用原因, 不参与运行时逻辑',
-      '停用 41 个实测连续两轮完全失效的采集源(源站关闭搜索/ DNS 解析失败 / 返回 HTML / 403 等), 保留条目并逐个写明原因, 详见 docs/broken-sources.md',
-      '新增量子资源采集源 cj.lzcaiji.com (取自上游 Stardm0/MoonTV), 已验证搜索与 JSON 详情接口均可用',
-      '单元测试覆盖 config.json 的 `disabled` 约定: 停用项必须带 note, 且 `disabled` 能正确透传到 SourceConfig',
       'AV 源过滤端到端测试: API 套件(node)与浏览器套件(playwright), 并提供 `tests/e2e/run-av-filter.sh` 一键运行',
       'e2e harness 支持 `--profile=avfilter`, mock CMS 新增 `/__hits` 搜索扇出记录',
     ],
@@ -99,8 +100,6 @@ export const changelog: ChangelogEntry[] = [
       'tsconfig.json 排除 `tests/e2e/media`: 生成的 HLS 片段是 `.ts`, 不排除会让 `pnpm typecheck` 与 `next build` 报几百行 `Invalid character`',
     ],
     fixed: [
-      '搜索不再反复打向已失效的采集源: 原先每次搜索都会等这些源超时, 并在日志里抛出 `Unexpected token ... is not valid JSON` 之类的裸 JSON 解析异常',
-      '修复 config.json 无法停用采集源的问题: 此前所有构造 SourceConfig 的路径都写死 `disabled: false`, 配置里写什么都不影响启停',
       '修复响应式布局与卡片交互的多处断点问题',
       '修复豆瓣日历经服务端代理请求以绕过 CORS',
       '修复豆瓣返回非 JSON 数据时报错信息不明确',

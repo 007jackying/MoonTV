@@ -43,6 +43,15 @@ export interface AdminConfig {
      */
     is_adult?: boolean;
     from: 'config' | 'custom';
+    /**
+     * 生效后的启停状态。
+     *
+     * 配置文件（本地存储为 config.json，数据库存储为 `ConfigFile`）的 api_site 里
+     * 写了 `disabled: true` 的源，这里一定是 `true`：配置里的显式声明优先于存储值
+     * （见 lib/config.ts 的 existingSource 分支），所以后台点「启用」对这类源无效，
+     * 只能改配置文件。没写 `disabled` 的源则完全由后台管理控制，不受配置重载影响——
+     * 这也意味着删掉 `disabled: true` 不会重新启用已保存为停用的源，要显式写 `false`。
+     */
     disabled?: boolean;
   }[];
   CustomCategories: {

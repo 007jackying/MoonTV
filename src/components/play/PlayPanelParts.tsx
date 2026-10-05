@@ -42,6 +42,16 @@ export function QualityTag({ info }: { info?: VideoInfo }) {
   );
 }
 
+/** 在播放器里实际播放失败（区别于"检测失败"：那只是轻量测速没通过） */
+export function FailedTag() {
+  const { t } = useI18n();
+  return (
+    <span className='o-tag o-tag-accent ml-auto flex-none font-bold'>
+      {t.cannotPlay}
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 测速数据：速度 / 延迟 / 集数（保留原始数值）
 // ---------------------------------------------------------------------------
@@ -165,13 +175,7 @@ export function SourceRow({
             {source.title}
           </span>
         )}
-        {failed ? (
-          <span className='o-tag o-tag-accent ml-auto flex-none font-bold'>
-            {t.cannotPlay}
-          </span>
-        ) : (
-          <QualityTag info={info} />
-        )}
+        {failed ? <FailedTag /> : <QualityTag info={info} />}
       </div>
       <SourceStats
         info={info}

@@ -10,6 +10,7 @@ import {
   EpisodeGrid,
   EpisodeHeader,
   EpisodeRanges,
+  FailedTag,
   QualityTag,
   SourceDot,
   SourceRow,
@@ -46,15 +47,6 @@ export interface PlayPanelProps {
   onAutoPick: () => void;
   onCancelAutoPick: () => void;
   onWrongMatch: () => void;
-}
-
-function FailedTag() {
-  const { t } = useI18n();
-  return (
-    <span className='o-tag o-tag-accent ml-auto flex-none font-bold'>
-      {t.cannotPlay}
-    </span>
-  );
 }
 
 const NO_FAILED: ReadonlySet<string> = new Set();

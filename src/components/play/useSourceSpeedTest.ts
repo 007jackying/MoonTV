@@ -67,8 +67,8 @@ const measureKeyOf = (
 /**
  * 播放源测速（分辨率 / 下载速度 / 延迟）。
  *
- * 当前源总是会测；其它源在 testAll 为 true（用户展开了源列表）时才测，
- * 且一次并发 CONCURRENCY 个。优选时已有的结果通过 precomputed 合并进来，
+ * 当前源总是会测；其它源在 testAll 为 true（用户展开了源列表、电影的源列表
+ * 常驻，或当前源播放失败需要挑下一个源）时才测，且一次并发 CONCURRENCY 个。优选时已有的结果通过 precomputed 合并进来，
  * 避免重复测速。测速本身走 lib/source-metrics 的轻量实现：解析
  * #EXT-X-STREAM-INF 的 RESOLUTION 拿分辨率，manifest 的 TTFB 拿延迟，
  * 一次 GET 首个分片（读够就取消）拿带宽——不再为每个源起一个 hls.js 实例。
@@ -147,7 +147,7 @@ export function useSourceSpeedTest({
     if (enabled && current) void test(current);
   }, [enabled, current, test]);
 
-  // 展开源列表后再测其余源
+  // 展开源列表（或当前源失败）后再测其余源
   useEffect(() => {
     if (!enabled || !testAll || sources.length === 0) return;
     const pending = sources.filter(

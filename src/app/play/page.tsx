@@ -247,11 +247,11 @@ function PlayPageClient() {
   const [autoPicking, setAutoPicking] = useState(false);
   const cancelAutoPickRef = useRef(false);
 
-  // 播放失败的源：源 -> 失败时的集数。同一个源换一集可能就能放，
-  // 所以只在对应集数下视为失败。
-  const [failedSources, setFailedSources] = useState<Map<string, number>>(
-    new Map()
-  );
+  // 在播放器里实际播放失败过的（源, 集），键为 failureKeyOf。同一个源换一集
+  // 可能就能放，所以只在对应集数下视为失败。ref 供首帧闭包里的优选 / 建议读取。
+  const [failedSources, setFailedSources] = useState<Set<string>>(new Set());
+  const failedSourcesRef = useRef(failedSources);
+  const playerFailedRef = useRef(false);
   // 当前源失败后正在自动寻找下一个可用源
   const [failoverActive, setFailoverActive] = useState(false);
   // 自动换源都试完了仍然没有能放的
@@ -329,10 +329,14 @@ function PlayPageClient() {
     const scored = measurable
       .map((source, i) => ({ source, metrics: metrics[i] }))
       .filter((x) => !x.metrics.hasError);
+    // 播放器里已经放不了的源，测速通过也不再选
+    const failedHere = (s: SearchResult) =>
+      failedSourcesRef.current.has(failureKeyOf(s, episodeIndex));
+
     if (scored.length === 0) {
       console.warn('所有播放源测速都失败，使用第一个播放源');
       setAvailableSources(sources);
-      return sources[0];
+      return sources.find((s) => !failedHere(s)) ?? sources[0];
     }
 
     const { maxSpeed, minPing, maxPing } = boundsFor(
@@ -364,7 +368,9 @@ function PlayPageClient() {
     if (isCancelled?.()) throw new Error('优选已取消');
     setAvailableSources(sortedSources);
 
-    return resultsWithScore[0].source;
+    // 测速通过的源都放不了时留在当前源（调用方只在结果不同于当前源时才换）
+    const best = resultsWithScore.find((r) => !failedHere(r.source));
+    return best ? best.source : detailRef.current ?? resultsWithScore[0].source;
   };
 
   // -----------------------------------------------------------------------------
@@ -1000,7 +1006,8 @@ function PlayPageClient() {
    * 自动切换会丢进度、重置续播、打断弹幕，所以默认路径是"提示"而不是"替换"。
    */
   const suggestBetterSource = async (sources: SearchResult[]) => {
-    if (sources.length < 2) return;
+    // 当前源已经放不了时由自动换源接手，不再给"更好"的建议
+    if (sources.length < 2 || playerFailedRef.current) return;
     const episodeIndex = currentEpisodeIndexRef.current;
     const currentKey = sourceKeyOf({
       source: currentSourceRef.current,
@@ -1021,8 +1028,12 @@ function PlayPageClient() {
 
     const usable = measurable
       .map((source, i) => ({ source, metrics: metrics[i] }))
-      .filter((x) => !x.metrics.hasError);
-    if (usable.length < 2) return;
+      .filter(
+        (x) =>
+          !x.metrics.hasError &&
+          !failedSourcesRef.current.has(failureKeyOf(x.source, episodeIndex))
+      );
+    if (usable.length < 2 || playerFailedRef.current) return;
 
     const { maxSpeed, minPing, maxPing } = boundsFor(
       usable.map((x) => x.metrics)
@@ -1143,6 +1154,7 @@ function PlayPageClient() {
   };
 
   const handlePlayerReady = () => {
+    playerFailedRef.current = false;
     setPlayerFailed(false);
     if (pendingSourceKey) setSourcesExpanded(false);
     setPendingSourceKey(null);
@@ -1156,16 +1168,20 @@ function PlayPageClient() {
   };
 
   const handlePlayerError = () => {
+    playerFailedRef.current = true;
     setPlayerFailed(true);
     setPendingSourceKey(null);
     setSwitchFromDetail(null);
+    // 提示条建议的是"更好"的源，当前源都放不了了，这个前提已不成立
+    setBetterSource(null);
     const d = detailRef.current;
     if (d) {
-      const key = sourceKeyOf(d);
-      const ep = currentEpisodeIndexRef.current;
-      setFailedSources((prev) =>
-        prev.get(key) === ep ? prev : new Map(prev).set(key, ep)
+      // 同步写 ref：后台优选 / 建议可能在下一次提交前读取
+      const next = new Set(failedSourcesRef.current).add(
+        failureKeyOf(d, currentEpisodeIndexRef.current)
       );
+      failedSourcesRef.current = next;
+      setFailedSources(next);
     }
     // 不管是首次进入还是播放中途放弃恢复，都自动去找下一个能放的源
     if (failoverAttemptsRef.current < MAX_AUTO_FAILOVERS) {
@@ -1186,11 +1202,12 @@ function PlayPageClient() {
     setFailoverWaitExpired(false);
   }
 
-  // 当前集下播放失败过的源
+  // 当前集下播放失败过的源，键为 sourceKeyOf
   const failedKeys = useMemo(() => {
+    const suffix = `#${currentEpisodeIndex}`;
     const keys = new Set<string>();
-    failedSources.forEach((ep, key) => {
-      if (ep === currentEpisodeIndex) keys.add(key);
+    failedSources.forEach((k) => {
+      if (k.endsWith(suffix)) keys.add(k.slice(0, -suffix.length));
     });
     return keys;
   }, [failedSources, currentEpisodeIndex]);
@@ -1805,6 +1822,12 @@ function PlayPageClient() {
 
 /** 测速并发上限。超过这个数的源排队，避免一次性打爆连接数。 */
 const MEASURE_CONCURRENCY = 6;
+
+/** 播放失败记录的键："源 + 集"，与测速结果的记法一致 */
+const failureKeyOf = (
+  s: { source: string; id: string },
+  episodeIndex: number
+) => `${sourceKeyOf(s)}#${episodeIndex}`;
 
 /** 一次失败后最多连续自动换几个源，避免在一堆坏源之间来回跳 */
 const MAX_AUTO_FAILOVERS = 5;

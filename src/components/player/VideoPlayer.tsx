@@ -98,7 +98,10 @@ interface VideoPlayerProps {
   onTimeUpdate?: (time: number, duration: number) => void;
   onPause?: () => void;
   onReady?: () => void;
-  /** 当前这一路无法播放（已放弃恢复） */
+  /**
+   * 当前这一路无法播放（首次加载失败，或播放中放弃恢复）。
+   * 播放页据此自动切换到下一个可用的源。
+   */
   onError?: () => void;
   errorAction?: { label: string; onClick: () => void };
   /** 失败卡片上的补充说明（如"正在自动换源…"） */

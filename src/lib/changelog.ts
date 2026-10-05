@@ -11,6 +11,29 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '3.10.1',
+    date: '2026-10-04',
+    added: [
+      'config.json 的 api_site 新增 `disabled` 与 `note` 字段: 停用一个失效的源而不用删掉它, `note` 纯作备注记录停用原因, 不参与运行时逻辑',
+      '停用 41 个实测连续两轮完全失效的采集源(源站关闭搜索/ DNS 解析失败 / 返回 HTML / 403 等), 保留条目并逐个写明原因, 详见 docs/broken-sources.md',
+      '新增量子资源采集源 cj.lzcaiji.com (取自上游 Stardm0/MoonTV), 已验证搜索与 JSON 详情接口均可用',
+      '单元测试覆盖 config.json 的 `disabled` 约定: 停用项必须带 note, 且 `disabled` 能正确透传到 SourceConfig',
+    ],
+    changed: [
+      'e2e harness 退出时不再删除 `.next-e2e/`, 需要清理可显式传 `--clean`',
+      '后台「视频源配置」: 启停被配置文件 `disabled` 字段固定的源显示「由配置文件控制」, 不再提供点了也无效的启用/禁用按钮; 批量启用/禁用会跳过这些源并在确认框里说明',
+    ],
+    fixed: [
+      '修复开启 AV 过滤后会把 `savedSources` 里的成人源永久删除: 只是被偏好藏起来的源不再被当成「已失效」写回本地存储, 关掉开关即可恢复原选择',
+      '修复带 `?sources=` 的搜索链接会被已清空的 `savedSources` 覆盖成空选择',
+      '修复 `filterAdult` 把 `no` / `2` 之类取值当成开启过滤: 现在只认 `1` / `true` / `on` 白名单, 其余取值一律视为不过滤',
+      '修复每次请求都用 `undefined` 覆盖 `config.json` 里的 `is_adult`, 导致成人源标记在 `config.json` 省略该字段时丢失',
+      '修复 e2e harness 把 next-pwa 生成的 `public/sw.js` 与 `public/workbox-*.js` 留在改动状态; 现在一并快照并在退出时还原, 跑完 `git status` 保持干净',
+      '搜索不再反复打向已失效的采集源: 原先每次搜索都会等这些源超时, 并在日志里抛出 `Unexpected token ... is not valid JSON` 之类的裸 JSON 解析异常',
+      '修复 config.json 无法停用采集源的问题: 此前所有构造 SourceConfig 的路径都写死 `disabled: false`, 配置里写什么都不影响启停',
+    ],
+  },
+  {
     version: '3.10.0',
     date: '2026-10-04',
     added: [

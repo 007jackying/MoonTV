@@ -17,8 +17,10 @@ Covered:
   selector   the source-selector popup lists adult sources when off, none when on
   play       the play page source panel lists adult sources when off, none when on
   roundtrip  a `savedSources` list that still names an adult source is honoured
-             while the toggle is off, and is pruned from localStorage once the
-             toggle goes back on
+             while the toggle is off, is excluded from the active selection while it
+             is on, and survives in localStorage so turning the toggle back off
+             restores it
+  linksave  an explicit `?sources=` link is not blanked by an empty savedSources
   reset      重置 restores the default
 
 Boot the app with adult sources first:
@@ -351,6 +353,19 @@ class SearchCapture:
         return out
 
 
+def card_source_keys(page):
+    """Source keys of the cards currently rendered on /search, read from hrefs."""
+    hrefs = page.eval_on_selector_all(
+        "a[href*='/play?source=']", "els => els.map(e => e.getAttribute('href'))"
+    )
+    keys = set()
+    for href in hrefs:
+        q = parse_qs(urlparse(href).query)
+        if "source" in q:
+            keys.add(q["source"][0])
+    return sorted(keys)
+
+
 def search_source_keys(page, base, capture=None, attempts=2):
     """Source keys of the cards rendered on /search, read from their hrefs."""
     if capture:
@@ -371,16 +386,9 @@ def search_source_keys(page, base, capture=None, attempts=2):
                 page.wait_for_timeout(SETTLE_MS)
                 continue
         page.wait_for_timeout(SETTLE_MS)
-        hrefs = page.eval_on_selector_all(
-            "a[href*='/play?source=']", "els => els.map(e => e.getAttribute('href'))"
-        )
-        keys = set()
-        for href in hrefs:
-            q = parse_qs(urlparse(href).query)
-            if "source" in q:
-                keys.add(q["source"][0])
+        keys = card_source_keys(page)
         if keys or attempt + 1 >= attempts:
-            return sorted(keys)
+            return keys
     return sorted(keys)
 
 
@@ -402,6 +410,22 @@ def selector_source_names(page, base):
     )
     known = ADULT_SOURCE_NAMES | NORMAL_SOURCE_NAMES
     return sorted({t for t in titles if t in known})
+
+
+def selected_sources_label(page, base):
+    """Text of the source-selector pill trigger, which reads out the live selection.
+
+    This is the only observable that distinguishes "the parent still holds the
+    link's selection" from "the parent was blanked": /search deliberately keeps
+    `searchSources` out of the URL-sync effect's deps, so a clobbered selection
+    shows up here and on the *next* search, not in the address bar.
+    """
+    trigger = page.locator(
+        "button:has-text('全部源'), button:has-text('All sources'), "
+        "button:has-text('个源'), button:has-text(' sources')"
+    ).first
+    trigger.wait_for(timeout=SEARCH_TIMEOUT_MS)
+    return trigger.inner_text().strip()
 
 
 def play_page_sources(page, base, capture=None):
@@ -659,15 +683,69 @@ def run(pw, base):
     page.wait_for_timeout(SETTLE_MS * 2)
     stored = page.evaluate("(k) => localStorage.getItem(k)", SAVED_SOURCES_KEY)
     ok(
-        "turning filtering back on prunes the adult key from savedSources",
-        stored is not None and adult_key not in json.loads(stored),
+        "turning filtering on keeps the adult key in savedSources",
+        stored is not None and adult_key in json.loads(stored),
         f"savedSources={stored}",
     )
 
+    set_pref(page, False)
+    keys_back = search_source_keys(page, base)
+    ok(
+        "turning filtering back off restores it without re-picking",
+        adult_key in keys_back,
+        f"card sources={keys_back}",
+    )
+
     # ======================================================================
-    # PHASE 4 — reset
+    # PHASE 4 — an explicit ?sources= link survives the saved-source cleanup
     # ======================================================================
-    print("\n[4] reset", flush=True)
+    # 清空 then 保存 writes literally "[]", so the cleanup has nothing to restore
+    # from. It must leave the link's own selection alone instead of blanking it.
+    # A blanked selection does not rewrite the address bar (/search keeps
+    # `searchSources` out of the URL-sync effect's deps) — it silently widens the
+    # *next* search to every source, so the pill label is what we assert on.
+    print("\n[4] explicit ?sources= is not clobbered by savedSources", flush=True)
+    normal_key = sorted(normal_keys)[0]
+    page.evaluate(
+        "([k, v]) => localStorage.setItem(k, v)", [SAVED_SOURCES_KEY, "[]"]
+    )
+    page.goto(
+        f"{base}/search?q={quote(TITLE)}&sources={quote(normal_key)}",
+        wait_until="domcontentloaded",
+    )
+    try:
+        page.wait_for_function(
+            """() => document.querySelectorAll("a[href*='/play?source=']").length > 0""",
+            timeout=SEARCH_TIMEOUT_MS,
+        )
+    except Exception:
+        pass
+    page.wait_for_timeout(SETTLE_MS)
+    label = selected_sources_label(page, base)
+    ok(
+        "an empty savedSources does not blank the link's selection",
+        "全部源" not in label and "All sources" not in label and "1" in label,
+        f"pill={label!r}, saved=[]",
+    )
+    kept = page.evaluate(
+        "() => new URL(location.href).searchParams.get('sources')"
+    )
+    ok(
+        "…and the URL still carries sources=",
+        kept == normal_key,
+        f"sources={kept!r}",
+    )
+    keys_link = card_source_keys(page)
+    ok(
+        "the search ran against the linked source only",
+        set(keys_link) == {normal_key},
+        f"card sources={keys_link} want={sorted({normal_key})}",
+    )
+
+    # ======================================================================
+    # PHASE 5 — reset
+    # ======================================================================
+    print("\n[5] reset", flush=True)
     page.evaluate("(k) => localStorage.removeItem(k)", FILTER_KEY)
     page.goto(f"{base}/search", wait_until="domcontentloaded")
     page.reload(wait_until="domcontentloaded")

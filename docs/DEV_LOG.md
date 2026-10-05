@@ -47,6 +47,77 @@ type). Commits made in the GitHub web UI do not run hooks.
 
 ---
 
+## 2026-10-05 — #11 follow-up: label sources pinned by the config file
+
+Re-review of #11 with a feature e2e against a production build: localstorage
+mode, and a database-backed mode (Upstash REST API served by a local shim over
+`redis-server`). Every behaviour the #11 docs describe held: pinned sources
+ignore the admin toggle, unpinned toggles survive reloads, an existing database
+deployment ignores the repo `config.json` until it is pasted into 配置文件,
+deleting `disabled` does not re-enable a source while `disabled: false` does,
+and a play record on a disabled source falls back to another source.
+
+_Revised:_ the first review rated "启用 on a pinned source silently does
+nothing" a nit. In the running admin panel it is a button that returns 200 and
+changes nothing, on 41 rows once #11 ships, and 批量启用 does the same.
+_Decision:_ sources whose `disabled` is set in the stored `ConfigFile` show
+「由配置文件控制」 with a tooltip instead of the toggle, and batch enable/disable
+skip them and say how many were skipped (the same pattern batch delete uses for
+config sources). No server change: the merge rule is unchanged, and a direct
+API call is still overridden on the next read.
+
+Also: prettier on the two files #11 added (`config-disabled.test.ts`,
+`docs/broken-sources.md`).
+
+Found while testing, not caused by #11 and not fixed here: `redis` and
+`kvrocks` storage cannot work in this fork, because the layout and API routes
+run on the edge runtime and the TCP `redis` client needs Node's `url.URL`
+(`TypeError: C.URL is not a constructor` on every request). With
+`DOCKER_ENV=true`, `config.ts` calls `eval('require')`, which the edge runtime
+rejects. Upstash (HTTP) works.
+
+---
+
+## 2026-10-05 — #7 rebuilt on `main` (disable dead sources), docs corrected
+
+#7 (disable 41 dead sources via `disabled` / `note`) targeted `rename/dreamtv`,
+which is behind `main`, so merging it would not have shipped anything. Its
+three commits were replayed onto `main` (after #9) as #11. Only the generated
+`src/lib/changelog.ts` conflicted; it was regenerated from the merged
+`CHANGELOG` and run through prettier (the original was regenerated without it:
+a 641-line diff for six entries).
+
+The code was correct. The docs promised more than it does; decisions:
+
+- **Where the flags take effect.** In local-storage mode the deployed
+  `config.json` is read. In database modes (redis/upstash/kvrocks/d1) the repo
+  `config.json` only seeds a fresh install; `getConfig()` reads the config text
+  saved in the admin 配置文件 tab. _Decision:_ say so in the README,
+  `docs/broken-sources.md` and the code comments, and tell admins to paste the
+  new config there. No code change: syncing the repo file into the database on
+  boot would silently overwrite admins' edits.
+- **Re-enabling.** The merge only overrides stored state when `disabled` is
+  present, so deleting `disabled: true` leaves a stored source disabled on
+  database deployments. _Decision:_ document "set `disabled: false`, delete the
+  field only after every deployment has it" instead of changing the merge rule,
+  which deliberately matches `is_adult` and lets admin toggles survive reloads
+  for unpinned sources.
+- **Probe headers.** The probe sent a short UA while the app sends a full
+  Chrome UA. _Decision:_ the documented probe now uses the app's headers and
+  takes `ALL=1` to include disabled sources.
+- **Changelog placement.** #7 filed its entries under the released 3.9.0;
+  _decision:_ move them to the open 3.10.1 section #9 created.
+- **Not verified, recorded as open** (the sandbox could not reach these hosts):
+  whether the six `HTTP_403` sources pass with the app's UA, and whether the six
+  `SEARCH_DISABLED` sources still answer detail requests — if they do,
+  excluding them from search only would keep users' saved items playable.
+
+Process note: #8 was closed and re-landed as #9 while this review was running;
+a duplicate replay (#10) was opened against a stale `main` and closed. Check
+the base branch's current head before opening a replay.
+
+---
+
 ## 2026-10-05 — Review of #6: play page first frame (3.10.0)
 
 PR: <https://github.com/007jackying/MoonTV/pull/6> (`fix/play-page-first-frame`).

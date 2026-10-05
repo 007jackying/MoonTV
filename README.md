@@ -167,7 +167,7 @@ pnpm build        # 生产构建
 端到端测试跑在本地：内置的 mock CMS V10 服务器提供接口和真实 HLS 测试流，Harness 会临时换成只含本地源的 `config.json`，退出时自动还原。**测试数据全部来自本地**；应用自身的外网请求（版本检查、首页豆瓣/Bangumi）在离线环境下失败不会让用例失败。
 
 ```bash
-./tests/e2e/run-av-filter.sh                   # AV 源过滤（API + 浏览器两套，共 44 项断言）
+./tests/e2e/run-av-filter.sh                   # AV 源过滤（API 24 项 + 浏览器 31 项断言）
 E2E_MODE=dev ./tests/e2e/run-av-filter.sh      # 用 next dev 起（更快但更容易 flaky）
 ./tests/e2e/make-media.sh                      # 生成 HLS 测试流（需要 ffmpeg）
 CODEC=vp9 ./tests/e2e/make-media.sh            # 浏览器不支持 H.264 时（开源 Chromium）改用 VP9
@@ -208,9 +208,9 @@ Harness 会把 HLS 片段落在 `tests/e2e/media/`（`.gitignore` 忽略，也�
 采集源里成人站占了不小比例。DreamTV 默认把它们排除在搜索之外，并且这个开关是**每个浏览器本地**的，不影响其他用户。
 
 - **开关位置**：导航栏头像 →「设置」→「本地设置」→「过滤 AV 资源」，默认开启。
-- **作用范围**：搜索页搜索、播放页选源 / 换源、搜索建议、搜索源选择器，以及手动加载详情。开启时 `savedSources` 里残留的成人源会被自动清理。
+- **作用范围**：搜索页搜索、播放页选源 / 换源、搜索建议、搜索源选择器，以及手动加载详情。`savedSources` 里残留的成人源不会被选中，但会保留在本地存储里——关掉开关就重新生效，不会丢选择。
 - **判定方式**：优先用 `config.json` 里的 `is_adult` 标记；没有该字段时回退到名称前缀 `AV-` / `AV ` / `av_`（`AVPlayer` 这类普通源不会被误伤）。
-- **不影响外部调用方**：接口默认不过滤，只有带 `filterAdult=1` 的请求才过滤，因此 TVBox、OrionTV、定时刷新等调用方的行为不变。
+- **不影响外部调用方**：接口默认不过滤，只有带 `filterAdult=1`（或 `true` / `on`）的请求才过滤，其余取值一律视为不过滤，因此 TVBox、OrionTV、定时刷新等调用方的行为不变。
 
 实现要点：
 
@@ -482,8 +482,15 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
       "api": "https://example.com/api.php/provide/vod",
       "name": "AV-某资源",
       "is_adult": true
+    },
+    "oldapi": {
+      "api": "https://example.com/api.php/provide/vod",
+      "name": "已停用的源",
+      "detail": "",
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站已失效，停用但保留条目（2026-10-04 实测）"
     }
-    // ...更多站点
   },
   "custom_category": [
     {
@@ -501,7 +508,9 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
   - `api`：资源站提供的 `vod` JSON API 根地址。
   - `name`：在人机界面中展示的名称。
   - `detail`：（可选）部分无法通过 API 获取剧集详情的站点，需要提供网页详情根 URL，用于爬取。
-  - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。
+  - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。这个字段只能在 `config.json` 里设置（后台的添加 / 编辑源表单没有它），后台新增的自建源只能靠 `AV-` 前缀识别。
+  - `disabled`：（可选）`true` 表示停用该源，不参与搜索、换源与搜索建议。不写或写 `false` 都视为启用。用于「停用而不删除」：源站失效时保留条目与备注，等它恢复后改回 `false` 即可，不必重新找回 key / 名称 / 详情页地址。恢复时请显式写 `false`，不要直接删掉字段（原因见下方「停用一个失效的源」）。
+  - `note`：（可选）纯备注，只留在 `config.json` 里给人看，**不参与任何运行时逻辑**。约定用来记录停用原因与实测时间，例如「源站返回 HTTP 403，2026-10-04 实测」。
 - `custom_category`：自定义分类配置，用于在导航中添加个性化的影视分类。以 type + query 作为唯一标识。支持以下字段：
   - `name`：分类显示名称（可选，如不提供则使用 query 作为显示名）
   - `type`：分类类型，支持 `movie`（电影）或 `tv`（电视剧）
@@ -517,6 +526,48 @@ custom_category 支持的自定义分类已知如下：
 DreamTV 支持标准的苹果 CMS V10 API 格式。
 
 修改后 **无需重新构建**，服务会在启动时读取一次。
+
+### 停用一个失效的源
+
+公共 CMS 源会随时间失效（接口下线、被 Cloudflare 拦截、源站关闭搜索）。停用时
+**不要删条目**——删掉就丢了 key / 名称 / 详情页地址，源站恢复后得重新找回。改成
+停用并写清原因：
+
+```json
+"suoniapi": {
+  "api": "https://suoniapi.com/api.php/provide/vod",
+  "name": "TV-索尼资源",
+  "detail": "",
+  "is_adult": false,
+  "disabled": true,
+  "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
+}
+```
+
+`config.json` 是用 `JSON.parse` 解析的，**JSON 不支持注释**，所以「注释掉一个源」
+必须用 `disabled` 字段，不能用 `//`。
+
+需要注意：
+
+- **停用标准**建议是连续两轮实测都同样失败再停，偶发失败（网络抖动）不要停。
+- **改动在哪里生效取决于存储方式**：
+  - 本地存储（`NEXT_PUBLIC_STORAGE_TYPE=localstorage`，默认）：读取部署时的
+    `config.json`，重新部署（Docker 下重启）后生效。
+  - 数据库存储（redis / upstash / kvrocks / d1）：仓库里的 `config.json` 只在
+    数据库还没有配置时用来初始化，此后以后台「配置文件」页保存的内容为准。
+    要让改动生效，把更新后的 `config.json` 粘贴到后台「配置文件」并点「保存配置文件」。
+    后台的「重置配置」也会重新读取 `config.json`，但它同时会重置用户、站点设置和自建源，
+    只在确实想全部重来时使用。
+- **配置文件优先于后台开关**：配置文件里写了 `disabled` 的源，后台「视频源配置」里
+  显示「由配置文件控制」，没有启用 / 禁用按钮，批量启用 / 禁用也会跳过它们——就算绕过
+  界面直接调接口，下次读取配置时也会被配置里的值重新覆盖。恢复这类源要改配置文件
+  （数据库存储时就是后台「配置文件」页）。反过来，配置文件里没写 `disabled` 的源，
+  启停完全由后台管理决定。
+- **恢复时写 `false`，不要删字段**：数据库存储会保存每个源的启停状态，配置文件里
+  没写 `disabled` 时沿用已保存的状态。所以直接删掉 `disabled: true`，这个源在数据库
+  存储的部署上会一直保持停用。先改成 `disabled: false`，等所有部署都生效后再删字段。
+
+当前停用了哪些源、失效分类与复测脚本见 [`docs/broken-sources.md`](docs/broken-sources.md)。
 
 ## 管理员配置
 

@@ -1,8 +1,9 @@
 # e2e / perf harness
 
 Local end-to-end harness: a mock Apple CMS V10 server with real HLS fixtures,
-plus a boot script that swaps in a mock-only `config.json` and runs `next dev`
-against it. Everything is restored on exit.
+plus a boot script that swaps in a mock-only `config.json` and serves the app
+against it — `next build` + `next start` by default, `next dev` under
+`E2E_MODE=dev`. Everything the harness touches is restored on exit.
 
 The test data never comes from the internet — the mock serves the API and the
 media. The app itself still makes a few outbound requests of its own (the
@@ -15,7 +16,7 @@ proxy does not fail a test (see _Console errors_ below).
 | File                 | Purpose                                                                                                                                                                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mock-cms.mjs`       | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.             |
-| `serve.mjs`          | Boot harness: swaps `config.json`, regenerates `src/lib/runtime.ts`, starts the mock + `next dev`, restores everything on exit.                                                                                                          |
+| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                        |
 | `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                       |
 | `measure.py`         | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                   |
 | `test_play_perf.py`  | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest. |
@@ -50,7 +51,8 @@ E2E_MODE=dev ./tests/e2e/run-av-filter.sh # next dev, faster but flakier
 
 That builds the app (`next build` + `next start`), boots `--profile=avfilter`,
 waits for the app, warms the routes the browser suite will use, runs the API
-suite then the browser suite, and restores `config.json` / `src/lib/runtime.ts`.
+suite then the browser suite, and restores `config.json` / `src/lib/runtime.ts` /
+`public/sw.js` / `public/workbox-*.js`.
 
 Ports: defaults are app `4020`, mock CMS `4010`. Override with `E2E_PORT` /
 `MOCK_PORT` if you already have a `next dev` on 4020 — `serve.mjs` refuses to
@@ -99,8 +101,9 @@ sources are never _queried_ (not merely that their results are dropped):
   on — asserted on the rendered card hrefs _and_ on the `/api/search` payloads
 - the source-selector popup: lists adult sources when off, none when on
 - the play page source panel: same, plus the page's own `/api/search` fan-out
-- `savedSources`: an adult key is honoured while the toggle is off, and pruned
-  from localStorage once it goes back on
+- `savedSources`: an adult key is honoured while the toggle is off, stays in
+  localStorage while it is on (so toggling back off restores it), and an explicit
+  `?sources=` link is not clobbered by the saved-source cleanup
 
 The browser suite forces non-streaming, non-aggregate search
 (`defaultStreamSearch=false`, `defaultAggregateSearch=false`) so results come
@@ -130,13 +133,25 @@ flakiness.
   `next.config.js`). Without it a harness run and your own `next dev` share one
   `.next` and overwrite each other's on-demand-compile manifests, which shows up
   as random `ENOENT … page_client-reference-manifest.js` / HTTP 500 on unrelated
-  routes.
+  routes. The directory is **kept** between runs so `next build` can reuse
+  `NEXT_DIST_DIR/cache`; pass `--clean` to `serve.mjs` to have it discarded on
+  exit instead. Correctness does not depend on this — `--build` always rebuilds
+  before serving.
 - **Chromium without H.264.** Open-source Chromium builds (some Playwright/CI
   images among them) ship without proprietary codecs: `canPlayType('video/mp4;
-codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
+  codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
   ever renders, so every TTFF test times out. Regenerate the fixtures as VP9 +
   Opus in fMP4 with `CODEC=vp9 bash tests/e2e/make-media.sh`; the playlist
   names are unchanged, so nothing else needs to know.
+- **`public/` build artifacts are snapshotted and restored.** next-pwa rewrites
+  `public/sw.js` on every `next build` and emits the workbox runtime beside it
+  under a content-hashed name (`public/workbox-<hash>.js`). The hash changes
+  whenever a dependency bumps, so a plain build would delete the committed
+  `workbox-<hash>.js`, write a differently-named one, and leave `public/` dirty.
+  The harness therefore snapshots `sw.js` **and** every `public/workbox-*.js`,
+  then restores the snapshot and deletes any bundle the build invented — so
+  `git status` is clean after a run either way. That set is the `SWAPPED` list
+  plus a `workbox-*.js` glob in `serve.mjs`.
 - **`tsconfig.json` excludes `tests/e2e/media`.** The generated HLS segments are
   named `*.ts`; without the exclude both `pnpm typecheck` and `next build` try
   to compile them as TypeScript and fail with hundreds of `Invalid character`
@@ -154,6 +169,11 @@ python tests/e2e/measure.py --scenario prefer
 Screenshots land in `shots/` (gitignored).
 
 ### Play-page suite
+
+> **Chromium must be able to decode H.264.** The suite asserts on a real first
+> frame, so it needs a browser with proprietary codecs — see the
+> [Chromium without H.264](#known-quirks-worked-around) note below before
+> running it on a CI image. The suite asserts:
 
 ```bash
 node tests/e2e/serve.mjs
@@ -225,13 +245,14 @@ absorbs with a module-scoped warm-up navigation.
 
 ## Cleanup
 
-`config.json` and `src/lib/runtime.ts` are restored on `SIGINT`/`SIGTERM`/`exit`,
-and a watchdog exits the harness if its parent dies so a `SIGKILL` cannot leave a
-port-squatting `next dev` behind. If `.e2e-backup/` exists at startup the runner
-refuses to boot — inspect it and remove it by hand, since it holds your real
-`config.json`.
+`config.json`, `src/lib/runtime.ts`, `public/sw.js` and `public/workbox-*.js` are
+restored on `SIGINT`/`SIGTERM`/`exit`, and a watchdog exits the harness if its
+parent dies so a `SIGKILL` cannot leave a port-squatting `next dev` behind. If
+`.e2e-backup/` exists at startup the runner refuses to boot — inspect it and
+remove it by hand, since it holds your real `config.json`.
 
 ```bash
-bash tests/e2e/make-media.sh   # regenerate HLS fixtures (requires ffmpeg)
-rm -rf .e2e-backup .next-e2e   # only if you are sure nothing is running
+bash tests/e2e/make-media.sh              # regenerate HLS fixtures (requires ffmpeg)
+node tests/e2e/serve.mjs --build --clean   # build, serve, then drop .next-e2e/
+rm -rf .e2e-backup                         # only if you are sure nothing is running
 ```

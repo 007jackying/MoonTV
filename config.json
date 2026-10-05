@@ -47,13 +47,17 @@
       "api": "https://api.wujinapi.cc/api.php/provide/vod",
       "name": "TV-wujinapi无尽",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTTP 403（疑似 UA 或地域封锁），暂不可用（2026-10-04 实测）"
     },
     "yayazy": {
       "api": "https://cj.yayazy.net/api.php/provide/vod",
       "name": "TV-丫丫点播",
       "detail": "https://cj.yayazy.net",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
     },
     "guangsuapi": {
       "api": "https://api.guangsuapi.com/api.php/provide/vod",
@@ -65,25 +69,33 @@
       "api": "https://collect.wolongzyw.com/api.php/provide/vod",
       "name": "TV-卧龙点播",
       "detail": "https://collect.wolongzyw.com",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "wolongzy_cc": {
       "api": "https://collect.wolongzy.cc/api.php/provide/vod",
       "name": "TV-卧龙资源",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "wolongzyw_com": {
       "api": "https://wolongzyw.com/api.php/provide/vod",
       "name": "TV-卧龙资源",
       "detail": "https://wolongzyw.com",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "tyyszy": {
       "api": "https://tyyszy.com/api.php/provide/vod",
       "name": "TV-天涯资源",
       "detail": "https://tyyszy.com",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
     },
     "rycjapi": {
       "api": "https://cj.rycjapi.com/api.php/provide/vod",
@@ -95,7 +107,9 @@
       "api": "https://zy.xmm.hk/api.php/provide/vod",
       "name": "TV-小猫咪资源",
       "detail": "https://zy.xmm.hk",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "xinlangapi": {
       "api": "https://api.xinlangapi.com/xinlangapi.php/provide/vod",
@@ -113,25 +127,33 @@
       "api": "https://api.wujinapi.me/api.php/provide/vod",
       "name": "TV-无尽资源",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTTP 403（疑似 UA 或地域封锁），暂不可用（2026-10-04 实测）"
     },
     "wujinapi_net": {
       "api": "https://api.wujinapi.net/api.php/provide/vod",
       "name": "TV-无尽资源",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTTP 403（疑似 UA 或地域封锁），暂不可用（2026-10-04 实测）"
     },
     "wwzy": {
       "api": "https://wwzy.tv/api.php/provide/vod",
       "name": "TV-旺旺短剧",
       "detail": "https://wwzy.tv",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "wwzy_api": {
       "api": "https://api.wwzy.tv/api.php/provide/vod",
       "name": "TV-旺旺资源",
       "detail": "https://api.wwzy.tv",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "bfzyapi": {
       "api": "https://bfzyapi.com/api.php/provide/vod",
@@ -155,19 +177,25 @@
       "api": "https://m3u8.apiyhzy.com/api.php/provide/vod",
       "name": "TV-樱花资源",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTTP 403（疑似 UA 或地域封锁），暂不可用（2026-10-04 实测）"
     },
     "yparse": {
       "api": "https://api.yparse.com/api/json",
       "name": "TV-步步高资源",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTTP 403（疑似 UA 或地域封锁），暂不可用（2026-10-04 实测）"
     },
     "niuniuzy": {
       "api": "https://api.niuniuzy.me/api.php/provide/vod",
       "name": "TV-牛牛点播",
       "detail": "https://api.niuniuzy.me",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
     },
     "dyttzyapi": {
       "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
@@ -179,7 +207,9 @@
       "api": "https://api.bwzyz.com/api.php/provide/vod",
       "name": "AV-百万资源",
       "detail": "https://api.bwzyz.com",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "apibdzy": {
       "api": "https://api.apibdzy.com/api.php/provide/vod",
@@ -197,7 +227,9 @@
       "api": "https://suoniapi.com/api.php/provide/vod",
       "name": "TV-索尼资源",
       "detail": "",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
     },
     "hongniuzy2": {
       "api": "https://www.hongniuzy2.com/api.php/provide/vod",
@@ -209,7 +241,9 @@
       "api": "https://caiji.maotaizy.cc/api.php/provide/vod",
       "name": "TV-茅台资源",
       "detail": "https://caiji.maotaizy.cc",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "返回 JSON 但缺少 list 字段，接口结构已变，暂不可用（2026-10-04 实测）"
     },
     "huyaapi": {
       "api": "https://www.huyaapi.com/api.php/provide/vod",
@@ -221,13 +255,17 @@
       "api": "https://caiji.dbzy.tv/api.php/provide/vod",
       "name": "TV-豆瓣资源",
       "detail": "https://caiji.dbzy.tv",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "dbzy": {
       "api": "https://dbzy.tv/api.php/provide/vod",
       "name": "TV-豆瓣资源",
       "detail": "https://dbzy.tv",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "hhzyapi": {
       "api": "https://hhzyapi.com/api.php/provide/vod",
@@ -269,7 +307,9 @@
       "api": "https://sdzyapi.com/api.php/provide/vod",
       "name": "TV-闪电资源",
       "detail": "https://sdzyapi.com",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
     },
     "ffzyapi": {
       "api": "https://cj.ffzyapi.com/api.php/provide/vod",
@@ -281,13 +321,17 @@
       "api": "https://p2100.net/api.php/provide/vod",
       "name": "TV-飘零资源",
       "detail": "https://p2100.net",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTTP 403（疑似 UA 或地域封锁），暂不可用（2026-10-04 实测）"
     },
     "mozhuazy": {
       "api": "https://mozhuazy.com/api.php/provide/vod",
       "name": "TV-魔爪资源",
       "detail": "https://mozhuazy.com",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "moduapi": {
       "api": "https://caiji.moduapi.cc/api.php/provide/vod",
@@ -305,13 +349,17 @@
       "api": "https://json.heimuer.xyz/api.php/provide/vod",
       "name": "TV-黑木耳",
       "detail": "https://json.heimuer.xyz",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "heimuer02": {
       "api": "https://json02.heimuer.xyz/api.php/provide/vod",
       "name": "TV-黑木耳点播",
       "detail": "https://json02.heimuer.xyz",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "91md": {
       "api": "https://91md.me/api.php/provide/vod",
@@ -323,7 +371,9 @@
       "api": "http://lbapiby.com/api.php/provide/vod",
       "name": "AV-AIvin",
       "detail": "",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "源站返回 HTTP 502（源站网关故障），暂不可用（2026-10-04 实测）"
     },
     "jkunzyapi": {
       "api": "https://jkunzyapi.com/api.php/provide/vod",
@@ -347,7 +397,9 @@
       "api": "https://aosikazy.com/api.php/provide/vod",
       "name": "AV-奥斯卡资源",
       "detail": "https://aosikazy.com",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "naixxzy": {
       "api": "https://Naixxzy.com/api.php/provide/vod",
@@ -407,13 +459,17 @@
       "api": "https://api.sexnguon.com/api.php/provide/vod",
       "name": "AV-色嗨国",
       "detail": "https://api.sexnguon.com",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "maozyapi": {
       "api": "https://api.maozyapi.com/inc/apijson_vod.php",
       "name": "AV-色猫资源",
       "detail": "https://api.maozyapi.com",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "源站返回 HTTP 521（源站拒绝连接），暂不可用（2026-10-04 实测）"
     },
     "apilj": {
       "api": "https://apilj.com/api.php/provide/vod",
@@ -454,7 +510,9 @@
     "gayapi": {
       "api": "https://gayapi.com/api.php/provide/vod",
       "name": "快播资源网站",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "xingba111": {
       "api": "https://xingba111.com/api.php/provide/vod",
@@ -464,17 +522,23 @@
     "aiduanju": {
       "api": "https://www.aiduanju.cc/",
       "name": "爱短剧.cc",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "huawei8": {
       "api": "https://huawei8.live/api.php/provide/vod",
       "name": "华为吧资源",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "taopianapi": {
       "api": "https://taopianapi.com/cjapi/sda/vod",
       "name": "淘片资源",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "hongniuzy3": {
       "api": "https://www.hongniuzy3.com/api.php/provide/vod",
@@ -484,7 +548,9 @@
     "xsd_sdzyapi": {
       "api": "https://xsd.sdzyapi.com/api.php/provide/vod",
       "name": "索尼-闪电资源",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
     },
     "jyzyapi_provide": {
       "api": "https://jyzyapi.com/provide/vod",
@@ -494,17 +560,23 @@
     "fczy888": {
       "api": "https://api.fczy888.me/api.php/provide/vod",
       "name": "蜂巢片库",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "jmzy": {
       "api": "https://api.jmzy.com/api.php/provide/vod",
       "name": "金马资源网",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "dadiapi": {
       "api": "https://dadiapi.com/api.php/provide/vod",
       "name": "大地资源网络",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "hsckzy888": {
       "api": "https://hsckzy888.com/api.php/provide/vod",
@@ -519,7 +591,9 @@
     "kuaichezy": {
       "api": "https://caiji.kuaichezy.org/api.php/provide",
       "name": "快车资源阿",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回空响应体，暂不可用（2026-10-04 实测）"
     },
     "xinlangapi_provide": {
       "api": "https://api.xinlangapi.com/xinlangapi.php/provide/vod",
@@ -529,12 +603,16 @@
     "apilj_provide": {
       "api": "https://apilj.com/api.php/provide",
       "name": "辣椒资源黄黄",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "源站返回空响应体，暂不可用（2026-10-04 实测）"
     },
     "yzzy_api": {
       "api": "https://api.yzzy-api.com/inc/ldg_api_all.php/provide/vod",
       "name": "优质资源库1080zyk6.com高清",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站返回 HTML 而非 JSON（接口下线或被 Cloudflare 拦截），暂不可用（2026-10-04 实测）"
     },
     "iqiyizyapi": {
       "api": "https://www.iqiyizyapi.com/api.php/provide/vod",
@@ -544,12 +622,16 @@
     "xxibaozyw": {
       "api": "https://www.xxibaozyw.com/api.php/provide/vod",
       "name": "细胞采集黄色",
-      "is_adult": true
+      "is_adult": true,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     },
     "qiqidys": {
       "api": "https://www.qiqidys.com/api.php/provide/vod/",
       "name": "七七影视",
-      "is_adult": false
+      "is_adult": false,
+      "disabled": true,
+      "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
     }
   }
 }

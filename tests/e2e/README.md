@@ -1,8 +1,9 @@
 # e2e / perf harness
 
 Local end-to-end harness: a mock Apple CMS V10 server with real HLS fixtures,
-plus a boot script that swaps in a mock-only `config.json` and runs `next dev`
-against it. Everything is restored on exit.
+plus a boot script that swaps in a mock-only `config.json` and serves the app
+against it — `next build` + `next start` by default, `next dev` under
+`E2E_MODE=dev`. Everything the harness touches is restored on exit.
 
 The test data never comes from the internet — the mock serves the API and the
 media. The app itself still makes a few outbound requests of its own (the
@@ -15,7 +16,7 @@ proxy does not fail a test (see _Console errors_ below).
 | File                 | Purpose                                                                                                                                                                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mock-cms.mjs`       | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.             |
-| `serve.mjs`          | Boot harness: swaps `config.json`, regenerates `src/lib/runtime.ts`, starts the mock + `next dev`, restores everything on exit.                                                                                                          |
+| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                    |
 | `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                       |
 | `measure.py`         | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                   |
 | `test_play_perf.py`  | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest. |
@@ -50,7 +51,8 @@ E2E_MODE=dev ./tests/e2e/run-av-filter.sh # next dev, faster but flakier
 
 That builds the app (`next build` + `next start`), boots `--profile=avfilter`,
 waits for the app, warms the routes the browser suite will use, runs the API
-suite then the browser suite, and restores `config.json` / `src/lib/runtime.ts`.
+suite then the browser suite, and restores `config.json` / `src/lib/runtime.ts` /
+`public/sw.js` / `public/workbox-*.js`.
 
 Ports: defaults are app `4020`, mock CMS `4010`. Override with `E2E_PORT` /
 `MOCK_PORT` if you already have a `next dev` on 4020 — `serve.mjs` refuses to
@@ -146,6 +148,15 @@ flakiness.
   named `*.ts`; without the exclude both `pnpm typecheck` and `next build` try
   to compile them as TypeScript and fail with hundreds of `Invalid character`
   errors.
+- **`public/` build artifacts are snapshotted and restored.** next-pwa rewrites
+  `public/sw.js` on every `next build` and emits the workbox runtime beside it
+  under a content-hashed name (`public/workbox-<hash>.js`). The hash changes
+  whenever a dependency bumps, so a plain build would delete the committed
+  `workbox-<hash>.js`, write a differently-named one, and leave `public/` dirty.
+  The harness therefore snapshots `sw.js` **and** every `public/workbox-*.js`,
+  then restores the snapshot and deletes any bundle the build invented — so
+  `git status` is clean after a run either way. The set is the `SWAPPED` list
+  plus a `workbox-*.js` glob in `serve.mjs`.
 
 ## Perf runs
 
@@ -159,10 +170,6 @@ python tests/e2e/measure.py --scenario prefer
 Screenshots land in `shots/` (gitignored).
 
 ### Play-page suite
-
-> `test_play_perf.py` is **not in this tree yet** — it lands with the
-> `fix/play-page-first-frame` branch. Until then use `measure.py` above, which
-> covers the same first-frame timing. The suite asserts:
 
 ```bash
 node tests/e2e/serve.mjs
@@ -234,11 +241,11 @@ absorbs with a module-scoped warm-up navigation.
 
 ## Cleanup
 
-`config.json` and `src/lib/runtime.ts` are restored on `SIGINT`/`SIGTERM`/`exit`,
-and a watchdog exits the harness if its parent dies so a `SIGKILL` cannot leave a
-port-squatting `next dev` behind. If `.e2e-backup/` exists at startup the runner
-refuses to boot — inspect it and remove it by hand, since it holds your real
-`config.json`.
+`config.json`, `src/lib/runtime.ts`, `public/sw.js` and `public/workbox-*.js` are
+restored on `SIGINT`/`SIGTERM`/`exit`, and a watchdog exits the harness if its
+parent dies so a `SIGKILL` cannot leave a port-squatting `next dev` behind. If
+`.e2e-backup/` exists at startup the runner refuses to boot — inspect it and
+remove it by hand, since it holds your real `config.json`.
 
 ```bash
 bash tests/e2e/make-media.sh              # regenerate HLS fixtures (requires ffmpeg)

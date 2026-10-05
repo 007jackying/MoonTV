@@ -4,6 +4,15 @@
 
 const CURRENT_VERSION = '3.8.2';
 
+/**
+ * 本仓库地址，用于「前往仓库」等站内跳转。
+ * 注意：应用品牌已更名为 DreamTV，但 GitHub 仓库名仍是 MoonTV；
+ * 若日后在 GitHub 上重命名仓库，需要同步更新下面三个常量。
+ */
+export const REPO_URL = 'https://github.com/007jackying/MoonTV';
+export const REPO_BRANCH = 'main';
+export const CHANGELOG_URL = `https://raw.githubusercontent.com/007jackying/MoonTV/${REPO_BRANCH}/CHANGELOG`;
+
 export enum UpdateStatus {
   HAS_UPDATE = 'has_update',
   NO_UPDATE = 'no_update',
@@ -11,7 +20,7 @@ export enum UpdateStatus {
 }
 
 const VERSION_URL =
-  'https://raw.githubusercontent.com/Stardm0/MoonTV/main/VERSION.txt';
+  'https://raw.githubusercontent.com/007jackying/MoonTV/main/VERSION.txt';
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
   try {

@@ -119,7 +119,9 @@ describe('config.json 的 disabled 约定', () => {
       s.key === key ? { ...s, disabled: false } : s
     );
 
-    const patched = JSON.parse(raw) as { api_site: Record<string, FileApiSite> };
+    const patched = JSON.parse(raw) as {
+      api_site: Record<string, FileApiSite>;
+    };
     patched.api_site[key] = { ...patched.api_site[key], disabled: false };
     const cfg2 = { ...cfg, ConfigFile: JSON.stringify(patched) };
 

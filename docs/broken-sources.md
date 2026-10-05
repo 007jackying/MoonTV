@@ -25,10 +25,10 @@
 `src/lib/config.ts`），**JSON 不支持注释**，所以「注释掉一个源」没法用 `//`
 实现。这里的做法是新增两个字段：
 
-| 字段 | 作用 |
-| --- | --- |
+| 字段       | 作用                                   |
+| ---------- | -------------------------------------- |
 | `disabled` | `true` = 停用。不写或写 `false` = 启用 |
-| `note` | 纯备注，给人看，不参与任何逻辑 |
+| `note`     | 纯备注，给人看，不参与任何逻辑         |
 
 `src/lib/config.ts` 里所有从 `config.json` 构造 `SourceConfig` 的路径都改成读
 `site.disabled`。原先这些路径写死 `disabled: false`，也就是说 `config.json`
@@ -56,69 +56,69 @@
 **换 URL 修不好**，只能等站方重新开启。上游 `Stardm0/MoonTV` 用的是完全相同的
 地址，同样失效。
 
-| key | 名称 |
-| --- | --- |
-| `yayazy` | TV-丫丫点播 |
-| `tyyszy` | TV-天涯资源 |
-| `niuniuzy` | TV-牛牛点播 |
-| `suoniapi` | TV-索尼资源 |
-| `sdzyapi` | TV-闪电资源 |
+| key           | 名称          |
+| ------------- | ------------- |
+| `yayazy`      | TV-丫丫点播   |
+| `tyyszy`      | TV-天涯资源   |
+| `niuniuzy`    | TV-牛牛点播   |
+| `suoniapi`    | TV-索尼资源   |
+| `sdzyapi`     | TV-闪电资源   |
 | `xsd_sdzyapi` | 索尼-闪电资源 |
 
 `HTML`（9 个）：源站返回 HTML 而非 JSON，通常是接口下线或被 Cloudflare 拦截。
 
-| key | 名称 |
-| --- | --- |
-| `wolongzyw` | TV-卧龙点播 |
-| `wolongzyw_com` | TV-卧龙资源 |
-| `wwzy` | TV-旺旺短剧 |
-| `wwzy_api` | TV-旺旺资源 |
-| `heimuer` | TV-黑木耳 |
-| `heimuer02` | TV-黑木耳点播 |
-| `aosikazy` | AV-奥斯卡资源 |
-| `dadiapi` | 大地资源网络 |
-| `yzzy_api` | 优质资源库1080zyk6.com高清 |
+| key             | 名称                         |
+| --------------- | ---------------------------- |
+| `wolongzyw`     | TV-卧龙点播                  |
+| `wolongzyw_com` | TV-卧龙资源                  |
+| `wwzy`          | TV-旺旺短剧                  |
+| `wwzy_api`      | TV-旺旺资源                  |
+| `heimuer`       | TV-黑木耳                    |
+| `heimuer02`     | TV-黑木耳点播                |
+| `aosikazy`      | AV-奥斯卡资源                |
+| `dadiapi`       | 大地资源网络                 |
+| `yzzy_api`      | 优质资源库 1080zyk6.com 高清 |
 
 `NETWORK`（15 个）：DNS / 连接失败（`fetch failed`），主机疑似已停止解析。
 
-| key | 名称 |
-| --- | --- |
-| `wolongzy_cc` | TV-卧龙资源 |
-| `xiaomaomi` | TV-小猫咪资源 |
-| `bwzyz` | AV-百万资源 |
-| `dbzy_caiji` | TV-豆瓣资源 |
-| `dbzy` | TV-豆瓣资源 |
-| `mozhuazy` | TV-魔爪资源 |
-| `sexnguon` | AV-色嗨国 |
-| `gayapi` | 快播资源网站 |
-| `aiduanju` | 爱短剧.cc |
-| `huawei8` | 华为吧资源 |
-| `taopianapi` | 淘片资源 |
-| `fczy888` | 蜂巢片库 |
-| `jmzy` | 金马资源网 |
-| `xxibaozyw` | 细胞采集黄色 |
-| `qiqidys` | 七七影视 |
+| key           | 名称          |
+| ------------- | ------------- |
+| `wolongzy_cc` | TV-卧龙资源   |
+| `xiaomaomi`   | TV-小猫咪资源 |
+| `bwzyz`       | AV-百万资源   |
+| `dbzy_caiji`  | TV-豆瓣资源   |
+| `dbzy`        | TV-豆瓣资源   |
+| `mozhuazy`    | TV-魔爪资源   |
+| `sexnguon`    | AV-色嗨国     |
+| `gayapi`      | 快播资源网站  |
+| `aiduanju`    | 爱短剧.cc     |
+| `huawei8`     | 华为吧资源    |
+| `taopianapi`  | 淘片资源      |
+| `fczy888`     | 蜂巢片库      |
+| `jmzy`        | 金马资源网    |
+| `xxibaozyw`   | 细胞采集黄色  |
+| `qiqidys`     | 七七影视      |
 
 `HTTP_403`（6 个）：源站返回 403，疑似 UA 或地域封锁。
 
-| key | 名称 |
-| --- | --- |
-| `wujinapi_cc` | TV-wujinapi无尽 |
-| `wujinapi_me` | TV-无尽资源 |
-| `wujinapi_net` | TV-无尽资源 |
-| `apiyhzy` | TV-樱花资源 |
-| `yparse` | TV-步步高资源 |
-| `p2100` | TV-飘零资源 |
+| key            | 名称             |
+| -------------- | ---------------- |
+| `wujinapi_cc`  | TV-wujinapi 无尽 |
+| `wujinapi_me`  | TV-无尽资源      |
+| `wujinapi_net` | TV-无尽资源      |
+| `apiyhzy`      | TV-樱花资源      |
+| `yparse`       | TV-步步高资源    |
+| `p2100`        | TV-飘零资源      |
 
 其余零散几类：
 
-| key | 名称 | 现象 |
-| --- | --- | --- |
-| `lbapiby` | AV-AIvin | HTTP 502 |
-| `maozyapi` | AV-色猫资源 | HTTP 521 |
-| `maotaizy` | TV-茅台资源 | 返回 JSON 但缺 `list` 字段 |
-| `kuaichezy` | 快车资源阿 | 空响应体 |
-| `apilj_provide` | 辣椒资源黄黄 | 空响应体 |
+| key             | 名称         | 现象                       |
+| --------------- | ------------ | -------------------------- |
+| `lbapiby`       | AV-AIvin     | HTTP 502                   |
+| `maozyapi`      | AV-色猫资源  | HTTP 521                   |
+| `maotaizy`      | TV-茅台资源  | 返回 JSON 但缺 `list` 字段 |
+| `kuaichezy`     | 快车资源阿   | 空响应体                   |
+| `apilj_provide` | 辣椒资源黄黄 | 空响应体                   |
 
 ## 故意没有停用的源
 

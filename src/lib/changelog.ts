@@ -21,6 +21,7 @@ export const changelog: ChangelogEntry[] = [
     ],
     changed: [
       'e2e harness 退出时不再删除 `.next-e2e/`, 需要清理可显式传 `--clean`',
+      '后台「视频源配置」: 启停被配置文件 `disabled` 字段固定的源显示「由配置文件控制」, 不再提供点了也无效的启用/禁用按钮; 批量启用/禁用会跳过这些源并在确认框里说明',
     ],
     fixed: [
       '修复开启 AV 过滤后会把 `savedSources` 里的成人源永久删除: 只是被偏好藏起来的源不再被当成「已失效」写回本地存储, 关掉开关即可恢复原选择',

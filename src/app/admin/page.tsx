@@ -35,7 +35,7 @@ import {
   Video,
 } from 'lucide-react';
 import { GripVertical } from 'lucide-react';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Swal from 'sweetalert2';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
@@ -1087,6 +1087,24 @@ const VideoSourceConfig = ({
   // 批量操作相关状态
   const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
 
+  // 配置文件的 api_site 里显式写了 disabled 的源：启停由配置文件决定，后台的
+  // 启用/禁用每次读取配置时都会被覆盖掉（见 lib/config.ts 的 existingSource 分支）。
+  // 这里解析的就是 getConfig() 合并时读的那份 ConfigFile。
+  const pinnedByConfigFile = useMemo(() => {
+    const pinned = new Set<string>();
+    try {
+      const file = JSON.parse(config?.ConfigFile || '{}');
+      Object.entries(file.api_site || {}).forEach(([key, site]: [string, any]) => {
+        if (typeof site?.disabled === 'boolean') pinned.add(key);
+      });
+    } catch {
+      // 配置文件解析失败时不标记任何源，按钮行为与之前一致
+    }
+    return pinned;
+  }, [config?.ConfigFile]);
+  const PINNED_HINT =
+    '该源的启停由配置文件里的 disabled 字段决定，在这里切换不会生效。请在「配置文件」中修改。';
+
   // dnd-kit 传感器
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1134,12 +1152,16 @@ const VideoSourceConfig = ({
   };
 
   // 注意：配置文件的 api_site 里写了 disabled 的源，这里的切换不会真正生效——
-  // 每次读取配置时配置里的 disabled 都会再次覆盖（见 lib/config.ts）。恢复这类源
-  // 只能改配置文件：本地存储是 config.json，数据库存储是本页的「配置文件」标签，
-  // 见 docs/broken-sources.md。
+  // 每次读取配置时配置里的 disabled 都会再次覆盖（见 lib/config.ts）。所以这类源
+  // 不显示切换按钮（见 pinnedByConfigFile），恢复只能改配置文件：本地存储是
+  // config.json，数据库存储是本页的「配置文件」标签，见 docs/broken-sources.md。
   const handleToggleEnable = (key: string) => {
     const target = sources.find((s) => s.key === key);
     if (!target) return;
+    if (pinnedByConfigFile.has(key)) {
+      showError(PINNED_HINT);
+      return;
+    }
     const action = target.disabled ? 'enable' : 'disable';
     callSourceApi({ action, key }).catch(() => {
       console.error('操作失败', action, key);
@@ -1219,12 +1241,29 @@ const VideoSourceConfig = ({
     setSelectedSources(newSelected);
   };
 
+  // 批量启用/禁用跳过由配置文件钉住启停的源，同批量删除跳过系统默认源的做法
+  const splitPinned = () => {
+    const keys = Array.from(selectedSources);
+    const actionable = keys.filter((k) => !pinnedByConfigFile.has(k));
+    const skipped = keys.length - actionable.length;
+    const note =
+      skipped > 0
+        ? `\n注意：有 ${skipped} 个源的启停由配置文件的 disabled 字段决定，将被跳过。`
+        : '';
+    return { actionable, note };
+  };
+
   const handleBatchDisable = async () => {
     if (selectedSources.size === 0) return;
-    
+    const { actionable, note } = splitPinned();
+    if (actionable.length === 0) {
+      showError(`选中的源都由配置文件控制启停。${PINNED_HINT}`);
+      return;
+    }
+
     const { isConfirmed } = await Swal.fire({
       title: '确认批量禁用',
-      text: `确定要禁用选中的 ${selectedSources.size} 个视频源吗？`,
+      text: `确定要禁用选中的 ${actionable.length} 个视频源吗？${note}`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: '确认禁用',
@@ -1235,9 +1274,9 @@ const VideoSourceConfig = ({
     if (!isConfirmed) return;
 
     try {
-      await callSourceApi({ 
-        action: 'batchDisable', 
-        keys: Array.from(selectedSources) 
+      await callSourceApi({
+        action: 'batchDisable',
+        keys: actionable
       });
     } catch (err) {
       console.error('批量禁用失败', err);
@@ -1246,10 +1285,15 @@ const VideoSourceConfig = ({
 
   const handleBatchEnable = async () => {
     if (selectedSources.size === 0) return;
-    
+    const { actionable, note } = splitPinned();
+    if (actionable.length === 0) {
+      showError(`选中的源都由配置文件控制启停。${PINNED_HINT}`);
+      return;
+    }
+
     const { isConfirmed } = await Swal.fire({
       title: '确认批量启用',
-      text: `确定要启用选中的 ${selectedSources.size} 个视频源吗？`,
+      text: `确定要启用选中的 ${actionable.length} 个视频源吗？${note}`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: '确认启用',
@@ -1260,9 +1304,9 @@ const VideoSourceConfig = ({
     if (!isConfirmed) return;
 
     try {
-      await callSourceApi({ 
-        action: 'batchEnable', 
-        keys: Array.from(selectedSources) 
+      await callSourceApi({
+        action: 'batchEnable',
+        keys: actionable
       });
       // 批量启用后保持选中状态，不清空
     } catch (err) {
@@ -1371,15 +1415,24 @@ const VideoSourceConfig = ({
           </span>
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
-          <button
-            onClick={() => handleToggleEnable(source.key)}
-            className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${!source.disabled
-              ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
-              : 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/60'
-              } transition-colors`}
-          >
-            {!source.disabled ? '禁用' : '启用'}
-          </button>
+          {pinnedByConfigFile.has(source.key) ? (
+            <span
+              title={PINNED_HINT}
+              className='inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300 cursor-help'
+            >
+              由配置文件控制
+            </span>
+          ) : (
+            <button
+              onClick={() => handleToggleEnable(source.key)}
+              className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${!source.disabled
+                ? 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
+                : 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/60'
+                } transition-colors`}
+            >
+              {!source.disabled ? '禁用' : '启用'}
+            </button>
+          )}
           {source.from !== 'config' && (
             <button
               onClick={() => handleDelete(source.key)}

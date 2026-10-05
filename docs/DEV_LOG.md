@@ -6,6 +6,37 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-05 — #11 follow-up: label sources pinned by the config file
+
+Re-review of #11 with a feature e2e against a production build: localstorage
+mode, and a database-backed mode (Upstash REST API served by a local shim over
+`redis-server`). Every behaviour the #11 docs describe held: pinned sources
+ignore the admin toggle, unpinned toggles survive reloads, an existing database
+deployment ignores the repo `config.json` until it is pasted into 配置文件,
+deleting `disabled` does not re-enable a source while `disabled: false` does,
+and a play record on a disabled source falls back to another source.
+
+_Revised:_ the first review rated "启用 on a pinned source silently does
+nothing" a nit. In the running admin panel it is a button that returns 200 and
+changes nothing, on 41 rows once #11 ships, and 批量启用 does the same.
+_Decision:_ sources whose `disabled` is set in the stored `ConfigFile` show
+「由配置文件控制」 with a tooltip instead of the toggle, and batch enable/disable
+skip them and say how many were skipped (the same pattern batch delete uses for
+config sources). No server change: the merge rule is unchanged, and a direct
+API call is still overridden on the next read.
+
+Also: prettier on the two files #11 added (`config-disabled.test.ts`,
+`docs/broken-sources.md`).
+
+Found while testing, not caused by #11 and not fixed here: `redis` and
+`kvrocks` storage cannot work in this fork, because the layout and API routes
+run on the edge runtime and the TCP `redis` client needs Node's `url.URL`
+(`TypeError: C.URL is not a constructor` on every request). With
+`DOCKER_ENV=true`, `config.ts` calls `eval('require')`, which the edge runtime
+rejects. Upstash (HTTP) works.
+
+---
+
 ## 2026-10-05 — #7 rebuilt on `main` (disable dead sources), docs corrected
 
 #7 (disable 41 dead sources via `disabled` / `note`) targeted `rename/dreamtv`,

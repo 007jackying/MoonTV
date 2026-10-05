@@ -6,6 +6,46 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-05 — #7 rebuilt on `main` (disable dead sources), docs corrected
+
+#7 (disable 41 dead sources via `disabled` / `note`) targeted `rename/dreamtv`,
+which is behind `main`, so merging it would not have shipped anything. Its
+three commits were replayed onto `main` (after #9) as #11. Only the generated
+`src/lib/changelog.ts` conflicted; it was regenerated from the merged
+`CHANGELOG` and run through prettier (the original was regenerated without it:
+a 641-line diff for six entries).
+
+The code was correct. The docs promised more than it does; decisions:
+
+- **Where the flags take effect.** In local-storage mode the deployed
+  `config.json` is read. In database modes (redis/upstash/kvrocks/d1) the repo
+  `config.json` only seeds a fresh install; `getConfig()` reads the config text
+  saved in the admin 配置文件 tab. _Decision:_ say so in the README,
+  `docs/broken-sources.md` and the code comments, and tell admins to paste the
+  new config there. No code change: syncing the repo file into the database on
+  boot would silently overwrite admins' edits.
+- **Re-enabling.** The merge only overrides stored state when `disabled` is
+  present, so deleting `disabled: true` leaves a stored source disabled on
+  database deployments. _Decision:_ document "set `disabled: false`, delete the
+  field only after every deployment has it" instead of changing the merge rule,
+  which deliberately matches `is_adult` and lets admin toggles survive reloads
+  for unpinned sources.
+- **Probe headers.** The probe sent a short UA while the app sends a full
+  Chrome UA. _Decision:_ the documented probe now uses the app's headers and
+  takes `ALL=1` to include disabled sources.
+- **Changelog placement.** #7 filed its entries under the released 3.9.0;
+  _decision:_ move them to the open 3.10.1 section #9 created.
+- **Not verified, recorded as open** (the sandbox could not reach these hosts):
+  whether the six `HTTP_403` sources pass with the app's UA, and whether the six
+  `SEARCH_DISABLED` sources still answer detail requests — if they do,
+  excluding them from search only would keep users' saved items playable.
+
+Process note: #8 was closed and re-landed as #9 while this review was running;
+a duplicate replay (#10) was opened against a stale `main` and closed. Check
+the base branch's current head before opening a replay.
+
+---
+
 ## 2026-10-05 — Review of #6: play page first frame (3.10.0)
 
 PR: <https://github.com/007jackying/MoonTV/pull/6> (`fix/play-page-first-frame`).

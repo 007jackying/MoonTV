@@ -76,6 +76,8 @@ import {
   PlaySidePanel,
 } from '@/components/play/PlayPanels';
 import {
+  episodeUrlOf,
+  PrecomputedVideoInfo,
   sourceKeyOf,
   useSourceSpeedTest,
   VideoInfo,
@@ -226,9 +228,8 @@ function PlayPageClient() {
   const [sourceSearchError, setSourceSearchError] = useState<string | null>(
     null
   );
-  const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
-    Map<string, VideoInfo>
-  >(new Map());
+  const [precomputedVideoInfo, setPrecomputedVideoInfo] =
+    useState<PrecomputedVideoInfo | null>(null);
 
   // 播放器
   const playerRef = useRef<VideoPlayerHandle>(null);
@@ -296,7 +297,7 @@ function PlayPageClient() {
     metrics.forEach((m, i) => {
       newVideoInfoMap.set(sourceKeyOf(measurable[i]), m);
     });
-    setPrecomputedVideoInfo(newVideoInfoMap);
+    setPrecomputedVideoInfo({ episodeIndex, info: newVideoInfoMap });
 
     const scored = measurable
       .map((source, i) => ({ source, metrics: metrics[i] }))
@@ -414,7 +415,8 @@ function PlayPageClient() {
               if (newOnes.length > 0) {
                 aggregatedResults.push(...newOnes);
                 setAvailableSources([...aggregatedResults]);
-                setSourceSearchLoading(false);
+                // 不在这里关 loading：搜索还在继续，面板要在已有结果下方
+                // 继续显示骨架行，而不是在第一批到达后就显示"暂无可用的播放源"。
                 onResult?.(newOnes);
               }
             } catch (err) {
@@ -440,6 +442,9 @@ function PlayPageClient() {
       setVideoCover(detailData.poster);
       setVideoDoubanId(detailData.douban_id || 0);
       setDetail(detailData);
+      // 同步写 ref，不等 effect：播放记录可能在同一轮里读完，
+      // 它要靠这个 ref 拿到集数来夹紧续播下标。
+      detailRef.current = detailData;
 
       if (currentEpisodeIndexRef.current >= detailData.episodes.length) {
         setCurrentEpisodeIndex(0);
@@ -503,11 +508,19 @@ function PlayPageClient() {
       // 不 await：找到结果就往面板里追加，不阻塞播放。
       const searchPromise = fetchSourcesData(videoTitle, (newResults) => {
         allResults = [...allResults, ...newResults];
+        if (detailData || newResults.length === 0) return;
+        if (currentSource && currentId) {
+          // 直接取详情失败了：等 URL 指定的那个源出现在搜索结果里再开播，
+          // 不要随手换成别的源。实在搜不到时由下面的兜底处理。
+          const match = newResults.find(
+            (item) => item.source === currentSource && item.id === currentId
+          );
+          if (match) adopt(match);
+          return;
+        }
         // URL 里没带 source/id（从豆瓣卡片进来）时，第一个可用源直接开播，
         // 不再等整个搜索流结束。
-        if (!detailData && newResults.length > 0) {
-          adopt(newResults[0]);
-        }
+        adopt(newResults[0]);
       });
 
       await searchPromise;
@@ -583,12 +596,24 @@ function PlayPageClient() {
         const allRecords = await getAllPlayRecords();
         const record = allRecords[generateStorageKey(currentSource, currentId)];
         if (record) {
-          const targetIndex = record.index - 1;
-          if (targetIndex !== currentEpisodeIndex) {
-            setCurrentEpisodeIndex(targetIndex);
+          // 详情现在走关键路径，可能比播放记录先到（远端存储时尤其如此），
+          // 那样 initDetail 的越界修正已经跑过了，这里必须自己夹紧，否则越界
+          // 下标会触发 errInvalidEpisode，整页被错误页替换。详情还没到时
+          // 先原样写入，由 initDetail 负责夹紧——这里不能把它当成 0 集。
+          const targetIndex = Math.max(0, record.index - 1);
+          const total = detailRef.current?.episodes?.length ?? 0;
+          const safeIndex =
+            total > 0 ? Math.min(targetIndex, total - 1) : targetIndex;
+          if (safeIndex !== currentEpisodeIndexRef.current) {
+            setCurrentEpisodeIndex(safeIndex);
+            // 同样同步写 ref：若 initDetail 紧接着在提交前运行，
+            // 它的越界检查要看到的是这个下标，而不是旧值。
+            currentEpisodeIndexRef.current = safeIndex;
           }
-          // 保存待恢复的播放进度，待播放器就绪后跳转
-          resumeTimeRef.current = record.play_time;
+          // 保存待恢复的播放进度，待播放器就绪后跳转；被夹紧时那个进度
+          // 属于另一集，不要拿来续播。
+          resumeTimeRef.current =
+            safeIndex === record.index - 1 ? record.play_time : 0;
         }
       } catch (err) {
         console.error('读取播放记录失败:', err);
@@ -820,6 +845,8 @@ function PlayPageClient() {
     } catch {
       resumeTimeRef.current = 0;
     }
+    // 建议是针对上一集测出来的，换集后不再成立
+    setBetterSource(null);
     setSwitchKind('episode');
     setCurrentEpisodeIndex(episodeIndex);
   };
@@ -848,6 +875,9 @@ function PlayPageClient() {
       setSwitchFromDetail(null);
       return;
     }
+
+    // 无论是接受建议还是手动换源，旧建议都已过时
+    setBetterSource(null);
 
     try {
       const currentPlayTime = playerRef.current?.getCurrentTime() || 0;
@@ -973,6 +1003,18 @@ function PlayPageClient() {
         score: scoreMetrics(x.metrics, maxSpeed, minPing, maxPing),
       }))
       .sort((a, b) => b.score - a.score);
+
+    // 测速期间用户可能已经换集或换源：那这份结果就不再适用
+    if (
+      episodeIndex !== currentEpisodeIndexRef.current ||
+      currentKey !==
+        sourceKeyOf({
+          source: currentSourceRef.current,
+          id: currentIdRef.current,
+        })
+    ) {
+      return;
+    }
 
     const best = scored[0];
     if (!best) return;
@@ -1476,7 +1518,7 @@ function PlayPageClient() {
           {/* 播放器 */}
           <div className='relative aspect-video w-full overflow-hidden md:rounded-[28px]'>
             {betterSource && (
-              <div className='absolute right-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full bg-o-video-ink/88 px-3 py-2 text-[13px] font-semibold text-o-video-paper shadow-lg backdrop-blur'>
+              <div className='absolute right-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full bg-o-video-ink/85 px-3 py-2 text-[13px] font-semibold text-o-video-paper shadow-lg backdrop-blur'>
                 <Zap
                   className='h-4 w-4 shrink-0 text-o-accent-300'
                   strokeWidth={2.75}
@@ -1625,16 +1667,6 @@ function PlayPageClient() {
 /** 测速并发上限。超过这个数的源排队，避免一次性打爆连接数。 */
 const MEASURE_CONCURRENCY = 6;
 
-/**
- * 取某个源在指定集数的播放地址。
- * 旧实现固定用 episodes[1]，于是看第 12 集时测的却是第 2 集的码率和分辨率。
- */
-function episodeUrlOf(source: SearchResult, index: number): string {
-  const eps = source.episodes || [];
-  if (eps.length === 0) return '';
-  return eps[Math.min(Math.max(0, index), eps.length - 1)] || '';
-}
-
 /** 把当前集有地址的源排到前面，让"当前源"的结果最先落地。 */
 function orderByCurrentEpisodeFirst(
   sources: SearchResult[],
@@ -1653,9 +1685,10 @@ async function fetchDirectDetail(
   source: string,
   id: string
 ): Promise<SearchResult | null> {
+  const ctrl = new AbortController();
+  // 超时覆盖到读完响应体为止：发完响应头就卡住的上游不能让首帧一直等
+  const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
     const res = await fetch(
       withAdultFilterParam(
         `/api/detail?source=${encodeURIComponent(
@@ -1664,13 +1697,14 @@ async function fetchDirectDetail(
       ),
       { signal: ctrl.signal }
     );
-    clearTimeout(timer);
     if (!res.ok) return null;
     const data = (await res.json()) as SearchResult;
     if (!data?.episodes?.length) return null;
     return data;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

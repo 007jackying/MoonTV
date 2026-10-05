@@ -21,6 +21,7 @@ import React, {
   useState,
 } from 'react';
 
+import { withAdultFilterParam } from '@/lib/adult-filter.client';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -262,10 +263,14 @@ export default function VideoCard({
     if (prefetchedRef.current) return;
     if (from === 'douban' || !actualSource || !actualId) return;
     prefetchedRef.current = true;
+    // URL 必须和播放页的关键路径请求逐字一致（含 filterAdult），
+    // 否则浏览器 / CDN 缓存的这份响应在点击后根本用不上。
     void fetch(
-      `/api/detail?source=${encodeURIComponent(
-        actualSource
-      )}&id=${encodeURIComponent(actualId)}`
+      withAdultFilterParam(
+        `/api/detail?source=${encodeURIComponent(
+          actualSource
+        )}&id=${encodeURIComponent(actualId)}`
+      )
     ).catch(() => {
       /* 预热失败无所谓，真正的请求会在播放页重新发起 */
     });

@@ -12,9 +12,9 @@
  *   - latency  -> time to first byte of the manifest fetch
  *   - speed    -> one ranged GET of the first segment
  *
- * Streams that don't send CORS headers can't be measured this way (the browser
- * hands back an opaque response). In that case we fall back to the legacy
- * hls.js-based probe so behaviour never regresses.
+ * Streams that don't send CORS headers can't be measured this way: the fetch
+ * rejects, and the source is reported as `{ hasError: true }` (no metrics)
+ * rather than ranked. The legacy hls.js probe is gone, so there is no fallback.
  */
 
 export interface SourceMetrics {
@@ -57,8 +57,9 @@ const RESOLUTION_RE = /RESOLUTION=(\d+)x(\d+)/i;
 const BANDWIDTH_RE = /BANDWIDTH=(\d+)/i;
 
 /**
- * Pick the width of the highest-bandwidth variant in a master playlist.
- * Falls back to the first RESOLUTION seen when BANDWIDTH is absent.
+ * Quality of the best variant in a master playlist: the largest RESOLUTION
+ * width wins, BANDWIDTH only breaks ties between equal widths. A media playlist
+ * (no RESOLUTION anywhere) is labelled from its BANDWIDTH, or '未知'.
  */
 export function parseMasterQuality(manifest: string): {
   quality: string;
@@ -177,15 +178,25 @@ export function clearMetricsCache() {
 // measurement
 // ---------------------------------------------------------------------------
 
-async function fetchWithTimeout(
+/**
+ * GET `url` as text with one budget covering headers *and* body. Timing out on
+ * headers alone would leave a source that sends headers and then stalls
+ * pending forever, and with it every caller awaiting the measurement queue.
+ */
+async function fetchTextWithTimeout(
   url: string,
-  init: RequestInit,
   timeoutMs: number
-): Promise<Response> {
+): Promise<{ ok: boolean; status: number; text: string }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
+    const res = await fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return { ok: false, status: res.status, text: '' };
+    return { ok: true, status: res.status, text: await res.text() };
   } finally {
     clearTimeout(timer);
   }
@@ -254,40 +265,51 @@ async function probeThroughput(url: string): Promise<number | null> {
   return (bytes / 1024 / ms) * 1000;
 }
 
-export interface MeasureOptions {
-  /** Injected so an expensive legacy probe can be used as a fallback. */
-  fallback?: (url: string) => Promise<SourceMetrics>;
-}
+/**
+ * Measurements in progress, keyed by URL. The play page has several callers
+ * (auto-pick, the advisory, the source panel) that can ask for the same URL at
+ * once; they share one set of requests instead of each fetching the manifest,
+ * variant playlist and segment again. Module-scoped so every hook instance on
+ * the page shares it.
+ */
+const inFlight = new Map<string, Promise<SourceMetrics>>();
 
 /**
  * Measure one source. Resolves (never rejects) — a failed measurement yields
  * `{ hasError: true }` so callers can render a single uniform shape.
  */
-export async function measureSource(
-  url: string,
-  opts: MeasureOptions = {}
-): Promise<SourceMetrics> {
+export function measureSource(url: string): Promise<SourceMetrics> {
   // A source with no episode for the requested index yields ''. Fetching that
   // would request the current page, parse the HTML as a playlist and return a
   // bogus (non-error) metric that could then win the ranking. Fail fast.
   if (!url || !/^https?:\/\//i.test(url)) {
-    return { quality: '未知', loadSpeed: '未知', pingTime: 0, hasError: true };
+    return Promise.resolve({
+      quality: '未知',
+      loadSpeed: '未知',
+      pingTime: 0,
+      hasError: true,
+    });
   }
 
   const cached = getCachedMetrics(url);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(cached);
 
+  const pending = inFlight.get(url);
+  if (pending) return pending;
+
+  const run = measureUncached(url).finally(() => inFlight.delete(url));
+  inFlight.set(url, run);
+  return run;
+}
+
+async function measureUncached(url: string): Promise<SourceMetrics> {
   const started = performance.now();
   try {
-    const manifestRes = await fetchWithTimeout(
-      url,
-      { method: 'GET', cache: 'no-store' },
-      MANIFEST_TIMEOUT_MS
-    );
+    const manifestRes = await fetchTextWithTimeout(url, MANIFEST_TIMEOUT_MS);
     if (!manifestRes.ok) throw new Error(`HTTP ${manifestRes.status}`);
 
-    const manifest = await manifestRes.text();
-    // TTFB ≈ time until the manifest body started arriving.
+    const manifest = manifestRes.text;
+    // Time until the whole manifest arrived (it is small, so ≈ TTFB).
     const pingTime = Math.round(performance.now() - started);
     const { quality } = parseMasterQuality(manifest);
 
@@ -301,12 +323,8 @@ export async function measureSource(
       if (target) {
         let playlist = manifest;
         if (isMaster && target) {
-          const vRes = await fetchWithTimeout(
-            target,
-            { method: 'GET', cache: 'no-store' },
-            MANIFEST_TIMEOUT_MS
-          );
-          playlist = vRes.ok ? await vRes.text() : '';
+          const vRes = await fetchTextWithTimeout(target, MANIFEST_TIMEOUT_MS);
+          playlist = vRes.ok ? vRes.text : '';
         }
         const seg = firstSegment(playlist, target);
         if (seg) {
@@ -330,16 +348,8 @@ export async function measureSource(
     cache.entries[url] = { at: Date.now(), metrics };
     writeCache(cache);
     return metrics;
-  } catch (err) {
-    // No CORS headers, DNS failure, timeout... try the expensive probe once
-    // before giving up, so we never regress vs the old behaviour.
-    if (opts.fallback) {
-      try {
-        return await opts.fallback(url);
-      } catch {
-        /* fall through to the error shape */
-      }
-    }
+  } catch {
+    // No CORS headers, DNS failure, timeout, stalled body: no metrics.
     return {
       quality: '未知',
       loadSpeed: '未知',

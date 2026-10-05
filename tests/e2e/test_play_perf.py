@@ -102,9 +102,13 @@ def browser():
 # Mock ladder URLs. Seeding these into the metrics cache lets the advisory tests
 # pin resolution/throughput instead of depending on measured localhost speed,
 # which is pure noise (it swings 50-100 MB/s between runs).
+# Must match the mock's origin (serve.mjs: MOCK_PORT, default 4010) exactly, or
+# the seeded entries are keyed on URLs the page never measures and silently do
+# nothing.
+MOCK_ORIGIN = f"http://127.0.0.1:{os.environ.get('MOCK_PORT', '4010')}"
 LADDER = {
-    "720p": "http://127.0.0.1:4110/media/720p/master.m3u8",
-    "1080p": "http://127.0.0.1:4110/media/1080p/master.m3u8",
+    "720p": f"{MOCK_ORIGIN}/media/720p/master.m3u8",
+    "1080p": f"{MOCK_ORIGIN}/media/1080p/master.m3u8",
 }
 
 
@@ -140,7 +144,10 @@ def _new_page(browser, *, prefer=False, clear_records=True, seed_metrics=None):
         }""",
         PASSWORD,
     )
-    page.goto(BASE, wait_until="domcontentloaded")
+    # Stay on /login for the storage setup. Detouring through the home page
+    # and then navigating straight to /play aborts the home page's in-flight
+    # fetches, which it reports as console errors that then get pinned on the
+    # play page (test_no_console_errors_during_playback).
     page.evaluate(
         """([prefer, clear]) => {
             if (clear) {
@@ -443,6 +450,126 @@ def test_advisory_can_be_dismissed(browser):
         page.wait_for_function(
             "() => !document.body.innerText.includes('发现更快的源')", timeout=5000
         )
+    finally:
+        ctx.close()
+
+
+def test_seeded_metrics_are_what_the_advisory_reads(browser):
+    """
+    Guard for the seeding helper itself: the seeded speed must be what the
+    banner shows. If LADDER drifts from the mock's URLs the page measures for
+    real and the banner shows a measured localhost speed instead.
+    """
+    ctx, page = _new_page(
+        browser, seed_metrics={"720p": ("1000 KB/s", 40), "1080p": ("1234 KB/s", 40)}
+    )
+    try:
+        page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
+        _first_frame(page)
+        page.wait_for_function(
+            "() => document.body.innerText.includes('发现更快的源')", timeout=25000
+        )
+        assert "1234 KB/s" in page.inner_text("body")
+    finally:
+        ctx.close()
+
+
+def test_advisory_is_cleared_by_an_episode_switch(browser):
+    """The suggestion was measured for the old episode; it must not outlive it."""
+    ctx, page = _new_page(
+        browser, seed_metrics={"720p": ("1000 KB/s", 40), "1080p": ("1000 KB/s", 40)}
+    )
+    try:
+        page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
+        _first_frame(page)
+        page.wait_for_function(
+            "() => document.body.innerText.includes('发现更快的源')", timeout=25000
+        )
+        page.get_by_role("button", name="3", exact=True).first.click()
+        page.wait_for_function(
+            "() => !document.body.innerText.includes('发现更快的源')", timeout=5000
+        )
+        assert "source=fast" in page.url
+    finally:
+        ctx.close()
+
+
+def test_card_prefetch_uses_the_play_page_detail_url(browser):
+    """
+    The hover prefetch only pays off if its URL is byte-identical to the play
+    page's critical-path request (including filterAdult), so the browser/CDN
+    cache entry it warms is the one the click reads.
+    """
+    ctx, page = _new_page(browser)
+    seen = []
+    page.on(
+        "request",
+        lambda r: seen.append(r.url) if "/api/detail?" in r.url else None,
+    )
+    try:
+        page.goto(f"{BASE}/search?q={TITLE}", wait_until="domcontentloaded")
+        card = page.locator("a[href*='/play?']").first
+        card.wait_for(timeout=20000)
+        card.hover()
+        page.wait_for_timeout(500)
+        assert seen, "hovering a card did not prefetch /api/detail"
+        card.click()
+        page.wait_for_url("**/play?**", timeout=20000)
+        _first_frame(page)
+        assert len(seen) >= 2 and len(set(seen)) == 1, (
+            f"prefetch and play page differ: {seen}"
+        )
+    finally:
+        ctx.close()
+
+
+def test_panel_keeps_searching_while_slow_sources_are_pending(browser):
+    """
+    Cold start plays the first source to answer; the others are still on their
+    way (slow1 at 2.5s, slow2 at 4s). The panel must say it is still searching,
+    not declare that there are no other sources.
+    """
+    ctx, page = _new_page(browser)
+    try:
+        page.goto(f"{BASE}/play?title={TITLE}&year={YEAR}", wait_until="commit")
+        _first_frame(page)
+        body = page.inner_text("body")
+        assert "暂无可用的播放源" not in body
+        assert "正在搜索播放源" in body
+        # ...and once the search finishes the other sources are offered.
+        page.wait_for_function(
+            "() => /另有\\s*\\d+\\s*个源/.test(document.body.innerText)",
+            timeout=15000,
+        )
+    finally:
+        ctx.close()
+
+
+def test_out_of_range_resume_record_does_not_break_the_page(browser):
+    """
+    A play record can point past the end of a source's episode list (upstream
+    trimmed or re-indexed it). Resuming must clamp, not swap the player for the
+    invalid-episode error screen.
+    """
+    ctx, page = _new_page(browser)
+    page.evaluate(
+        """() => localStorage.setItem('moontv_play_records', JSON.stringify({
+            'fast+fast-1': {
+              title: '测试影片 Test Movie', source_name: 'E2E-fast', cover: '',
+              year: '2024', index: 99, total_episodes: 99, play_time: 5,
+              total_time: 12, save_time: Date.now(), search_title: '',
+            },
+        }))"""
+    )
+    try:
+        page.goto(
+            f"{BASE}/play?source=fast&id=fast-1&title={TITLE}&year={YEAR}",
+            wait_until="commit",
+        )
+        _first_frame(page)
+        page.wait_for_timeout(2000)
+        assert page.locator("video").count() == 1
+        assert "选集索引无效" not in page.inner_text("body")
     finally:
         ctx.close()
 

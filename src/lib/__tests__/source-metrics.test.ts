@@ -2,12 +2,12 @@ import {
   boundsFor,
   decideSuggestion,
   formatSpeedKBps,
-  qualityRank,
   mapWithConcurrency,
   measureSource,
   parseMasterQuality,
   parseSpeedKBps,
   qualityFromWidth,
+  qualityRank,
   scoreMetrics,
   SourceMetrics,
 } from '@/lib/source-metrics';
@@ -298,6 +298,94 @@ b.m3u8
       const r = await measureSource('');
       expect(r.hasError).toBe(true);
       expect(r.quality).not.toBe('4K');
+    });
+  });
+
+  describe('measureSource network behaviour', () => {
+    const originalFetch = globalThis.fetch;
+    let fetchMock: jest.Mock;
+
+    beforeEach(() => {
+      localStorage.clear();
+      fetchMock = jest.fn();
+      (globalThis as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      globalThis.fetch = originalFetch;
+    });
+
+    /** A response whose headers arrive but whose body never does until aborted. */
+    const stalledBody = (signal: AbortSignal) => ({
+      ok: true,
+      status: 200,
+      text: () =>
+        new Promise<string>((_, reject) =>
+          signal.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          )
+        ),
+    });
+
+    it('times out a manifest whose body stalls after the headers', async () => {
+      // Regression: the timeout used to be cleared as soon as fetch resolved
+      // (on headers), leaving `.text()` unbounded — the measurement, and every
+      // caller awaiting the queue, would hang forever.
+      jest.useFakeTimers();
+      fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+        Promise.resolve(stalledBody(init.signal as AbortSignal))
+      );
+
+      const pending = measureSource('https://cdn.example/stall.m3u8');
+      // Let fetch resolve (headers) and the body read start, then run out the
+      // manifest budget. With the old code the timer was already cleared here.
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      jest.advanceTimersByTime(4000);
+      const r = await pending;
+      expect(r.hasError).toBe(true);
+    });
+
+    it('shares one measurement between concurrent callers of the same url', async () => {
+      // Body-less responses: the manifest parses, the throughput probe bows
+      // out, and we can count exactly how many network requests were made.
+      fetchMock.mockImplementation((url: string) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          body: null,
+          text: () =>
+            Promise.resolve(
+              url.endsWith('.m3u8') ? mediaPlaylist : 'segment-bytes'
+            ),
+        })
+      );
+
+      const url = 'https://cdn.example/shared.m3u8';
+      const [a, b, c] = await Promise.all([
+        measureSource(url),
+        measureSource(url),
+        measureSource(url),
+      ]);
+
+      const manifestCalls = fetchMock.mock.calls.filter(
+        ([u]) => u === url
+      ).length;
+      expect(manifestCalls).toBe(1);
+      expect(a).toEqual(b);
+      expect(b).toEqual(c);
+      expect(a.hasError).toBeFalsy();
+    });
+
+    it('measures again once the previous measurement has settled', async () => {
+      // The in-flight map must not turn into a second, unbounded cache: after
+      // a failure (nothing written to the TTL cache) a retry hits the network.
+      fetchMock.mockResolvedValue({ ok: false, status: 503 });
+      const url = 'https://cdn.example/flaky.m3u8';
+      expect((await measureSource(url)).hasError).toBe(true);
+      expect((await measureSource(url)).hasError).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 

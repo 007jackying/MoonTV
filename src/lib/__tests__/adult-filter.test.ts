@@ -44,21 +44,43 @@ describe('filterAdultSources', () => {
 describe('parseAdultFilterParam', () => {
   it('缺省时不过滤，兼容 OrionTV / TVBox 等外部调用方', () => {
     expect(parseAdultFilterParam(toParams(''))).toBe(false);
+    expect(parseAdultFilterParam(toParams('q=x&timeout=30'))).toBe(false);
   });
 
-  it('识别开启与关闭', () => {
+  it('识别开启', () => {
     expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=1`))).toBe(
       true
     );
     expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=true`))).toBe(
       true
     );
+    expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=on`))).toBe(
+      true
+    );
+    expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}= TRUE `))).toBe(
+      true
+    );
+  });
+
+  it('识别关闭', () => {
     expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=0`))).toBe(
       false
     );
     expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=false`))).toBe(
       false
     );
+    expect(parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=off`))).toBe(
+      false
+    );
+  });
+
+  it('无法识别的取值一律当作关闭，不猜', () => {
+    // 这个参数决定内容可见性，?filterAdult=no / =2 / 空值都不应该意外开启过滤
+    for (const value of ['', 'no', '2', '-1', 'yes', 'enabled']) {
+      expect(
+        parseAdultFilterParam(toParams(`${ADULT_FILTER_PARAM}=${value}`))
+      ).toBe(false);
+    }
   });
 });
 

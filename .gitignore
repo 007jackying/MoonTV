@@ -15,6 +15,9 @@
 # e2e harness build dir (tests/e2e/serve.mjs, see NEXT_DIST_DIR in next.config.js)
 /.next-e2e/
 
+# playwright venv created by tests/e2e/README.md
+/.e2e-venv/
+
 # production
 /build
 

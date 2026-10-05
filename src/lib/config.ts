@@ -70,7 +70,12 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
       existingSource.name = site.name;
       existingSource.api = site.api;
       existingSource.detail = site.detail;
-      existingSource.is_adult = site.is_adult;
+      // config.json 没写 is_adult 时保留已有值。直接赋 undefined 会把存储里已有的
+      // 标记抹掉，而 getConfig() 每次请求都会跑一遍这个合并。要取消标记请在
+      // config.json 里显式写 is_adult: false。
+      if (site.is_adult !== undefined) {
+        existingSource.is_adult = site.is_adult;
+      }
       existingSource.from = 'config';
     } else {
       // 如果不存在，创建新条目
@@ -533,7 +538,11 @@ export async function getConfig(): Promise<AdminConfig> {
         existingSource.name = site.name;
         existingSource.api = site.api;
         existingSource.detail = site.detail;
-        existingSource.is_adult = site.is_adult;
+        // 同 refineConfig：config.json 没写 is_adult 时不要用 undefined 覆盖掉
+        // 存储里已有的标记。
+        if (site.is_adult !== undefined) {
+          existingSource.is_adult = site.is_adult;
+        }
         existingSource.from = 'config';
       } else {
         // 如果不存在，创建新条目

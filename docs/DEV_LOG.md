@@ -6,6 +6,31 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-05 — Husky hooks made executable
+
+`.husky/pre-commit`, `.husky/commit-msg` and `.husky/post-merge` were committed
+as mode `100644`. Git only runs executable hooks, so on every clone it printed
+"hook was ignored because it's not set as executable" and skipped lint-staged
+and commitlint entirely.
+
+_Decision:_ set them to `100755` in the index (`git update-index --chmod=+x`)
+so the bit travels with the repository, rather than adding a `chmod` step to
+`prepare` that would only fix the machine that ran it.
+
+A fresh clone now gets the hooks as `-rwxr-xr-x`. Checked on a branch cut
+from `main`:
+
+- a commit message without a conventional type is rejected by commitlint
+  (`type-empty`);
+- a staged `.ts` file with a `console.log` is rejected by lint-staged
+  (`eslint --max-warnings=0`, `no-console`);
+- a conventional commit with clean files goes through.
+
+Worth knowing: `post-merge` runs `pnpm install` after every `git pull` or
+merge. That was always the intent of the hook; it simply never ran before.
+
+---
+
 ## 2026-10-05 — Review of #6: play page first frame (3.10.0)
 
 PR: <https://github.com/007jackying/MoonTV/pull/6> (`fix/play-page-first-frame`).
@@ -122,9 +147,9 @@ Test-suite decisions:
 
 ### Open / not done
 
-- `.husky/*` hooks are committed without the executable bit, so git skips them
-  on a fresh clone. Pre-existing; lint and prettier were run by hand for this
-  PR.
+- ~~`.husky/*` hooks are committed without the executable bit, so git skips
+  them on a fresh clone.~~ Fixed in the entry above; for this PR lint and
+  prettier were run by hand.
 - The `faster` advisory path cannot be exercised end to end: every mock source
   shares one of two ladder URLs, so equal-quality sources always measure
   identically. It is covered by the `decideSuggestion` unit tests.

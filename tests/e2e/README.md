@@ -99,8 +99,9 @@ sources are never _queried_ (not merely that their results are dropped):
   on — asserted on the rendered card hrefs _and_ on the `/api/search` payloads
 - the source-selector popup: lists adult sources when off, none when on
 - the play page source panel: same, plus the page's own `/api/search` fan-out
-- `savedSources`: an adult key is honoured while the toggle is off, and pruned
-  from localStorage once it goes back on
+- `savedSources`: an adult key is honoured while the toggle is off, stays in
+  localStorage while it is on (so toggling back off restores it), and an explicit
+  `?sources=` link is not clobbered by the saved-source cleanup
 
 The browser suite forces non-streaming, non-aggregate search
 (`defaultStreamSearch=false`, `defaultAggregateSearch=false`) so results come
@@ -130,10 +131,13 @@ flakiness.
   `next.config.js`). Without it a harness run and your own `next dev` share one
   `.next` and overwrite each other's on-demand-compile manifests, which shows up
   as random `ENOENT … page_client-reference-manifest.js` / HTTP 500 on unrelated
-  routes.
+  routes. The directory is **kept** between runs so `next build` can reuse
+  `NEXT_DIST_DIR/cache`; pass `--clean` to `serve.mjs` to have it discarded on
+  exit instead. Correctness does not depend on this — `--build` always rebuilds
+  before serving.
 - **Chromium without H.264.** Open-source Chromium builds (some Playwright/CI
   images among them) ship without proprietary codecs: `canPlayType('video/mp4;
-codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
+  codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
   ever renders, so every TTFF test times out. Regenerate the fixtures as VP9 +
   Opus in fMP4 with `CODEC=vp9 bash tests/e2e/make-media.sh`; the playlist
   names are unchanged, so nothing else needs to know.
@@ -154,6 +158,10 @@ python tests/e2e/measure.py --scenario prefer
 Screenshots land in `shots/` (gitignored).
 
 ### Play-page suite
+
+> `test_play_perf.py` is **not in this tree yet** — it lands with the
+> `fix/play-page-first-frame` branch. Until then use `measure.py` above, which
+> covers the same first-frame timing. The suite asserts:
 
 ```bash
 node tests/e2e/serve.mjs
@@ -232,6 +240,7 @@ refuses to boot — inspect it and remove it by hand, since it holds your real
 `config.json`.
 
 ```bash
-bash tests/e2e/make-media.sh   # regenerate HLS fixtures (requires ffmpeg)
-rm -rf .e2e-backup .next-e2e   # only if you are sure nothing is running
+bash tests/e2e/make-media.sh              # regenerate HLS fixtures (requires ffmpeg)
+node tests/e2e/serve.mjs --build --clean   # build, serve, then drop .next-e2e/
+rm -rf .e2e-backup                         # only if you are sure nothing is running
 ```

@@ -82,6 +82,10 @@ export async function POST(request: NextRequest) {
         break;
       }
       case 'disable': {
+        // NB: 这里的写入只对「config.json 里没写 disabled」的源是最终状态。
+        // config.json 显式声明了 disabled 的源，会在下次配置重载时被重新覆盖
+        // （lib/config.ts 的 existingSource 分支），所以后台的启用/停用对它们无效。
+        // 要恢复这类源只能改 config.json，见 docs/broken-sources.md。
         const { key } = body as { key?: string };
         if (!key)
           return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });
@@ -92,6 +96,8 @@ export async function POST(request: NextRequest) {
         break;
       }
       case 'enable': {
+        // 见上面 disable 的说明：对 config.json 里钉死了 disabled 的源，这里的
+        // enabled 会在下次配置重载时丢失。
         const { key } = body as { key?: string };
         if (!key)
           return NextResponse.json({ error: '缺少 key 参数' }, { status: 400 });

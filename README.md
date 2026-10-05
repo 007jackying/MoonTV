@@ -482,8 +482,15 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
       "api": "https://example.com/api.php/provide/vod",
       "name": "AV-某资源",
       "is_adult": true
+    },
+    "oldapi": {
+      "api": "https://example.com/api.php/provide/vod",
+      "name": "已停用的源",
+      "detail": "",
+      "is_adult": false,
+      "disabled": true,
+      "note": "源站已失效，停用但保留条目（2026-10-04 实测）"
     }
-    // ...更多站点
   },
   "custom_category": [
     {
@@ -502,6 +509,8 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
   - `name`：在人机界面中展示的名称。
   - `detail`：（可选）部分无法通过 API 获取剧集详情的站点，需要提供网页详情根 URL，用于爬取。
   - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。这个字段只能在 `config.json` 里设置（后台的添加 / 编辑源表单没有它），后台新增的自建源只能靠 `AV-` 前缀识别。
+  - `disabled`：（可选）`true` 表示停用该源，不参与搜索、换源与搜索建议。不写或写 `false` 都视为启用。用于「停用而不删除」：源站失效时保留条目与备注，等它恢复后改回 `false` 即可，不必重新找回 key / 名称 / 详情页地址。
+  - `note`：（可选）纯备注，只留在 `config.json` 里给人看，**不参与任何运行时逻辑**。约定用来记录停用原因与实测时间，例如「源站返回 HTTP 403，2026-10-04 实测」。
 - `custom_category`：自定义分类配置，用于在导航中添加个性化的影视分类。以 type + query 作为唯一标识。支持以下字段：
   - `name`：分类显示名称（可选，如不提供则使用 query 作为显示名）
   - `type`：分类类型，支持 `movie`（电影）或 `tv`（电视剧）
@@ -517,6 +526,36 @@ custom_category 支持的自定义分类已知如下：
 DreamTV 支持标准的苹果 CMS V10 API 格式。
 
 修改后 **无需重新构建**，服务会在启动时读取一次。
+
+### 停用一个失效的源
+
+公共 CMS 源会随时间失效（接口下线、被 Cloudflare 拦截、源站关闭搜索）。停用时
+**不要删条目**——删掉就丢了 key / 名称 / 详情页地址，源站恢复后得重新找回。改成
+停用并写清原因：
+
+```json
+"suoniapi": {
+  "api": "https://suoniapi.com/api.php/provide/vod",
+  "name": "TV-索尼资源",
+  "detail": "",
+  "is_adult": false,
+  "disabled": true,
+  "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
+}
+```
+
+`config.json` 是用 `JSON.parse` 解析的，**JSON 不支持注释**，所以「注释掉一个源」
+必须用 `disabled` 字段，不能用 `//`。
+
+两点需要注意：
+
+- **停用标准**建议是连续两轮实测都同样失败再停，偶发失败（网络抖动）不要停。
+- **`config.json` 优先于后台设置**：对于在 `config.json` 里写了 `disabled` 的源，
+  在后台点「启用」是无效的——下一次配置重载时 `disabled: true` 会再次生效。
+  恢复某个源只能改 `config.json`。反过来，`config.json` 里没写 `disabled` 的源，
+  后台管理的启停完全不受配置重载影响。
+
+当前停用了哪些源、失效分类与复测脚本见 [`docs/broken-sources.md`](docs/broken-sources.md)。
 
 ## 管理员配置
 

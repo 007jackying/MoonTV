@@ -247,6 +247,12 @@
       "detail": "",
       "is_adult": false
     },
+    "lzcaiji": {
+      "api": "https://cj.lzcaiji.com/api.php/provide/vod",
+      "name": "TV-量子资源new",
+      "detail": "",
+      "is_adult": false
+    },
     "jinyingzy": {
       "api": "https://jinyingzy.com/api.php/provide/vod",
       "name": "TV-金鹰点播",

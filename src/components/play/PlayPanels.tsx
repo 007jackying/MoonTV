@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { SearchResult } from '@/lib/types';
 
@@ -17,6 +17,7 @@ import {
   useEpisodeOrder,
   WrongMatchButton,
 } from './PlayPanelParts';
+import { rankSources } from './sourceHealth';
 import { sourceKeyOf, VideoInfo } from './useSourceSpeedTest';
 import { useI18n } from '../LanguageProvider';
 import { staggerStyle } from '../ui/Organic';
@@ -34,6 +35,10 @@ export interface PlayPanelProps {
   pendingSourceKey: string | null;
   /** 当前源无法播放 */
   currentFailed?: boolean;
+  /** 当前集下在播放器里实际播放失败过的源 */
+  failedKeys?: ReadonlySet<string>;
+  /** 按健康状况排序：测速通过的在前，失败的沉底 */
+  prioritizeHealthy?: boolean;
   sourcesExpanded: boolean;
   onSourcesExpandedChange: (expanded: boolean) => void;
   onSourceSelect: (source: SearchResult) => void;
@@ -52,10 +57,20 @@ function FailedTag() {
   );
 }
 
+const NO_FAILED: ReadonlySet<string> = new Set();
+
 function useOtherSources(props: PlayPanelProps) {
-  const { detail, availableSources } = props;
+  const { detail, availableSources, infoMap, prioritizeHealthy } = props;
+  const failedKeys = props.failedKeys || NO_FAILED;
   const currentKey = detail ? sourceKeyOf(detail) : '';
-  return availableSources.filter((s) => sourceKeyOf(s) !== currentKey);
+  return useMemo(() => {
+    const others = availableSources.filter(
+      (s) => sourceKeyOf(s) !== currentKey
+    );
+    return prioritizeHealthy
+      ? rankSources(others, infoMap, failedKeys)
+      : others;
+  }, [availableSources, currentKey, infoMap, failedKeys, prioritizeHealthy]);
 }
 
 function SourceListStatus({ props }: { props: PlayPanelProps }) {
@@ -133,6 +148,7 @@ function OtherSourceRows({
               info={props.infoMap.get(key)}
               measuring={props.isMeasuring(s)}
               pending={props.pendingSourceKey === key}
+              failed={!!props.failedKeys?.has(key)}
               currentTitle={props.detail?.title || ''}
               disabled={!!props.pendingSourceKey}
               onSelect={() => props.onSourceSelect(s)}

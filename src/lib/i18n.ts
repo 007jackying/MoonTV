@@ -55,6 +55,9 @@ const zh = {
   noticeOutroSet: (t: string) => `片尾设为 -${t}`,
   playbackError: '播放出错，正在尝试恢复…',
   playbackFailed: '该播放源无法播放，请尝试换源',
+  findingNextSource: '正在自动切换到下一个可用的播放源…',
+  allSourcesFailed: '暂时没有找到可以播放的源，请稍后重试或手动换源',
+  autoSwitchedTo: (name: string) => `原播放源无法播放，已自动切换到 ${name}`,
 
   // 播放器设置
   blockAd: '去广告',
@@ -260,6 +263,10 @@ const en: Messages = {
   noticeOutroSet: (t) => `Outro starts at -${t}`,
   playbackError: 'Playback error, trying to recover…',
   playbackFailed: 'This source can’t be played. Try another source.',
+  findingNextSource: 'Switching to the next working source…',
+  allSourcesFailed:
+    'No playable source found right now. Retry later or pick one manually.',
+  autoSwitchedTo: (name) => `Source failed — switched to ${name}`,
 
   blockAd: 'Block ads',
   skipIntroOutro: 'Skip intro & outro',

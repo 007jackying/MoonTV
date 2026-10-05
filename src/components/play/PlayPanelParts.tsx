@@ -121,6 +121,7 @@ export function SourceRow({
   info,
   measuring,
   pending,
+  failed = false,
   currentTitle,
   disabled,
   onSelect,
@@ -130,6 +131,8 @@ export function SourceRow({
   info?: VideoInfo;
   measuring: boolean;
   pending: boolean;
+  /** 在播放器里实际播放失败过 */
+  failed?: boolean;
   currentTitle: string;
   disabled: boolean;
   onSelect: () => void;
@@ -151,7 +154,7 @@ export function SourceRow({
           : tone === 'bg'
           ? 'bg-o-bg hover:bg-o-accent-100'
           : 'bg-o-surface hover:bg-o-accent-100'
-      }`}
+      } ${failed && !pending ? 'opacity-60' : ''}`}
     >
       <div className='flex w-full min-w-0 items-center gap-2.5'>
         <span className='truncate text-[15px] font-bold'>
@@ -162,7 +165,13 @@ export function SourceRow({
             {source.title}
           </span>
         )}
-        <QualityTag info={info} />
+        {failed ? (
+          <span className='o-tag o-tag-accent ml-auto flex-none font-bold'>
+            {t.cannotPlay}
+          </span>
+        ) : (
+          <QualityTag info={info} />
+        )}
       </div>
       <SourceStats
         info={info}

@@ -13,8 +13,15 @@ import {
 import Image from 'next/image';
 import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
+import { withAdultFilterParam } from '@/lib/adult-filter.client';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -245,6 +252,30 @@ export default function VideoCard({
     router.push(href);
   }, [href, router, startLoading]);
 
+  /**
+   * 悬停/触摸时预热详情请求。
+   * 播放页的关键路径是 /api/detail?source=&id=，提前发起能让 DNS、TLS
+   * 握手和服务端到上游 CMS 的连接在用户点击之前就完成。
+   * 只对带 source+id 的卡片有意义（豆瓣卡片没有源可问）。
+   */
+  const prefetchedRef = useRef(false);
+  const warmDetail = useCallback(() => {
+    if (prefetchedRef.current) return;
+    if (from === 'douban' || !actualSource || !actualId) return;
+    prefetchedRef.current = true;
+    // URL 必须和播放页的关键路径请求逐字一致（含 filterAdult），
+    // 否则浏览器 / CDN 缓存的这份响应在点击后根本用不上。
+    void fetch(
+      withAdultFilterParam(
+        `/api/detail?source=${encodeURIComponent(
+          actualSource
+        )}&id=${encodeURIComponent(actualId)}`
+      )
+    ).catch(() => {
+      /* 预热失败无所谓，真正的请求会在播放页重新发起 */
+    });
+  }, [from, actualSource, actualId]);
+
   const config = useMemo(() => {
     const configs = {
       playrecord: {
@@ -383,6 +414,8 @@ export default function VideoCard({
         href={href || '#'}
         className='block rounded-[20px] focus-visible:outline-offset-4'
         title={actualTitle}
+        onPointerEnter={warmDetail}
+        onPointerDown={warmDetail}
         onClick={(e) => {
           if (!href) {
             e.preventDefault();

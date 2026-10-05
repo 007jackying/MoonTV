@@ -25,6 +25,7 @@
 ## ✨ 功能特性
 
 - 🔍 **多源聚合搜索**：快速返回结果。
+- 🛡️ **AV 源过滤**：默认全局隐藏成人采集源，搜索、换源、搜索建议、播放源列表都不再使用；可在「本地设置」里一键关掉。
 - 📄 **丰富详情页**：支持剧集列表、演员、年份、简介等完整信息展示。
 - ▶️ **流畅在线播放**：基于 HLS.js 的自研播放器，换集 / 换源时冻结上一帧并显示加载步骤，始终只有一路声音；支持拖动预览、倍速、画中画、AirPlay、键盘快捷键、长按 3 倍速。
 - 📥 **视频下载**：支持 M3U8 视频下载，多线程并发加速，边下边存功能（Chrome/Edge）。
@@ -55,6 +56,8 @@
   - [界面设计（Organic）](#界面设计organic)
   - [播放器说明](#播放器说明)
   - [开发与测试](#开发与测试)
+    - [端到端测试](#端到端测试)
+  - [AV 源过滤](#av-源过滤)
   - [部署](#部署)
     - [Vercel 部署](#vercel-部署)
       - [普通部署（localstorage）](#普通部署localstorage)
@@ -119,6 +122,35 @@
 - 设置菜单：去广告、跳过片头片尾（设为当前位置）、弹幕开关与弹幕源。
 - 快捷键：空格播放 / 暂停，← / → 快退 / 快进 10 秒，↑ / ↓ 调节音量，F 全屏，Alt + ← / → 上一集 / 下一集。
 
+### 首帧关键路径
+
+播放页有两条互不阻塞的时间线：**关键路径只负责“拿到一个可播放地址”**，其余全部延后。
+
+| 阶段     | 行为                                                                                                                                    |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 关键路径 | URL 带 `source`+`id`（从搜索结果点进来）时，直接请求 `/api/detail` 取该源详情；否则用多源搜索流，**第一个匹配结果就开播**，不等整轮扇出 |
+| 后台     | 多源搜索继续跑完，只为把其它源填进侧栏；搜索期间侧栏显示骨架行                                                                          |
+| 播完之后 | 测速在后台进行，发现明显更优的源时给出提示条（可一键换源 / 关闭），**默认不自动切换**，以免丢进度、重置续播、打断弹幕                   |
+
+开启「自动优选播放源」时仍会自动换到最优源，但发生在首帧之后。
+
+页面只在“连一个地址都没拿到”时才显示整页骨架；其余情况海报、标题、选集、侧栏立即可见，`<video>` 用自己的 poster 与切换卡表示加载中。卡片悬停 / 按下时会预热 `/api/detail`，把 DNS、TLS 与上游连接的耗时挪到点击之前。
+
+### 播放源测速
+
+测速实现在 `src/lib/source-metrics.ts`。排序只需要三个信号，都不必解码任何视频：
+
+- **分辨率**：解析 master playlist 里 `#EXT-X-STREAM-INF` 的 `RESOLUTION`（阈值与历史实现一致，按**宽度**判定）
+- **延迟**：manifest 请求的 TTFB
+- **带宽**：对首个分片做一次有上限的 GET 后立即取消（不带自定义头，避免 CORS 预检）
+
+其它细节：
+
+- 结果按地址缓存在 `localStorage` 5 分钟，复访即时显示；测的是**当前集**的实际地址，而不是固定第 2 集。
+- 统一并发上限 6，当前集的源优先入队，不再分两批串行。
+- 综合评分 = 分辨率 40% + 速度 40% + 延迟 20%，三者都归一化到 0–100。
+- 无 `CORS` 头的源无法用轻量方式测量，会标记为错误 —— 这类流本来也无法在浏览器里播放。
+
 ## 开发与测试
 
 ```bash
@@ -126,11 +158,65 @@ pnpm install
 pnpm dev          # 本地开发
 pnpm typecheck    # 类型检查
 pnpm lint         # ESLint
-pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言）
+pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言、测速与评分、测速 hook、AV 源过滤）
 pnpm build        # 生产构建
 ```
 
-端到端测试使用 Playwright 在生产构建上运行（本地生成的 HLS 测试流与海报、对豆瓣 / Bangumi / 搜索 / 弹幕接口打桩），覆盖首页、搜索、分类、播放、换集换源、快捷键、弹幕、续播、登录与主题 / 语言切换等 32 个用例。
+### 端到端测试
+
+端到端测试跑在本地：内置的 mock CMS V10 服务器提供接口和真实 HLS 测试流，Harness 会临时换成只含本地源的 `config.json`，退出时自动还原。**测试数据全部来自本地**；应用自身的外网请求（版本检查、首页豆瓣/Bangumi）在离线环境下失败不会让用例失败。
+
+```bash
+./tests/e2e/run-av-filter.sh                   # AV 源过滤（API + 浏览器两套，共 44 项断言）
+E2E_MODE=dev ./tests/e2e/run-av-filter.sh      # 用 next dev 起（更快但更容易 flaky）
+./tests/e2e/make-media.sh                      # 生成 HLS 测试流（需要 ffmpeg）
+CODEC=vp9 ./tests/e2e/make-media.sh            # 浏览器不支持 H.264 时（开源 Chromium）改用 VP9
+node tests/e2e/serve.mjs                       # 启动 mock + next dev（性能基线用）
+node tests/e2e/serve.mjs --build               # 或对生产构建跑
+python -m pytest tests/e2e/test_play_perf.py -v    # 播放页 21 个用例
+python tests/e2e/measure.py --scenario clicked     # 首帧耗时
+```
+
+`run-av-filter.sh` 默认走生产构建（`next build` + `next start`）：`next dev` 的按需编译
+会让首次访问 `/search`、`/play` 慢上十几秒，长跑时还可能返回空结果或卡死，因此只有
+`E2E_MODE=dev` 才用开发模式。
+
+`perf` 档位给每个源配了可复现的上游延迟（`fast` 60ms … `slow2` 4000ms），因此
+「页面是否在等最慢的源」是确定性问题。`test_play_perf.py` 覆盖三种进入方式的首帧预算、
+`/api/detail` 确实在关键路径上、搜索仍在后台进行、加载期无整页骨架、始终只有一个
+`<video>`、提示条的出现/关闭/换集后清除及文案（更清晰 vs 更快）、换集后确实在播放、
+快捷键、续播记录越界时夹紧、搜索未完成时源列表显示「正在搜索」、卡片预热与播放页请求
+同一个 `/api/detail` 地址，以及「后台测速永远不会把页面换成错误页」这条回归。
+
+首帧实测（同一 mock，生产构建，多次运行）：点击搜索结果 ≈0.4s、从豆瓣卡片进入 ≈0.4s、
+开启自动优选 ≈0.5s；改造前（`main`，同样是生产构建）分别为 0.86s / 4.6s / 4.7s。
+早先在 `next dev` 下测得的「改造前」为 2.0s / 5.0s / 5.3s，含按需编译开销，偏高。
+<video> 的挂载时间从 ~0.7–4.5s 降到 ~0.2s。
+
+详见 [`tests/e2e/README.md`](tests/e2e/README.md)：包含 harness 组成、两种源配置档位
+（`perf` / `avfilter`）、Playwright 安装方式，以及几处已知的 `next dev` 怪癖的规避方式。
+浏览器套件需要 Playwright，API 套件只用 node。
+
+评审记录、测试结论与设计决策见 [`docs/DEV_LOG.md`](docs/DEV_LOG.md)。
+
+Harness 会把 HLS 片段落在 `tests/e2e/media/`（`.gitignore` 忽略，也在 `tsconfig.json`
+的 `exclude` 里 —— 否则 ffmpeg 生成的二进制 `.ts` 会让 `pnpm typecheck` 报几百行
+`Invalid character`）。
+
+## AV 源过滤
+
+采集源里成人站占了不小比例。DreamTV 默认把它们排除在搜索之外，并且这个开关是**每个浏览器本地**的，不影响其他用户。
+
+- **开关位置**：导航栏头像 →「设置」→「本地设置」→「过滤 AV 资源」，默认开启。
+- **作用范围**：搜索页搜索、播放页选源 / 换源、搜索建议、搜索源选择器，以及手动加载详情。开启时 `savedSources` 里残留的成人源会被自动清理。
+- **判定方式**：优先用 `config.json` 里的 `is_adult` 标记；没有该字段时回退到名称前缀 `AV-` / `AV ` / `av_`（`AVPlayer` 这类普通源不会被误伤）。
+- **不影响外部调用方**：接口默认不过滤，只有带 `filterAdult=1` 的请求才过滤，因此 TVBox、OrionTV、定时刷新等调用方的行为不变。
+
+实现要点：
+
+- `src/lib/adult-filter.ts` —— 纯函数判定（客户端 / 服务端共用）
+- `src/lib/adult-filter.client.ts` —— 本地偏好读写，并给搜索 / 加载请求追加 `filterAdult` 参数
+- `src/lib/config.ts` —— `getAvailableApiSitesForRequest()` 是所有搜索接口的统一入口；`is_adult` 也在这里从 `api_site` 一路透传到 `SourceConfig`
 
 ## 部署
 
@@ -391,6 +477,11 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
       "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
       "name": "电影天堂资源",
       "detail": "http://caiji.dyttzyapi.com"
+    },
+    "someav": {
+      "api": "https://example.com/api.php/provide/vod",
+      "name": "AV-某资源",
+      "is_adult": true
     }
     // ...更多站点
   },
@@ -410,6 +501,7 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
   - `api`：资源站提供的 `vod` JSON API 根地址。
   - `name`：在人机界面中展示的名称。
   - `detail`：（可选）部分无法通过 API 获取剧集详情的站点，需要提供网页详情根 URL，用于爬取。
+  - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。
 - `custom_category`：自定义分类配置，用于在导航中添加个性化的影视分类。以 type + query 作为唯一标识。支持以下字段：
   - `name`：分类显示名称（可选，如不提供则使用 query 作为显示名）
   - `type`：分类类型，支持 `movie`（电影）或 `tv`（电视剧）

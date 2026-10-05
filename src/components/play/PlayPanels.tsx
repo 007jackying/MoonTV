@@ -82,6 +82,35 @@ function SourceListStatus({ props }: { props: PlayPanelProps }) {
   );
 }
 
+/**
+ * 搜索仍在进行时的骨架行。
+ * 已经找到的源照常显示，下面补几条占位，让"还有更多"这件事可见，
+ * 而不是让面板停在半空状态。
+ */
+const SKELETON_ROWS = 2;
+
+function SourceSkeletonRows() {
+  const { t } = useI18n();
+  return (
+    <>
+      {Array.from({ length: SKELETON_ROWS }).map((_, i) => (
+        <div
+          key={`skeleton-${i}`}
+          className='flex items-center gap-2.5 rounded-[16px] bg-o-bg px-3 py-2.5'
+        >
+          <span className='o-skeleton h-2.5 w-2.5 shrink-0 rounded-full' />
+          <span className='o-skeleton h-3.5 flex-1 rounded-[6px]' />
+          <span className='o-skeleton h-3 w-10 shrink-0 rounded-[6px]' />
+        </div>
+      ))}
+      <div className='flex items-center gap-2 px-1 py-2 text-[13px] font-semibold text-o-neutral-700'>
+        <Loader2 className='h-4 w-4 animate-spin' strokeWidth={2.75} />
+        {t.searchingSources}
+      </div>
+    </>
+  );
+}
+
 function OtherSourceRows({
   props,
   others,
@@ -112,6 +141,7 @@ function OtherSourceRows({
           </div>
         );
       })}
+      {props.sourceSearchLoading && <SourceSkeletonRows />}
     </>
   );
 }

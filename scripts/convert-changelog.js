@@ -89,14 +89,17 @@ function parseChangelog(content) {
 function generateTypeScript(changelogData) {
   const entries = changelogData.versions
     .map((version) => {
+      // JSON.stringify yields a valid TS string literal and, unlike bare quotes,
+      // escapes any `"` or `\` inside an entry. Without this, a changelog line
+      // containing a double quote produced a syntax error in changelog.ts.
       const addedEntries = version.added
-        .map((entry) => `    "${entry}"`)
+        .map((entry) => `    ${JSON.stringify(entry)}`)
         .join(',\n');
       const changedEntries = version.changed
-        .map((entry) => `    "${entry}"`)
+        .map((entry) => `    ${JSON.stringify(entry)}`)
         .join(',\n');
       const fixedEntries = version.fixed
-        .map((entry) => `    "${entry}"`)
+        .map((entry) => `    ${JSON.stringify(entry)}`)
         .join(',\n');
 
       return `  {

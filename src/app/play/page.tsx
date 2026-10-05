@@ -223,6 +223,10 @@ function PlayPageClient() {
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
   const resumeTimeRef = useRef<number | null>(null);
+  // 本次加载开始时续播到的位置（takeResumeTime 交给播放器的值）。当前源还没
+  // 放起来就失败时，播放器的 currentTime 还是 0，换源要用这个值续播，否则
+  // 「继续观看」进来遇到坏源、自动换源后会从头播，还会删掉原来的播放记录。
+  const loadStartTimeRef = useRef(0);
 
   // 换源相关状态
   const [availableSources, setAvailableSources] = useState<SearchResult[]>([]);
@@ -914,7 +918,11 @@ function PlayPageClient() {
     setBetterSource(null);
 
     try {
-      const currentPlayTime = playerRef.current?.getCurrentTime() || 0;
+      const playerTime = playerRef.current?.getCurrentTime() || 0;
+      const currentPlayTime =
+        playerTime > 1
+          ? playerTime
+          : Math.max(playerTime, loadStartTimeRef.current);
       setSwitchFromDetail(detailRef.current);
       setPendingSourceKey(sourceKeyOf(newDetail));
       setSourcesExpanded(true);
@@ -1093,6 +1101,7 @@ function PlayPageClient() {
   const takeResumeTime = useCallback(() => {
     const v = resumeTimeRef.current || 0;
     resumeTimeRef.current = null;
+    loadStartTimeRef.current = v;
     return v;
   }, []);
 

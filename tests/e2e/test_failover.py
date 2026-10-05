@@ -29,8 +29,11 @@ TITLE = "%E6%B5%8B%E8%AF%95%E5%BD%B1%E7%89%87 Test Movie"
 YEAR = "2024"
 PLAY_FAST = f"{BASE}/play?source=fast&id=fast-1&title={TITLE}&year={YEAR}&stype=tv"
 
-BLOCK_720P = "**/media/720p/**"
-BLOCK_ALL_MEDIA = "**/media/**"
+# Scoped to the mock origin: a bare "**/media/**" would also catch Next's own
+# /_next/static/media/ (fonts) and render the page in fallback fonts.
+MOCK = f"http://127.0.0.1:{os.environ.get('MOCK_PORT', '4010')}"
+BLOCK_720P = f"{MOCK}/media/720p/**"
+BLOCK_ALL_MEDIA = f"{MOCK}/media/**"
 WORKING_SOURCES = ("mid", "slow2")
 
 # Copy from src/lib/i18n.ts (zh).
@@ -281,5 +284,39 @@ def test_no_better_source_banner_while_the_current_one_is_failing(browser):
         page.wait_for_timeout(6000)
         for banner in ("发现更快的源", "发现更清晰的源"):
             assert not _seen(page, banner), f"advisory shown during failover: {banner}"
+    finally:
+        ctx.close()
+
+
+def test_failover_on_first_load_keeps_the_saved_position(browser):
+    """
+    Opening a title from 继续观看 on a source that turns out to be dead: the
+    player fails before it ever plays, so its currentTime is still 0. Failover
+    must resume the next source at the saved position, and the saved record
+    must move to that source instead of being deleted.
+    """
+    ctx, page = _new_page(browser, block=BLOCK_720P)
+    try:
+        page.evaluate(
+            """() => localStorage.setItem('moontv_play_records', JSON.stringify({
+                'fast+fast-1': {
+                  title: '测试影片 Test Movie', source_name: 'E2E-fast', cover: '',
+                  year: '2024', index: 1, total_episodes: 12, play_time: 7,
+                  total_time: 12, save_time: Date.now(), search_title: '',
+                },
+            }))"""
+        )
+        page.goto(PLAY_FAST, wait_until="commit")
+        _wait_switched_and_playing(page)
+        t = page.evaluate("document.querySelector('video').currentTime")
+        assert t >= 6, f"resumed at {t:.2f}s instead of the saved 7s"
+        new_key = f"{_current_source(page)}+"
+        page.wait_for_function(
+            """(prefix) => Object.entries(
+                 JSON.parse(localStorage.getItem('moontv_play_records') || '{}')
+               ).some(([k, r]) => k.startsWith(prefix) && r.play_time >= 6)""",
+            arg=new_key,
+            timeout=8000,
+        )
     finally:
         ctx.close()

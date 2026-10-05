@@ -16,7 +16,7 @@ proxy does not fail a test (see _Console errors_ below).
 | File                 | Purpose                                                                                                                                                                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `mock-cms.mjs`       | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.             |
-| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                        |
+| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                    |
 | `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                       |
 | `measure.py`         | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                   |
 | `test_play_perf.py`  | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest. |
@@ -148,7 +148,7 @@ flakiness.
   before serving.
 - **Chromium without H.264.** Open-source Chromium builds (some Playwright/CI
   images among them) ship without proprietary codecs: `canPlayType('video/mp4;
-  codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
+codecs="avc1.42E01E"')` returns `''`, MSE rejects `avc1`, and no first frame
   ever renders, so every TTFF test times out. Regenerate the fixtures as VP9 +
   Opus in fMP4 with `CODEC=vp9 bash tests/e2e/make-media.sh`; the playlist
   names are unchanged, so nothing else needs to know.
@@ -229,9 +229,11 @@ node tests/e2e/serve.mjs --build
 python -m pytest tests/e2e/test_failover.py -v
 ```
 
-Runs on the `perf` profile with no harness changes: each test aborts
-`**/media/720p/**` (or all of `/media/`) with Playwright request routing, so
-the breakage is per browser context and the other suites never see it. With
+Runs on the `perf` profile with no harness changes: each test aborts the mock
+CMS's `/media/720p/` (or all of its `/media/`) with Playwright request routing,
+so the breakage is per browser context and the other suites never see it. The
+patterns are scoped to the mock origin; a bare `**/media/**` would also abort
+Next's `/_next/static/media/` fonts. With
 720p blocked, `fast`, `dead` and `slow1` fail for the player _and_ the speed
 test — what a dead upstream looks like — leaving `mid` and `slow2` (1080p).
 
@@ -252,9 +254,12 @@ The suite asserts
 - with `enableOptimization=false` it walks the list but never revisits a source;
 - with every source broken it stops after at most five switches, keeps the
   play page (not the error screen) and the manual 换源 button, and says so;
-- the "better source" banner never appears during failover.
+- the "better source" banner never appears during failover;
+- failing over on first load (opened from 继续观看) resumes the next source at
+  the saved position, and the play record moves to it instead of being lost.
 
-All seven fail on the commit before failover was added. This suite does not
+The first seven fail on the commit before failover was added; the last one
+failed on `1bb3029`, before the resume fix. This suite does not
 check console errors: the aborted media requests are the point of the test.
 
 ### Console errors

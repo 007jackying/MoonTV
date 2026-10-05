@@ -2,7 +2,7 @@
 
 'use client';
 
-const CURRENT_VERSION = '3.10.0';
+const CURRENT_VERSION = '3.11.0';
 
 /**
  * 本仓库地址，用于「前往仓库」等站内跳转。

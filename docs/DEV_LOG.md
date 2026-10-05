@@ -6,6 +6,123 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-05 — Automatic failover on the play page (3.11.0)
+
+Branch: `claude/kind-heisenberg-zr8fhr`. Reported from production: opening
+起义 on `TV-电影天堂资源` left the page on 该播放源无法播放，请尝试换源, and
+the panel listed two sources whose speed test had failed (无测速数据) above
+two that measured fine.
+
+### What changed
+
+- **Failover.** `handlePlayerError` (first-load failure, or recovery given up
+  mid-playback) records the failure and turns failover on; an effect re-runs
+  `pickFailoverSource` whenever measurements, search results or the failed set
+  change, and calls `handleSourceChange` as soon as it gets a `switch`.
+- **Ranking** lives in `src/components/play/sourceHealth.ts` as pure functions
+  (`healthOf`, `scoresOf`, `rankSources`, `pickFailoverSource`) with unit
+  tests. Tiers: tested-OK by score → untested → test failed → failed in the
+  player; stable within a tier.
+- **Panel** sorts by those tiers once any failure has happened
+  (`prioritizeHealthy`) and tags player failures with 无法播放 (`FailedTag`,
+  now shared by the current-source card and the rows).
+- **Speed tests** of every other source start as soon as the current one fails
+  (`testAll` includes `playerFailed`), so failover has data without the panel
+  being opened.
+- **Copy**: `findingNextSource`, `allSourcesFailed`, `autoSwitchedTo` (zh/en);
+  the player's failure card takes `errorDetail` / `errorBusy`.
+
+### Decisions
+
+- **Wait for a tested source rather than walk the list.** On the reported page
+  the next two rows were broken; trying them in order costs ~3 s each. The
+  pick waits while any candidate is unmeasured or the search is still
+  streaming. _Bound:_ measurements have their own 4 s / 6 s timeouts, and
+  failover stops waiting after `FAILOVER_MAX_WAIT_MS` (8 s) regardless.
+- **Speed tests off → list order.** With `enableOptimization=false` there are
+  no measurements to wait for.
+- **Test-failed sources are a last resort, not excluded.** The probe is a
+  lightweight `fetch`; it fails on CORS and timeouts that the player may not
+  hit. They are tried only after the search has finished and nothing better
+  exists.
+- **Termination.** A source that failed in the player is never picked again
+  for that episode (failures are keyed `source#episode`, like measurements,
+  because another episode of the same source may be on a different upstream),
+  and one failure chain makes at most `MAX_AUTO_FAILOVERS` (5) switches. The
+  count resets on a successful start, an episode change, or a manual pick.
+- **Also on mid-playback failure,** not just first load: the player only
+  reports `onError` after it has given up recovering, and `handleSourceChange`
+  resumes at the same position on the new source.
+- **Sort only after a failure.** Re-sorting a list the user is reading on every
+  measurement would make rows jump; before any failure the order is unchanged.
+- **Manual pick wins.** Picking a source during failover cancels it and resets
+  the count; if that pick fails, failover starts again from it.
+
+### Review of the first commit (`4c202ca`) and what changed after it
+
+- **自动优选 could re-pick a source that just failed in the player** if its
+  probe passed. _Fix:_ `preferBestSource` returns the best score that has not
+  failed for this episode, or stays on the current source.
+- **The "better source" banner could appear for a failing page**, or point at
+  a source that already failed. _Fix:_ `suggestBetterSource` bails out while
+  the current source is failing, excludes failed sources, and the banner is
+  cleared on failure. Both read refs (`playerFailedRef`, `failedSourcesRef`)
+  because `suggestBetterSource` runs from the first-render closure; the refs
+  are written eagerly in the error handler.
+- **Failures were stored one episode per source** (`Map<source, episode>`), so
+  a later failure overwrote an earlier one. _Fix:_ a `Set` of
+  `source#episode`.
+- **Duplicated tag markup.** _Fix:_ one exported `FailedTag`.
+- Comments in `useSourceSpeedTest` and `VideoPlayer.onError` updated to say
+  failure now triggers testing and failover.
+
+### Checks run
+
+| check                                         | result                                    |
+| --------------------------------------------- | ----------------------------------------- |
+| `pnpm typecheck`                              | clean                                     |
+| `pnpm test` (jest)                            | 79/79 (was 71; 8 new in `sourceHealth`)   |
+| eslint + prettier on changed files            | clean                                     |
+| `test_failover.py` (production build)         | 7/7, three consecutive runs               |
+| `test_failover.py` against `main` (`b7bdf6b`) | 0/7 — every case fails without the change |
+| `test_play_perf.py` (production build)        | 21/21                                     |
+| `run-av-filter.sh` (production build)         | API 17/17, browser 27/27                  |
+
+Timed in the browser (production build, 720p blocked, 5 runs after a
+warm-up): the failure card appears at a median 370 ms after navigation and the
+next source is playing at 1245 ms, so failover itself (waiting for `mid` to
+measure, switching, loading) takes ~0.9 s. The 370 ms is an artefact of
+aborted requests failing instantly; a real dead upstream takes up to the
+player's ~3 s first-load budget to be declared failed.
+
+### Test-suite decisions
+
+- **Breakage is injected with Playwright routing,** not a new mock profile:
+  aborting `**/media/720p/**` breaks `fast`, `dead` and `slow1` for both the
+  player and the probe, which is what a dead upstream looks like, and keeps
+  the `perf` profile untouched for the other suites.
+- **The failover sequence is read from `history.replaceState`,** which the page
+  calls with the new `?source=` on load and on every switch. Media URLs can't
+  tell sources apart (sources of one quality share a ladder), so this is the
+  only exact record of which sources were tried.
+- **Transient text is recorded by a `MutationObserver`.** The "switching"
+  status disappears as soon as a tested source exists; polling missed it.
+- **`E2E_CHROMIUM`** lets every browser suite and `measure.py` use a
+  preinstalled Chromium when the pip Playwright release expects a different
+  revision (this sandbox). Unset, Playwright's own browser is used.
+
+### Open / not done
+
+- The mock cannot produce a source that fails the probe but plays, so the
+  "test-failed as last resort that then works" path is covered by unit tests
+  only.
+- Sandbox shortcuts, not committed: the git-hosted `mux.js` dependency is
+  blocked here (codeload.github.com 403), so it was stubbed in `node_modules`;
+  fixtures were VP9; `public/sw.js` regenerated by the build was restored.
+- Release tagging `v3.11.0` is left to the maintainer.
+
+---
+
 ## 2026-10-05 — Review of #6: play page first frame (3.10.0)
 
 PR: <https://github.com/007jackying/MoonTV/pull/6> (`fix/play-page-first-frame`).

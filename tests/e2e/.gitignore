@@ -1,0 +1,18 @@
+# Patterns here are relative to this directory (tests/e2e/), NOT the repo root —
+# the previous version used `tests/e2e/media/`, which never matched and would have
+# committed ~15 MB of generated HLS fixtures.
+
+# Generated HLS fixtures (regenerate with make-media.sh, needs ffmpeg)
+media/
+
+# Screenshots and other run artifacts
+shots/*.png
+.artifacts/
+config.mock.json
+
+# Harness build dir (NEXT_DIST_DIR, see distDir in next.config.js)
+.next-e2e/
+
+# Python bytecode from measure.py / test_*.py
+__pycache__/
+*.pyc

@@ -2,7 +2,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getCacheTime, getConfig } from '@/lib/config';
+import {
+  getAvailableApiSitesForRequest,
+  getCacheTime,
+} from '@/lib/config';
 import { searchFromApiStream } from '@/lib/downstream'; // 改用流式方法
 
 export const runtime = 'edge';
@@ -25,7 +28,11 @@ export async function GET(request: NextRequest) {
       async start(controller) {
         const encoder = new TextEncoder();
 
-        const suggestionsStream = generateSuggestionsStream(query, timeout);
+        const suggestionsStream = generateSuggestionsStream(
+          query,
+          searchParams,
+          timeout
+        );
 
         for await (const suggestions of suggestionsStream) {
           controller.enqueue(
@@ -49,10 +56,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function* generateSuggestionsStream(query: string, timeout?: number) {
+async function* generateSuggestionsStream(
+  query: string,
+  searchParams: Pick<URLSearchParams, 'get'>,
+  timeout?: number
+) {
   const queryLower = query.toLowerCase();
-  const config = await getConfig();
-  const apiSites = config.SourceConfig.filter((site: any) => !site.disabled);
+  // 与其他搜索接口保持一致：走统一入口，filterAdult=1 时跳过 AV 源
+  const apiSites = await getAvailableApiSitesForRequest(searchParams);
 
   if (apiSites.length > 0) {
     // 使用第一个可用的数据源进行流式搜索

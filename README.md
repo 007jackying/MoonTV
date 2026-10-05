@@ -25,6 +25,7 @@
 ## ✨ 功能特性
 
 - 🔍 **多源聚合搜索**：快速返回结果。
+- 🛡️ **AV 源过滤**：默认全局隐藏成人采集源，搜索、换源、搜索建议、播放源列表都不再使用；可在「本地设置」里一键关掉。
 - 📄 **丰富详情页**：支持剧集列表、演员、年份、简介等完整信息展示。
 - ▶️ **流畅在线播放**：基于 HLS.js 的自研播放器，换集 / 换源时冻结上一帧并显示加载步骤，始终只有一路声音；支持拖动预览、倍速、画中画、AirPlay、键盘快捷键、长按 3 倍速。
 - 📥 **视频下载**：支持 M3U8 视频下载，多线程并发加速，边下边存功能（Chrome/Edge）。
@@ -55,6 +56,8 @@
   - [界面设计（Organic）](#界面设计organic)
   - [播放器说明](#播放器说明)
   - [开发与测试](#开发与测试)
+    - [端到端测试](#端到端测试)
+  - [AV 源过滤](#av-源过滤)
   - [部署](#部署)
     - [Vercel 部署](#vercel-部署)
       - [普通部署（localstorage）](#普通部署localstorage)
@@ -126,11 +129,47 @@ pnpm install
 pnpm dev          # 本地开发
 pnpm typecheck    # 类型检查
 pnpm lint         # ESLint
-pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言）
+pnpm test         # Jest 单元测试（播放器引擎、弹幕解析、界面语言、AV 源过滤）
 pnpm build        # 生产构建
 ```
 
-端到端测试使用 Playwright 在生产构建上运行（本地生成的 HLS 测试流与海报、对豆瓣 / Bangumi / 搜索 / 弹幕接口打桩），覆盖首页、搜索、分类、播放、换集换源、快捷键、弹幕、续播、登录与主题 / 语言切换等 32 个用例。
+### 端到端测试
+
+端到端测试跑在本地：内置的 mock CMS V10 服务器提供接口和真实 HLS 测试流，Harness 会临时换成只含本地源的 `config.json`，退出时自动还原。**全程不访问外网。**
+
+```bash
+./tests/e2e/run-av-filter.sh                   # AV 源过滤（API 24 项 + 浏览器 31 项断言）
+E2E_MODE=dev ./tests/e2e/run-av-filter.sh      # 用 next dev 起（更快但更容易 flaky）
+node tests/e2e/serve.mjs               # 启动 mock + next dev（性能基线用）
+python tests/e2e/measure.py --scenario clicked   # 首帧耗时
+```
+
+`run-av-filter.sh` 默认走生产构建（`next build` + `next start`）：`next dev` 的按需编译
+会让首次访问 `/search`、`/play` 慢上十几秒，长跑时还可能返回空结果或卡死，因此只有
+`E2E_MODE=dev` 才用开发模式。
+
+详见 [`tests/e2e/README.md`](tests/e2e/README.md)：包含 harness 组成、两种源配置档位
+（`perf` / `avfilter`）、Playwright 安装方式，以及几处已知怪癖的规避方式。
+浏览器套件需要 Playwright，API 套件只用 node。
+
+Harness 会把 HLS 片段落在 `tests/e2e/media/`（`.gitignore` 忽略，也在 `tsconfig.json`
+的 `exclude` 里 —— 否则 ffmpeg 生成的二进制 `.ts` 会让 `pnpm typecheck` 报几百行
+`Invalid character`）。
+
+## AV 源过滤
+
+采集源里成人站占了不小比例。DreamTV 默认把它们排除在搜索之外，并且这个开关是**每个浏览器本地**的，不影响其他用户。
+
+- **开关位置**：导航栏头像 →「设置」→「本地设置」→「过滤 AV 资源」，默认开启。
+- **作用范围**：搜索页搜索、播放页选源 / 换源、搜索建议、搜索源选择器，以及手动加载详情。`savedSources` 里残留的成人源不会被选中，但会保留在本地存储里——关掉开关就重新生效，不会丢选择。
+- **判定方式**：优先用 `config.json` 里的 `is_adult` 标记；没有该字段时回退到名称前缀 `AV-` / `AV ` / `av_`（`AVPlayer` 这类普通源不会被误伤）。
+- **不影响外部调用方**：接口默认不过滤，只有带 `filterAdult=1`（或 `true` / `on`）的请求才过滤，其余取值一律视为不过滤，因此 TVBox、OrionTV、定时刷新等调用方的行为不变。
+
+实现要点：
+
+- `src/lib/adult-filter.ts` —— 纯函数判定（客户端 / 服务端共用）
+- `src/lib/adult-filter.client.ts` —— 本地偏好读写，并给搜索 / 加载请求追加 `filterAdult` 参数
+- `src/lib/config.ts` —— `getAvailableApiSitesForRequest()` 是所有搜索接口的统一入口；`is_adult` 也在这里从 `api_site` 一路透传到 `SourceConfig`
 
 ## 部署
 
@@ -391,6 +430,11 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
       "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
       "name": "电影天堂资源",
       "detail": "http://caiji.dyttzyapi.com"
+    },
+    "someav": {
+      "api": "https://example.com/api.php/provide/vod",
+      "name": "AV-某资源",
+      "is_adult": true
     }
     // ...更多站点
   },
@@ -410,6 +454,7 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
   - `api`：资源站提供的 `vod` JSON API 根地址。
   - `name`：在人机界面中展示的名称。
   - `detail`：（可选）部分无法通过 API 获取剧集详情的站点，需要提供网页详情根 URL，用于爬取。
+  - `is_adult`：（可选）`true` 表示成人源。用户的「过滤 AV 资源」开关打开时，该源不会参与搜索、换源和搜索建议。缺省时回退到按 `name` 的 `AV-` 前缀判断，因此给成人源起 `AV-` 前缀也能被识别。这个字段只能在 `config.json` 里设置（后台的添加 / 编辑源表单没有它），后台新增的自建源只能靠 `AV-` 前缀识别。
 - `custom_category`：自定义分类配置，用于在导航中添加个性化的影视分类。以 type + query 作为唯一标识。支持以下字段：
   - `name`：分类显示名称（可选，如不提供则使用 query 作为显示名）
   - `type`：分类类型，支持 `movie`（电影）或 `tv`（电视剧）

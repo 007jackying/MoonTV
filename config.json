@@ -508,7 +508,7 @@
     "xiaojizy": {
       "api": "https://api.xiaojizy.live/provide/vod",
       "name": "小鸡资源",
-      "is_adult": false
+      "is_adult": true
     },
     "kuaichezy": {
       "api": "https://caiji.kuaichezy.org/api.php/provide",
@@ -523,7 +523,7 @@
     "apilj_provide": {
       "api": "https://apilj.com/api.php/provide",
       "name": "辣椒资源黄黄",
-      "is_adult": false
+      "is_adult": true
     },
     "yzzy_api": {
       "api": "https://api.yzzy-api.com/inc/ldg_api_all.php/provide/vod",

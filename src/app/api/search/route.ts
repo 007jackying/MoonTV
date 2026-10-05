@@ -3,7 +3,11 @@
 import { NextRequest } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getAvailableApiSites, getCacheTime, getConfig } from '@/lib/config';
+import {
+  getAvailableApiSitesForRequest,
+  getCacheTime,
+  getConfig,
+} from '@/lib/config';
 import { searchFromApiStream } from '@/lib/downstream';
 import { yellowWords } from '@/lib/yellow';
 
@@ -35,8 +39,11 @@ export async function GET(request: NextRequest) {
 
   const config = await getConfig();
   
-  // 获取用户可用的搜索源
-  let apiSites = await getAvailableApiSites(authInfo?.username);
+  // 获取用户可用的搜索源（filterAdult=1 时跳过 AV 源）
+  let apiSites = await getAvailableApiSitesForRequest(
+    searchParams,
+    authInfo?.username
+  );
   
   // 如果指定了搜索源，只使用选中的搜索源
   const selectedSourcesParam = searchParams.get('sources');

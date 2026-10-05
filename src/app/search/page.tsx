@@ -5,6 +5,7 @@ import { ChevronUp, Loader2, Search, SearchX, X } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
+import { withAdultFilterParam } from '@/lib/adult-filter.client';
 import {
   addSearchHistory,
   clearSearchHistory,
@@ -310,9 +311,12 @@ function SearchPageClient() {
       const timeoutSeconds = getRequestTimeout();
       params.set('timeout', timeoutSeconds.toString());
 
-      const response = await fetch(`/api/search?${params.toString()}`, {
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        withAdultFilterParam(`/api/search?${params.toString()}`),
+        {
+          signal: controller.signal,
+        }
+      );
 
       if (!streamEnabled) {
         const json = await response.json();

@@ -29,6 +29,22 @@ from `main`:
 Worth knowing: `post-merge` runs `pnpm install` after every `git pull` or
 merge. That was always the intent of the hook; it simply never ran before.
 
+Found in review (#12): `public/sw.js` and `public/workbox-*.js` are tracked
+next-pwa build output that every `next build` rewrites. With the hooks live,
+the first `git commit -a` after a local build failed in pre-commit on the
+minified worker (`importScripts` / `define` are not defined, `no-undef`).
+_Decision:_ move the lint-staged config from `package.json` to
+`lint-staged.config.js` and filter those two paths out of eslint and prettier.
+`.eslintignore` cannot do it: ESLint 8 reports an explicitly passed ignored
+file as a warning, and `--max-warnings=0` fails on that. The config file is
+deliberately not a dotfile (`.lintstagedrc.js`): ESLint ignores dotfiles by
+default, so editing it would trip the same warning.
+
+Also worth knowing: commitlint's `subject-case` rejects a capitalised subject
+(`feat: Organic redesign …`). Of the last 40 non-merge commits on `main`, 6
+would now be rejected (2 `subject-case`, 1 unknown type `remove`, 3 with no
+type). Commits made in the GitHub web UI do not run hooks.
+
 ---
 
 ## 2026-10-05 — Review of #6: play page first frame (3.10.0)

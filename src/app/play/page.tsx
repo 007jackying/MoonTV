@@ -1794,7 +1794,7 @@ function PlayPageClient() {
           </div>
         ) : (
           /* 移动端 / 平板：播放器下方依次排列 */
-          <div className='flex flex-col gap-[18px] px-4 pb-6 pt-[18px] md:px-0 lg:hidden'>
+          <div className='flex flex-col gap-[18px] px-4 pb-10 pt-[18px] md:px-0 lg:hidden'>
             <PlayDetailsMobileHead {...detailsProps} />
             <PlayMobileSourceCard {...panelProps} />
             <PlayMobileEpisodes {...panelProps} />

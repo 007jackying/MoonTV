@@ -2,6 +2,8 @@
 'use client';
 
 import {
+  ChevronDown,
+  ChevronUp,
   Download,
   ExternalLink,
   Heart,
@@ -246,9 +248,11 @@ export function PlayDetailsDesktop(props: PlayDetailsProps) {
           />
         </div>
         {detail?.desc && (
-          <p className='m-0 mt-1.5 max-w-[68ch] whitespace-pre-line text-base leading-[1.7] text-o-neutral-800'>
-            {detail.desc}
-          </p>
+          <ExpandableDescription
+            desc={detail.desc}
+            className='mt-1.5 max-w-[68ch]'
+            textClassName='text-base leading-[1.7]'
+          />
         )}
       </div>
 
@@ -333,8 +337,68 @@ export function PlayDetailsMobileHead(props: PlayDetailsProps) {
 export function PlayDescriptionMobile({ desc }: { desc?: string }) {
   if (!desc) return null;
   return (
-    <p className='m-0 whitespace-pre-line text-sm leading-[1.65] text-o-neutral-800'>
-      {desc}
-    </p>
+    <ExpandableDescription desc={desc} textClassName='text-sm leading-[1.65]' />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 简介：默认折叠为 4 行，超出时显示「展开 / 收起」
+// ---------------------------------------------------------------------------
+function ExpandableDescription({
+  desc,
+  className = '',
+  textClassName = '',
+}: {
+  desc: string;
+  className?: string;
+  textClassName?: string;
+}) {
+  const { t } = useI18n();
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+
+  // 换片 / 换集时恢复折叠
+  useEffect(() => {
+    setExpanded(false);
+  }, [desc]);
+
+  // 仅在折叠状态下测量；文字未超出时不显示按钮
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflowing(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [desc, expanded]);
+
+  return (
+    <div className={`flex flex-col items-start gap-1 ${className}`}>
+      <p
+        ref={textRef}
+        className={`m-0 whitespace-pre-line text-o-neutral-800 ${textClassName} ${
+          expanded ? '' : 'line-clamp-4'
+        }`}
+      >
+        {desc}
+      </p>
+      {(overflowing || expanded) && (
+        <button
+          type='button'
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className='-my-1.5 flex min-h-[44px] items-center gap-1 text-sm font-medium text-o-accent-700'
+        >
+          {expanded ? t.readLess : t.readMore}
+          {expanded ? (
+            <ChevronUp className='h-3.5 w-3.5' strokeWidth={2.75} />
+          ) : (
+            <ChevronDown className='h-3.5 w-3.5' strokeWidth={2.75} />
+          )}
+        </button>
+      )}
+    </div>
   );
 }

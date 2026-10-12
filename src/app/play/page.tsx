@@ -1793,7 +1793,7 @@ function PlayPageClient() {
             <PlayDetailsDesktop {...detailsProps} />
           </div>
         ) : (
-          /* 移动端 / 平板：播放器下方依次排列 */
+          /* 移动端 / 平板：播放器下方依次排列；pb-10 让简介的「展开全文」与底部导航之间留出空隙 */
           <div className='flex flex-col gap-[18px] px-4 pb-10 pt-[18px] md:px-0 lg:hidden'>
             <PlayDetailsMobileHead {...detailsProps} />
             <PlayMobileSourceCard {...panelProps} />

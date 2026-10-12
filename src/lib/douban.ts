@@ -1,9 +1,13 @@
 /**
  * 通用的豆瓣数据获取函数
  * @param url 请求的URL
+ * @param referer Referer 头，默认 movie.douban.com（rexxar 接口需传 m.douban.com）
  * @returns Promise<T> 返回指定类型的数据
  */
-export async function fetchDoubanData<T>(url: string): Promise<T> {
+export async function fetchDoubanData<T>(
+  url: string,
+  referer = 'https://movie.douban.com/'
+): Promise<T> {
   // 添加超时控制
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
@@ -12,7 +16,7 @@ export async function fetchDoubanData<T>(url: string): Promise<T> {
   const headers: Record<string, string> = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    Referer: 'https://movie.douban.com/',
+    Referer: referer,
     Accept: 'application/json, text/plain, */*',
   };
   const cookie = process.env.DOUBAN_COOKIE;

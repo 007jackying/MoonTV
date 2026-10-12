@@ -113,6 +113,7 @@ const zh = {
   // 详情
   download: '下载',
   douban: '豆瓣',
+  doubanRating: (rate: string) => `评分 ${rate}`,
   more: '更多',
   favorite: '收藏',
   unfavorite: '取消收藏',
@@ -321,6 +322,7 @@ const en: Messages = {
 
   download: 'Download',
   douban: 'Douban',
+  doubanRating: (rate) => `rating ${rate}`,
   more: 'More',
   favorite: 'Add to favorites',
   unfavorite: 'Remove from favorites',

@@ -193,9 +193,7 @@
       "api": "https://api.niuniuzy.me/api.php/provide/vod",
       "name": "TV-牛牛点播",
       "detail": "https://api.niuniuzy.me",
-      "is_adult": false,
-      "disabled": true,
-      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
+      "is_adult": false
     },
     "dyttzyapi": {
       "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
@@ -227,9 +225,7 @@
       "api": "https://suoniapi.com/api.php/provide/vod",
       "name": "TV-索尼资源",
       "detail": "",
-      "is_adult": false,
-      "disabled": true,
-      "note": "搜索接口已被源站关闭：HTTP 200 + text/plain \"暂不支持搜索\"。需源站后台重新开启，暂不可用（2026-10-04 实测）"
+      "is_adult": false
     },
     "hongniuzy2": {
       "api": "https://www.hongniuzy2.com/api.php/provide/vod",

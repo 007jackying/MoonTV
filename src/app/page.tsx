@@ -243,6 +243,7 @@ function HomeClient() {
       poster: string;
       rate: string;
       year: string;
+      episodes?: number;
       bangumi?: boolean;
     }[];
     type?: string;
@@ -386,6 +387,7 @@ function HomeClient() {
                                 douban_id={Number(item.id)}
                                 rate={item.rate}
                                 year={item.year}
+                                episodes={item.episodes}
                                 type={row.type}
                                 isBangumi={item.bangumi}
                               />

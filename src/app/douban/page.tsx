@@ -763,6 +763,7 @@ function DoubanPageClient() {
                       douban_id={Number(item.id)}
                       rate={item.rate}
                       year={item.year}
+                      episodes={item.episodes}
                       type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
                       isBangumi={
                         type === 'anime' && primarySelection === '每日放送'

@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
 import { fetchDoubanData } from '@/lib/douban';
+import { parseDoubanEpisodes } from '@/lib/douban-episodes';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 interface DoubanApiResponse {
   subjects: Array<{
     id: string;
     title: string;
+    episodes_info?: string;
     cover: string;
     rate: string;
   }>;
@@ -70,6 +72,7 @@ export async function GET(request: Request) {
       poster: item.cover,
       rate: item.rate,
       year: '',
+      episodes: parseDoubanEpisodes(item.episodes_info),
     }));
 
     const response: DoubanResult = {

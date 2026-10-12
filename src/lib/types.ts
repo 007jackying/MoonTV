@@ -107,6 +107,7 @@ export interface DoubanItem {
   poster: string;
   rate: string;
   year: string;
+  episodes?: number; // 集数（电影或未知时为空）
 }
 
 export interface DoubanResult {

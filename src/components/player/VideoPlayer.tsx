@@ -4,6 +4,9 @@
 import {
   Airplay,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  FastForward,
   Gauge,
   Loader2,
   Maximize,
@@ -11,8 +14,10 @@ import {
   Pause,
   PictureInPicture2,
   Play,
+  Rewind,
+  RotateCcw,
+  RotateCw,
   Settings2,
-  SkipBack,
   SkipForward,
   Volume1,
   Volume2,
@@ -24,6 +29,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
@@ -58,6 +64,14 @@ export type PlayerSettingItem =
       label: string;
       hint?: string;
       onSelect: () => void;
+    }
+  | {
+      /** 二级菜单：一级只显示一行（带当前状态摘要），点进去才展开 items */
+      kind: 'group';
+      id: string;
+      label: string;
+      hint?: string;
+      items: PlayerSettingItem[];
     };
 
 export interface VideoPlayerHandle {
@@ -89,9 +103,9 @@ interface VideoPlayerProps {
   loadingSubtitle?: string;
   /** 每路播放开始时调用一次，返回需要恢复到的秒数（0 表示从头） */
   takeResumeTime: () => number;
+  /** 换集：播放器内只有 Alt + ← / → 和全屏时的「下一集」按钮会用到 */
   hasPrev: boolean;
   hasNext: boolean;
-  nextLabel?: string;
   onPrev: () => void;
   onNext: () => void;
   onEnded?: () => void;
@@ -118,6 +132,12 @@ interface VideoPlayerProps {
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 const VOLUME_KEY = 'moontv_volume';
 const HIDE_CONTROLS_MS = 2600;
+/** 快退 / 快进按钮与触屏双击的步长（秒） */
+const SEEK_STEP = 10;
+/** 双击后在此时间内继续点击同侧，会继续累加快进 / 快退 */
+const SEEK_CHAIN_MS = 700;
+/** 触屏两次点击的间隔小于此值算作双击 */
+const DOUBLE_TAP_MS = 300;
 
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
@@ -142,9 +162,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       badge,
       switchKind,
       loadingSubtitle,
-      hasPrev,
-      hasNext,
-      nextLabel,
       errorAction,
       errorDetail,
       errorBusy = false,
@@ -155,6 +172,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     } = props;
     const { t } = useI18n();
     const compact = useMediaQuery('(max-width: 767px)');
+    // 触屏（手机、平板，含横屏）：播放 / 暂停键放到画面中央，快退 / 快进只用双击画面两侧
+    // （中央不放 ⟲10 / ⟳10，它们正好落在双击区域里，会挡住双击）。按输入方式而不是屏宽
+    // 判断，因此宽屏平板也生效；鼠标设备的快退 / 播放 / 快进仍在底部控制栏
+    const touchLayout = useMediaQuery('(hover: none) and (pointer: coarse)');
 
     const containerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -192,6 +213,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
     const [controlsVisible, setControlsVisible] = useState(true);
     const [menu, setMenu] = useState<null | 'speed' | 'settings'>(null);
+    // 设置菜单当前所在的二级页（group id），null 为一级
+    const [settingsPage, setSettingsPage] = useState<string | null>(null);
     const [scrubbing, setScrubbing] = useState(false);
     const [notice, setNotice] = useState<string | null>(null);
     const noticeTimerRef = useRef<number | null>(null);
@@ -223,6 +246,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       setControlsVisible(true);
       scheduleHide();
     }, [scheduleHide]);
+
+    // 每次打开设置都从一级开始
+    useEffect(() => {
+      if (menu !== 'settings') setSettingsPage(null);
+    }, [menu]);
 
     useEffect(() => {
       if (paused || menu || scrubbing) {
@@ -263,6 +291,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       video.currentTime = Math.max(0, d ? Math.min(time, d - 0.1) : time);
       setCurrentTime(video.currentTime);
     }, []);
+
+    const seekBy = useCallback(
+      (delta: number) => {
+        const video = videoRef.current;
+        if (video) seek(video.currentTime + delta);
+      },
+      [seek]
+    );
 
     const applyVolume = useCallback((v: number, mute?: boolean) => {
       const video = videoRef.current;
@@ -613,14 +649,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         switch (e.key) {
+          // 与快退 / 快进按钮一致：每次 10 秒，在开头 / 结尾夹紧
           case 'ArrowLeft':
-            if (video.currentTime > 5) seek(video.currentTime - 10);
+            seekBy(-SEEK_STEP);
             e.preventDefault();
             break;
           case 'ArrowRight':
-            if (video.currentTime < (video.duration || 0) - 5) {
-              seek(video.currentTime + 10);
-            }
+            seekBy(SEEK_STEP);
             e.preventDefault();
             break;
           case 'ArrowUp': {
@@ -653,7 +688,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       document.addEventListener('keydown', onKey);
       return () => document.removeEventListener('keydown', onKey);
     }, [
-      seek,
+      seekBy,
       applyVolume,
       togglePlay,
       toggleFullscreen,
@@ -663,9 +698,80 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     ]);
 
     // ---------------------------------------------------------------------
-    // 画面上的点击 / 触摸：桌面单击暂停、双击全屏；触屏单击显隐控制栏、双击暂停、长按 3 倍速
+    // 画面上的点击 / 触摸：桌面单击暂停、双击全屏；
+    // 触屏单击显隐控制栏，双击左 / 右侧快退 / 快进 10 秒（同 YouTube），双击中间暂停，长按 3 倍速
     // ---------------------------------------------------------------------
     const lastTapRef = useRef(0);
+    const [seekRipple, setSeekRipple] = useState<{
+      dir: -1 | 1;
+      total: number;
+      key: number;
+    } | null>(null);
+    const seekRippleRef = useRef<{ dir: -1 | 1; total: number; at: number }>();
+    const seekRippleTimerRef = useRef<number | null>(null);
+
+    const tapSeek = (dir: -1 | 1) => {
+      const video = videoRef.current;
+      if (!video || phaseRef.current !== 'ready') return;
+      const before = video.currentTime;
+      seekBy(dir * SEEK_STEP);
+      // 提示显示实际跳过的秒数：在开头 / 结尾被夹紧时不足 10 秒（如 0:03 处后退只显示 3 秒）
+      const moved = Math.abs(video.currentTime - before);
+      // 同 YouTube：播放中双击快进 / 快退后控制栏保持收起。双击的第一下会唤出控制栏，
+      // 不收回的话提示消失后中央播放键和底栏会立刻盖到画面上（暂停时控制栏本就常驻）
+      if (!video.paused) {
+        if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+        setControlsVisible(false);
+      }
+      const now = Date.now();
+      const prev = seekRippleRef.current;
+      const total =
+        prev && prev.dir === dir && now - prev.at < SEEK_CHAIN_MS
+          ? prev.total + moved
+          : moved;
+      seekRippleRef.current = { dir, total, at: now };
+      setSeekRipple({ dir, total, key: now });
+      if (seekRippleTimerRef.current) {
+        window.clearTimeout(seekRippleTimerRef.current);
+      }
+      seekRippleTimerRef.current = window.setTimeout(() => {
+        seekRippleRef.current = undefined;
+        setSeekRipple(null);
+      }, SEEK_CHAIN_MS);
+    };
+
+    useEffect(
+      () => () => {
+        if (seekRippleTimerRef.current) {
+          window.clearTimeout(seekRippleTimerRef.current);
+        }
+      },
+      []
+    );
+    // 单击唤出控制栏后的 DOUBLE_TAP_MS 内，刚出现的按钮 / 进度条不接收点击：
+    // 否则双击的第二下会落在它们上面（跳到手指所在的进度、打开设置、按到中央播放键），
+    // 而不是交给画面按双击处理。超过这个时间人才来得及看清再点，不影响正常操作
+    const [tapGuard, setTapGuard] = useState(false);
+    const tapGuardTimerRef = useRef<number | null>(null);
+    const guardRevealedControls = () => {
+      setTapGuard(true);
+      if (tapGuardTimerRef.current) {
+        window.clearTimeout(tapGuardTimerRef.current);
+      }
+      tapGuardTimerRef.current = window.setTimeout(
+        () => setTapGuard(false),
+        DOUBLE_TAP_MS
+      );
+    };
+    useEffect(
+      () => () => {
+        if (tapGuardTimerRef.current) {
+          window.clearTimeout(tapGuardTimerRef.current);
+        }
+      },
+      []
+    );
+
     const lastPointerTypeRef = useRef('mouse');
     const longPressTimerRef = useRef<number | null>(null);
     const longPressRateRef = useRef<number | null>(null);
@@ -705,13 +811,28 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
       if (e.pointerType === 'touch') {
         const now = Date.now();
-        if (now - lastTapRef.current < 300) {
-          togglePlay();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / (rect.width || 1);
+        const zone: -1 | 0 | 1 = x < 1 / 3 ? -1 : x > 2 / 3 ? 1 : 0;
+        const chaining =
+          !!seekRippleRef.current &&
+          now - seekRippleRef.current.at < SEEK_CHAIN_MS;
+        if (zone !== 0 && chaining) {
+          // 已在快进 / 快退中：继续点击侧边每次再跳 10 秒
+          tapSeek(zone);
+          lastTapRef.current = 0;
+        } else if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+          if (zone === 0) togglePlay();
+          else tapSeek(zone);
           lastTapRef.current = 0;
         } else {
           lastTapRef.current = now;
-          if (controlsVisible && !paused) setControlsVisible(false);
-          else revealControls();
+          if (controlsVisible && !paused) {
+            setControlsVisible(false);
+          } else {
+            if (!controlsVisible) guardRevealedControls();
+            revealControls();
+          }
         }
       } else if (e.button === 0) {
         togglePlay();
@@ -723,6 +844,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     // ---------------------------------------------------------------------
     const isLoading = phase === 'loading' || (phase === 'idle' && !!src);
     const showChrome = controlsVisible || isLoading || phase === 'error';
+    // 中央播放键在倍速 / 设置菜单打开时收起（矮画面里会盖住菜单），
+    // 双击快进 / 快退提示显示期间也收起（暂停时控制栏常驻，会和提示叠在一起）
+    const centreVisible = showChrome && !menu && !seekRipple;
+    // 控制栏可见但暂不接收点击：刚被单击唤出（见 guardRevealedControls），或双击快进 /
+    // 快退提示显示期间（暂停时控制栏常驻，连点同侧的后几下不能被底栏截走）
+    const chromeLocked = tapGuard || !!seekRipple;
     const VolumeIcon =
       muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
     const loadingTitle =
@@ -736,6 +863,163 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       ? 'flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-o-video-paper/[0.14]'
       : 'flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-o-video-paper/[0.14]';
     const iconSize = compact ? 16 : 18;
+
+    // 设置菜单：一级放常用开关和分类入口，分类点进去是二级页（带返回）。
+    // 从二级页返回时，焦点回到刚才进入的那一行（见 PopoverMenu 的 pageKey）
+    const settingsReturnRef = useRef<string | null>(null);
+    const renderSettingRow = (item: PlayerSettingItem) => {
+      if (item.kind === 'toggle') {
+        return (
+          <MenuRow
+            key={item.id}
+            role='menuitemcheckbox'
+            checked={item.checked}
+            onClick={() => item.onChange(!item.checked)}
+            trailing={<Switch checked={item.checked} />}
+          >
+            {item.label}
+          </MenuRow>
+        );
+      }
+      const hint = item.hint ? (
+        <span className='max-w-[9rem] truncate text-xs opacity-70'>
+          {item.hint}
+        </span>
+      ) : null;
+      if (item.kind === 'group') {
+        return (
+          <MenuRow
+            key={item.id}
+            hasPopup
+            autoFocus={item.id === settingsReturnRef.current}
+            onClick={() => setSettingsPage(item.id)}
+            trailing={
+              <>
+                {hint}
+                <ChevronRight
+                  size={16}
+                  className='-mr-1 flex-none opacity-70'
+                  strokeWidth={2.75}
+                />
+              </>
+            }
+          >
+            {item.label}
+          </MenuRow>
+        );
+      }
+      return (
+        <MenuRow key={item.id} onClick={item.onSelect} trailing={hint}>
+          {item.label}
+        </MenuRow>
+      );
+    };
+
+    const renderSettings = () => {
+      const group = settings.find(
+        (item): item is Extract<PlayerSettingItem, { kind: 'group' }> =>
+          item.kind === 'group' && item.id === settingsPage
+      );
+      if (!group) return settings.map(renderSettingRow);
+      return (
+        <>
+          <button
+            type='button'
+            role='menuitem'
+            data-autofocus
+            onClick={() => {
+              settingsReturnRef.current = group.id;
+              setSettingsPage(null);
+            }}
+            aria-label={`${t.back} · ${group.label}`}
+            className='mb-1 flex w-full items-center gap-1.5 rounded-[14px] border-b border-o-video-paper/[0.12] px-2 pb-2.5 pt-2 text-left text-sm font-bold transition-colors hover:bg-o-video-paper/[0.12]'
+          >
+            <ChevronLeft size={18} strokeWidth={2.75} />
+            <span className='truncate'>{group.label}</span>
+          </button>
+          {group.items.map(renderSettingRow)}
+        </>
+      );
+    };
+
+    // 中央播放键占着画面正中：暂停时（控制栏常驻）双击中间，两下都会落在它上面，
+    // 播放又立刻暂停。DOUBLE_TAP_MS 内的第二下按“双击中间 = 切换一次”处理，忽略掉
+    const lastCentrePlayRef = useRef(0);
+    const centreTogglePlay = () => {
+      const now = Date.now();
+      if (now - lastCentrePlayRef.current < DOUBLE_TAP_MS) return;
+      lastCentrePlayRef.current = now;
+      togglePlay();
+    };
+
+    // 鼠标设备：底部控制栏里的 快退 10 秒 / 播放暂停 / 快进 10 秒。
+    // 触屏：画面中央只有播放暂停（快退 / 快进用双击画面两侧）
+    const renderTransport = (place: 'bar' | 'center') => {
+      const center = place === 'center';
+      const seekIconSize = compact ? 22 : 24;
+      const playSize = center
+        ? compact
+          ? 'h-[60px] w-[60px]'
+          : 'h-[76px] w-[76px]'
+        : compact
+        ? 'h-10 w-10'
+        : 'h-12 w-12';
+      const playIconSize = center ? (compact ? 26 : 32) : compact ? 17 : 20;
+      return (
+        <>
+          {!center && (
+            <button
+              type='button'
+              className={iconBtn}
+              onClick={() => seekBy(-SEEK_STEP)}
+              title={t.seekBackward(SEEK_STEP)}
+              aria-label={t.seekBackward(SEEK_STEP)}
+            >
+              <SeekIcon dir={-1} size={seekIconSize} />
+            </button>
+          )}
+          <button
+            type='button'
+            onClick={center ? centreTogglePlay : togglePlay}
+            title={paused ? t.play : t.pause}
+            aria-label={paused ? t.play : t.pause}
+            className={`flex flex-none items-center justify-center rounded-full bg-o-accent text-o-video-paper transition-colors hover:bg-o-accent-600 ${playSize}`}
+          >
+            {center && waiting && !paused ? (
+              // 触屏布局下缓冲指示放在播放键里，不再另叠一个转圈
+              <Loader2
+                size={playIconSize}
+                className='animate-spin'
+                strokeWidth={2.75}
+              />
+            ) : paused ? (
+              <Play
+                size={playIconSize}
+                className='ml-0.5 fill-current'
+                strokeWidth={2.75}
+              />
+            ) : (
+              <Pause
+                size={playIconSize}
+                className='fill-current'
+                strokeWidth={2.75}
+              />
+            )}
+          </button>
+          {!center && (
+            <button
+              type='button'
+              className={iconBtn}
+              onClick={() => seekBy(SEEK_STEP)}
+              title={t.seekForward(SEEK_STEP)}
+              aria-label={t.seekForward(SEEK_STEP)}
+            >
+              <SeekIcon dir={1} size={seekIconSize} />
+            </button>
+          )}
+        </>
+      );
+    };
 
     return (
       <div
@@ -793,23 +1077,60 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           onPointerUp={handleSurfacePointerUp}
           onPointerCancel={endLongPress}
           onPointerLeave={endLongPress}
+          // 触屏的点击全部由 pointer 事件处理。取消浏览器随后补发的 click：
+          // 否则单击唤出控制栏后，这个 click 会落在刚出现的中央播放键或底栏按钮上
+          // （隐藏的按钮被“点穿”），双击时也会触发 iOS 的双击缩放
+          onTouchEnd={(e) => {
+            if (e.cancelable) e.preventDefault();
+          }}
           onDoubleClick={() => {
-            // 触屏的双击已用于暂停 / 播放
+            // 触屏的双击已用于快进 / 快退（两侧）和暂停 / 播放（中间）
             if (lastPointerTypeRef.current !== 'touch') toggleFullscreen();
           }}
         />
 
-        {/* 缓冲中 */}
-        {phase === 'ready' && waiting && !paused && (
-          <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
-            <span className='flex h-14 w-14 items-center justify-center rounded-full bg-o-video-ink/60'>
-              <Loader2 className='h-7 w-7 animate-spin' strokeWidth={2.75} />
-            </span>
+        {/* 触屏双击快进 / 快退提示 */}
+        {seekRipple && (
+          <div
+            className={`pointer-events-none absolute inset-y-0 flex w-[38%] items-center justify-center bg-o-video-ink/40 ${
+              seekRipple.dir < 0
+                ? 'left-0 rounded-r-[50%]'
+                : 'right-0 rounded-l-[50%]'
+            }`}
+          >
+            <div
+              key={seekRipple.key}
+              className='flex animate-o-pop flex-col items-center gap-1 text-[13px] font-semibold drop-shadow-[0_1px_2px_rgb(0_0_0/0.6)]'
+            >
+              {seekRipple.dir < 0 ? (
+                <Rewind size={22} className='fill-current' strokeWidth={2.75} />
+              ) : (
+                <FastForward
+                  size={22}
+                  className='fill-current'
+                  strokeWidth={2.75}
+                />
+              )}
+              {t.seekSeconds(Math.round(seekRipple.total))}
+            </div>
           </div>
         )}
 
+        {/* 缓冲中 */}
+        {phase === 'ready' &&
+          waiting &&
+          !paused &&
+          !(touchLayout && centreVisible) && (
+            <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
+              <span className='flex h-14 w-14 items-center justify-center rounded-full bg-o-video-ink/60'>
+                <Loader2 className='h-7 w-7 animate-spin' strokeWidth={2.75} />
+              </span>
+            </div>
+          )}
+
         {/* 自动播放被拦截时的大播放按钮 */}
-        {phase === 'ready' && paused && autoplayBlocked && (
+        {/* 触屏布局的中央已有播放键，暂停时也一直显示 */}
+        {phase === 'ready' && paused && autoplayBlocked && !touchLayout && (
           <button
             type='button'
             onClick={play}
@@ -893,24 +1214,48 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           </div>
         )}
 
+        {/* 触屏：画面中央的播放 / 暂停，随控制栏显隐，菜单打开时收起；
+            层级高于底部控制栏，矮画面上两者的透明内边距重叠时按钮仍可点 */}
+        {touchLayout && phase === 'ready' && (
+          <div
+            className={`pointer-events-none absolute inset-0 z-[25] flex items-center justify-center bg-o-video-ink/30 transition-opacity duration-300 ${
+              centreVisible ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <div
+              className={`flex items-center ${
+                centreVisible && !chromeLocked
+                  ? 'pointer-events-auto'
+                  : 'pointer-events-none'
+              }`}
+            >
+              {renderTransport('center')}
+            </div>
+          </div>
+        )}
+
         {/* 底部控制栏 */}
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-o-video-ink/[0.88] to-transparent transition-opacity duration-300 ${
+          // 渐变背景和上方留白只是装饰，不接收点击（交给画面：单击 / 双击照常），
+          // 只有里面的进度条和按钮可点
+          className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-o-video-ink/[0.88] to-transparent transition-opacity duration-300 ${
             compact ? 'px-3 pb-2 pt-10' : 'px-6 pb-[18px] pt-[72px]'
-          } ${showChrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-          onPointerEnter={() => {
-            pointerOverControlsRef.current = true;
-          }}
-          onPointerLeave={() => {
-            pointerOverControlsRef.current = false;
-          }}
+          } ${showChrome ? 'opacity-100' : 'opacity-0'}`}
         >
           <div
             className={
               isLoading || phase === 'error'
                 ? 'pointer-events-none opacity-40'
+                : showChrome && !chromeLocked
+                ? 'pointer-events-auto'
                 : ''
             }
+            onPointerEnter={() => {
+              pointerOverControlsRef.current = true;
+            }}
+            onPointerLeave={() => {
+              pointerOverControlsRef.current = false;
+            }}
           >
             <PlayerTimeline
               currentTime={currentTime}
@@ -929,63 +1274,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 compact ? 'mt-1.5 gap-0.5' : 'mt-3 gap-1.5'
               }`}
             >
-              <button
-                type='button'
-                className={`${iconBtn} disabled:opacity-40`}
-                onClick={props.onPrev}
-                disabled={!hasPrev}
-                title={t.prevEpisode}
-                aria-label={t.prevEpisode}
-              >
-                <SkipBack
-                  size={iconSize}
-                  className='fill-current'
-                  strokeWidth={2.75}
-                />
-              </button>
-              <button
-                type='button'
-                onClick={togglePlay}
-                title={paused ? t.play : t.pause}
-                aria-label={paused ? t.play : t.pause}
-                className={`flex flex-none items-center justify-center rounded-full bg-o-accent text-o-video-paper transition-colors hover:bg-o-accent-600 ${
-                  compact ? 'h-10 w-10' : 'h-12 w-12'
-                }`}
-              >
-                {paused ? (
-                  <Play
-                    size={compact ? 17 : 20}
-                    className='ml-0.5 fill-current'
-                    strokeWidth={2.75}
-                  />
-                ) : (
-                  <Pause
-                    size={compact ? 17 : 20}
-                    className='fill-current'
-                    strokeWidth={2.75}
-                  />
-                )}
-              </button>
-              <div className='group/next relative'>
-                <button
-                  type='button'
-                  className={`${iconBtn} disabled:opacity-40`}
-                  onClick={props.onNext}
-                  disabled={!hasNext}
-                  aria-label={t.nextEpisode}
-                >
-                  <SkipForward
-                    size={iconSize}
-                    className='fill-current'
-                    strokeWidth={2.75}
-                  />
-                </button>
-                {!compact && hasNext && nextLabel && (
-                  <span className='pointer-events-none absolute bottom-[50px] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-o-video-paper px-3 py-[5px] text-xs font-semibold text-o-video-ink opacity-0 transition-opacity group-hover/next:opacity-100'>
-                    {t.nextEpisodeLabel(nextLabel)}
-                  </span>
-                )}
-              </div>
+              {!touchLayout && renderTransport('bar')}
 
               {!compact && (
                 <VolumeControl
@@ -1017,6 +1306,24 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
               <span className='flex-1' />
 
+              {/* 下一集：只在全屏时出现。平时换集用页面上的选集列表 / 「下一集」卡片，
+                  全屏后它们都看不到，触屏又没有 Alt + → */}
+              {isFullscreen && props.hasNext && (
+                <button
+                  type='button'
+                  className={iconBtn}
+                  onClick={props.onNext}
+                  title={t.nextEpisode}
+                  aria-label={t.nextEpisode}
+                >
+                  <SkipForward
+                    size={iconSize}
+                    className='fill-current'
+                    strokeWidth={2.75}
+                  />
+                </button>
+              )}
+
               {/* 倍速 */}
               <div className='relative'>
                 <button
@@ -1035,7 +1342,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   {rate}×
                 </button>
                 {menu === 'speed' && (
-                  <PopoverMenu>
+                  <PopoverMenu boundsRef={containerRef}>
                     {PLAYBACK_RATES.map((r) => (
                       <MenuRow
                         key={r}
@@ -1095,34 +1402,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   <Settings2 size={iconSize} strokeWidth={2.75} />
                 </button>
                 {menu === 'settings' && (
-                  <PopoverMenu wide>
-                    {settings.map((item) =>
-                      item.kind === 'toggle' ? (
-                        <MenuRow
-                          key={item.id}
-                          onClick={() => item.onChange(!item.checked)}
-                          trailing={<Switch checked={item.checked} />}
-                        >
-                          {item.label}
-                        </MenuRow>
-                      ) : (
-                        <MenuRow
-                          key={item.id}
-                          onClick={() => {
-                            item.onSelect();
-                          }}
-                          trailing={
-                            item.hint ? (
-                              <span className='max-w-[9rem] truncate text-xs opacity-70'>
-                                {item.hint}
-                              </span>
-                            ) : undefined
-                          }
-                        >
-                          {item.label}
-                        </MenuRow>
-                      )
-                    )}
+                  <PopoverMenu
+                    wide
+                    boundsRef={containerRef}
+                    pageKey={settingsPage}
+                  >
+                    {renderSettings()}
                   </PopoverMenu>
                 )}
               </div>
@@ -1331,20 +1616,80 @@ function VolumeControl({
   );
 }
 
+/** 菜单与播放器顶部至少留出的距离（px） */
+const MENU_TOP_GAP = 8;
+const MENU_MAX_HEIGHT = 360;
+
 function PopoverMenu({
   children,
   wide = false,
+  boundsRef,
+  pageKey,
 }: {
   children: ReactNode;
   wide?: boolean;
+  /**
+   * 多级菜单的当前页。换页时同一个滚动容器换了内容：回到顶部（否则二级页沿用一级的
+   * 滚动位置，顶部的返回行可能看不到），并把焦点移到新页的 data-autofocus 元素
+   * （点击的行已被卸载，键盘用户的焦点会掉到 body 上）
+   */
+  pageKey?: string | null;
+  /**
+   * 播放器容器。它是 overflow-hidden 的，手机竖屏时只有两百多像素高：
+   * 菜单按播放器内实际可用高度限高，超出部分在菜单内滚动，而不是被播放器裁掉
+   */
+  boundsRef: React.RefObject<HTMLElement>;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState<number>();
+
+  const measure = useCallback(() => {
+    const menu = ref.current;
+    const bounds = boundsRef.current;
+    if (!menu || !bounds) return;
+    const available =
+      menu.getBoundingClientRect().bottom -
+      bounds.getBoundingClientRect().top -
+      MENU_TOP_GAP;
+    setMaxHeight(Math.max(96, Math.min(MENU_MAX_HEIGHT, available)));
+  }, [boundsRef]);
+
+  useLayoutEffect(() => {
+    const bounds = boundsRef.current;
+    if (!bounds) return;
+    measure();
+    // 旋转屏幕、进出全屏时播放器尺寸会变
+    const ro = new ResizeObserver(measure);
+    ro.observe(bounds);
+    return () => ro.disconnect();
+  }, [boundsRef, measure]);
+
+  const firstPage = useRef(true);
+  useLayoutEffect(() => {
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    const menu = ref.current;
+    if (!menu) return;
+    menu.scrollTop = 0;
+    const target =
+      menu.querySelector<HTMLElement>('[data-autofocus]') ||
+      menu.querySelector<HTMLElement>('button');
+    target?.focus({ preventScroll: true });
+  }, [pageKey]);
+
   return (
     <div
+      ref={ref}
       role='menu'
-      className={`absolute bottom-full right-0 z-30 mb-3 origin-bottom-right animate-o-pop max-h-[min(60vh,360px)] overflow-y-auto rounded-[20px] bg-[rgb(46_43_37/0.95)] p-1.5 text-o-video-paper shadow-o-lg ${
+      style={{ maxHeight: maxHeight ?? MENU_MAX_HEIGHT }}
+      className={`absolute bottom-full right-0 z-30 mb-3 origin-bottom-right animate-o-pop touch-pan-y overflow-y-auto overscroll-contain rounded-[20px] bg-[rgb(46_43_37/0.95)] p-1.5 text-o-video-paper shadow-o-lg ${
         wide ? 'w-64' : 'w-28'
       }`}
       onPointerUp={(e) => e.stopPropagation()}
+      // 弹出动画的起始帧带 translateY，首次测量的底边偏低几像素：动画结束后再量一次
+      onAnimationEnd={measure}
     >
       {children}
     </div>
@@ -1356,16 +1701,29 @@ function MenuRow({
   onClick,
   active = false,
   trailing,
+  role = 'menuitem',
+  checked,
+  hasPopup = false,
+  autoFocus = false,
 }: {
   children: ReactNode;
   onClick: () => void;
   active?: boolean;
   trailing?: ReactNode;
+  role?: 'menuitem' | 'menuitemcheckbox';
+  checked?: boolean;
+  /** 点开进入二级菜单 */
+  hasPopup?: boolean;
+  /** 菜单换页后获得焦点（见 PopoverMenu 的 pageKey） */
+  autoFocus?: boolean;
 }) {
   return (
     <button
       type='button'
-      role='menuitem'
+      role={role}
+      aria-checked={role === 'menuitemcheckbox' ? checked : undefined}
+      aria-haspopup={hasPopup ? 'menu' : undefined}
+      data-autofocus={autoFocus || undefined}
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-sm font-semibold transition-colors ${
         active
@@ -1392,6 +1750,22 @@ function Switch({ checked }: { checked: boolean }) {
           checked ? 'left-[18px]' : 'left-0.5'
         }`}
       />
+    </span>
+  );
+}
+
+/** YouTube 风格的“10 秒”快退 / 快进图标：环形箭头中间写上秒数 */
+function SeekIcon({ dir, size }: { dir: -1 | 1; size: number }) {
+  const Icon = dir < 0 ? RotateCcw : RotateCw;
+  return (
+    <span className='relative flex items-center justify-center'>
+      <Icon size={size} strokeWidth={2.25} />
+      <span
+        className='absolute pt-px font-bold leading-none'
+        style={{ fontSize: Math.round(size * 0.36) }}
+      >
+        {SEEK_STEP}
+      </span>
     </span>
   );
 }

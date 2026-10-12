@@ -1291,6 +1291,17 @@ function PlayPageClient() {
     }
   };
 
+  const toggleDanmaku = (v: boolean) => {
+    setDanmakuVisible(v);
+    try {
+      localStorage.setItem('danmakuVisible', String(v));
+    } catch {
+      // ignore
+    }
+  };
+
+  // 播放器设置菜单：一级只放常用开关和分类入口，其余放进二级页，
+  // 手机竖屏的矮画面里也能完整显示（超出时菜单内滚动）
   const playerSettings: PlayerSettingItem[] = [
     {
       kind: 'toggle',
@@ -1311,78 +1322,94 @@ function PlayPageClient() {
     },
     {
       kind: 'toggle',
-      id: 'skip',
-      label: t.skipIntroOutro,
-      checked: skipConfig.enable,
-      onChange: (v) => handleSkipConfigChange({ ...skipConfig, enable: v }),
-    },
-    {
-      kind: 'action',
-      id: 'intro',
-      label: t.setIntro,
-      hint:
-        skipConfig.intro_time > 0
-          ? formatClock(skipConfig.intro_time)
-          : t.setAtCurrent,
-      onSelect: () => {
-        const cur = playerRef.current?.getCurrentTime() || 0;
-        if (cur <= 0) return;
-        handleSkipConfigChange({ ...skipConfig, intro_time: cur });
-        playerRef.current?.showNotice(t.noticeIntroSet(formatClock(cur)));
-      },
-    },
-    {
-      kind: 'action',
-      id: 'outro',
-      label: t.setOutro,
-      hint:
-        skipConfig.outro_time < 0
-          ? `-${formatClock(-skipConfig.outro_time)}`
-          : t.setAtCurrent,
-      onSelect: () => {
-        const p = playerRef.current;
-        if (!p) return;
-        const outro = -(p.getDuration() - p.getCurrentTime());
-        if (!(outro < 0)) return;
-        handleSkipConfigChange({ ...skipConfig, outro_time: outro });
-        p.showNotice(t.noticeOutroSet(formatClock(-outro)));
-      },
-    },
-    ...(skipConfig.enable || skipConfig.intro_time || skipConfig.outro_time
-      ? [
-          {
-            kind: 'action' as const,
-            id: 'clear-skip',
-            label: t.clearSkip,
-            onSelect: () =>
-              handleSkipConfigChange({
-                enable: false,
-                intro_time: 0,
-                outro_time: 0,
-              }),
-          },
-        ]
-      : []),
-    {
-      kind: 'toggle',
       id: 'danmaku',
       label: t.danmaku,
       checked: danmakuVisible,
-      onChange: (v) => {
-        setDanmakuVisible(v);
-        try {
-          localStorage.setItem('danmakuVisible', String(v));
-        } catch {
-          // ignore
-        }
-      },
+      onChange: toggleDanmaku,
     },
     {
-      kind: 'action',
-      id: 'danmaku-source',
-      label: t.danmakuSource,
+      kind: 'group',
+      id: 'skip-settings',
+      label: t.skipSettings,
+      hint: skipConfig.enable ? t.on : t.off,
+      items: [
+        {
+          kind: 'toggle',
+          id: 'skip',
+          label: t.skipIntroOutro,
+          checked: skipConfig.enable,
+          onChange: (v) => handleSkipConfigChange({ ...skipConfig, enable: v }),
+        },
+        {
+          kind: 'action',
+          id: 'intro',
+          label: t.setIntro,
+          hint:
+            skipConfig.intro_time > 0
+              ? formatClock(skipConfig.intro_time)
+              : t.setAtCurrent,
+          onSelect: () => {
+            const cur = playerRef.current?.getCurrentTime() || 0;
+            if (cur <= 0) return;
+            handleSkipConfigChange({ ...skipConfig, intro_time: cur });
+            playerRef.current?.showNotice(t.noticeIntroSet(formatClock(cur)));
+          },
+        },
+        {
+          kind: 'action',
+          id: 'outro',
+          label: t.setOutro,
+          hint:
+            skipConfig.outro_time < 0
+              ? `-${formatClock(-skipConfig.outro_time)}`
+              : t.setAtCurrent,
+          onSelect: () => {
+            const p = playerRef.current;
+            if (!p) return;
+            const outro = -(p.getDuration() - p.getCurrentTime());
+            if (!(outro < 0)) return;
+            handleSkipConfigChange({ ...skipConfig, outro_time: outro });
+            p.showNotice(t.noticeOutroSet(formatClock(-outro)));
+          },
+        },
+        ...(skipConfig.enable || skipConfig.intro_time || skipConfig.outro_time
+          ? [
+              {
+                kind: 'action' as const,
+                id: 'clear-skip',
+                label: t.clearSkip,
+                onSelect: () =>
+                  handleSkipConfigChange({
+                    enable: false,
+                    intro_time: 0,
+                    outro_time: 0,
+                  }),
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      kind: 'group',
+      id: 'danmaku-settings',
+      label: t.danmakuSettings,
       hint: danmakuLabel || t.notSelected,
-      onSelect: () => setShowDanmakuSelector(true),
+      items: [
+        {
+          kind: 'toggle',
+          id: 'danmaku-visible',
+          label: t.showDanmaku,
+          checked: danmakuVisible,
+          onChange: toggleDanmaku,
+        },
+        {
+          kind: 'action',
+          id: 'danmaku-source',
+          label: t.danmakuSource,
+          hint: danmakuLabel || t.notSelected,
+          onSelect: () => setShowDanmakuSelector(true),
+        },
+      ],
     },
   ];
 
@@ -1670,8 +1697,8 @@ function PlayPageClient() {
 
       <div className='mx-auto max-w-[1760px] md:px-6 md:pt-2 lg:px-10 lg:pb-12'>
         <div className='grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]'>
-          {/* 播放器 */}
-          <div className='relative aspect-video w-full overflow-hidden md:rounded-[28px]'>
+          {/* 播放器：横屏手机上限高到一屏减去导航，控制栏始终完整可见（见 globals.css 的 .o-player-frame） */}
+          <div className='o-player-frame relative aspect-video w-full overflow-hidden md:rounded-[28px]'>
             {betterSource && (
               <div className='absolute right-3 top-3 z-30 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full bg-o-video-ink/85 px-3 py-2 text-[13px] font-semibold text-o-video-paper shadow-lg backdrop-blur'>
                 <Zap
@@ -1719,7 +1746,6 @@ function PlayPageClient() {
               takeResumeTime={takeResumeTime}
               hasPrev={hasPrev}
               hasNext={hasNext}
-              nextLabel={nextEpisodeLabel || undefined}
               onPrev={handlePreviousEpisode}
               onNext={handleNextEpisode}
               onEnded={handleEnded}

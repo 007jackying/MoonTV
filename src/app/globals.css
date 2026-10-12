@@ -153,6 +153,26 @@
   .o-eyebrow {
     @apply text-xs font-bold uppercase tracking-[0.08em] text-o-neutral-700;
   }
+
+  /*
+   * 播放页的播放器外框（16:9）。横屏手机上 16:9 比屏幕还高，底部控制栏会被挤出屏幕或
+   * 被导航盖住，因此限高到“一屏减去播放器上方的内容和固定的导航”，打开页面（未滚动）
+   * 时整个播放器连同控制栏都完整可见，视频在框里按比例居中显示：
+   * - md 以下：上方是播放页的标题栏 56px（h-14，不吸顶），下方是固定的移动端导航
+   *   68px + 安全区
+   * - md 及以上：上方是吸顶导航 76px（TopNav）+ 页面 md:pt-2 的 8px，没有底部导航
+   * 媒体查询与 tailwind.config.ts 的 mobile-landscape 屏幕一致。
+   */
+  @media (orientation: landscape) and (max-height: 700px) {
+    .o-player-frame {
+      max-height: calc(100svh - 56px - 68px - env(safe-area-inset-bottom, 0px));
+    }
+  }
+  @media (orientation: landscape) and (max-height: 700px) and (min-width: 768px) {
+    .o-player-frame {
+      max-height: calc(100svh - 76px - 8px);
+    }
+  }
 }
 
 html,
@@ -369,7 +389,9 @@ body {
 .swal2-timer-progress-bar {
   background: rgb(var(--o-accent)) !important;
 }
-.swal2-container.swal2-backdrop-show:not(.swal2-top-end):not(.swal2-top):not(.swal2-bottom-end) {
+.swal2-container.swal2-backdrop-show:not(.swal2-top-end):not(.swal2-top):not(
+    .swal2-bottom-end
+  ) {
   background: rgb(32 30 29 / 0.5) !important;
 }
 .swal2-popup.swal2-toast {

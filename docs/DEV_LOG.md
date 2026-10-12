@@ -6,6 +6,246 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-12 — Player: 10 s seek, double-tap, centred touch controls, two-level settings (3.13.0)
+
+Branch: `ccr-cd92788a-sb26eu`. Requested from production screenshots: the
+buttons beside play should skip 10 s rather than change episode; on mobile,
+double-tap left / right to seek like YouTube; put the three buttons in the
+centre on phones and tablets; the settings popover could not be scrolled on a
+portrait phone, so split it into an essentials level and categories.
+
+### What changed
+
+- **Seek buttons.** The 上一集 / 下一集 buttons in the player are now 后退 / 快进
+  10 秒 (`SEEK_STEP`, `seekBy`), drawn as ⟲10 / ⟳10 (`SeekIcon`). Episode
+  navigation stays on the episode grid, the 下一集 card, Alt + ← / → and
+  auto-advance; `hasPrev` / `hasNext` / `onPrev` / `onNext` remain props only
+  for those shortcuts. The unused `nextLabel` prop and its i18n keys went.
+- **Double tap (touch).** `handleSurfacePointerUp` splits the surface into
+  thirds: double tap left / right calls `tapSeek(∓1)`, middle still toggles
+  play. Within `SEEK_CHAIN_MS` (700 ms) of a seek, each further tap on a side
+  seeks again and the ripple shows the running total. Keyed on
+  `pointerType === 'touch'`, not width.
+- **Centred touch layout.** `touchLayout` = `(hover: none) and (pointer:
+coarse)`; `renderTransport('center' | 'bar')` renders the three buttons
+  either centred over the video (z-25, larger) or at the left of the bar.
+  They follow the controls' visibility, step aside while a menu is open
+  or the double-tap ripple shows (`centreVisible`), and show the buffering
+  spinner inside the play button.
+- **Settings menu.** `PlayerSettingItem` gained `kind: 'group'`. Level 1:
+  去广告, 弹幕, 片头片尾 › (on / off), 弹幕设置 › (source); level 2 has a
+  "返回 · <category>" header. `settingsPage` resets whenever the menu closes.
+- **Menu height.** `PopoverMenu` measures the space between its bottom and the
+  player's top (`boundsRef`, re-measured by a `ResizeObserver`) and scrolls
+  inside that, instead of `max-h-[min(60vh,360px)]`.
+- **Player height on landscape phones.** `.o-player-frame` in `globals.css`
+  caps the 16:9 frame at one screen minus the pinned nav (68 px bottom tab
+  bar + safe area below `md`, 76 px sticky top nav from `md`).
+
+### Bugs found while testing, and decisions
+
+- **Settings menu clipped, not scrollable (reported).** The popover's cap was
+  60vh, but the player is `overflow-hidden` and ~220 px tall on a portrait
+  phone: the menu was cut by the player and never overflowed itself, so there
+  was nothing to scroll. _Decision:_ measure against the player, not the
+  viewport; two levels keep level 1 at four rows so it usually fits outright.
+- **Tap-through on touch (pre-existing).** A tap is handled on `pointerup`,
+  which reveals the controls; the browser's compatibility `click` then hit the
+  control that had just appeared. Reproduced on the old build: a tap where the
+  hidden settings button sits opened the settings menu. With the centred
+  layout it would also have paused the video. _Decision:_ `preventDefault()`
+  on the surface's `touchend` cancels that click (taps are fully handled by
+  pointer events) and also iOS double-tap zoom on the video.
+- **Centre buttons covered the menu.** On a short phone the z-25 centre
+  overlay sat over the settings menu (z-20 bar) and stole its taps.
+  _Decision:_ hide the centre buttons while any menu is open (YouTube does too).
+- **Player taller than the screen in landscape (pre-existing).** At 844 × 390
+  the bar was below the fold; a plain `100svh` cap still left the top under
+  the sticky nav, and at 667 × 375 the fixed tab bar covered the bottom.
+  _Decision:_ the cap subtracts whichever nav is pinned at that width. It is a
+  plain CSS class because a Tailwind arbitrary `calc()` would respace the
+  hyphens inside `env(safe-area-inset-bottom)`.
+- **Ripple under the centre buttons.** With the video paused the controls
+  stay up, so on a 360 px phone the 「20 秒」 ripple sat under the centred
+  back button. _Decision:_ the centre buttons also step aside while the ripple
+  shows (≈0.7 s), as on YouTube.
+- **Ripple contrast.** A 12 % paper overlay was unreadable on bright frames;
+  now 40 % ink with a text shadow.
+- **Version.** User-facing change, so a minor bump. 3.12.0 was taken by #14
+  (description folding, Douban rating), which merged while this was in
+  progress, so this is 3.13.0; the branch was rebased onto that `main`.
+  `VERSION.txt` / `version.ts` bumped by hand as before (the script only does
+  it in GitHub Actions).
+
+### Checks run
+
+- `pnpm typecheck` clean; eslint and prettier clean on every changed file.
+  The one repo-wide eslint error (`api/admin/data_migration/import/route.ts`)
+  and the prettier warnings are pre-existing.
+- `pnpm test`: 105 / 105 (with `runtime.ts` generated from the real config).
+- `test_player_controls.py`: 58 / 58 on the production build, 8 viewports
+  (65 / 65 after the review below).
+  Against the code before this change: 43 fail, 15 pass (the guards for
+  unchanged behaviour, and the fit check on the six viewports that already
+  fit). The tap-through and landscape-fit tests were confirmed red before
+  their fixes, then green.
+- `test_play_perf.py` 21 / 21 and `test_failover.py` 8 / 8 on the same build.
+- Screenshots of every viewport reviewed (`tests/e2e/shots/player-controls-*`).
+
+### Open / not done
+
+- Sandbox shortcuts, not committed (as before): `mux.js` stubbed in
+  `node_modules` (codeload.github.com is blocked here), VP9 fixtures.
+- Real-device check on iOS Safari and Android Chrome is still worth doing:
+  Chromium's touch emulation covers pointer events and the compatibility
+  click, but not Safari's gesture heuristics.
+- Release tagging `v3.13.0` is left to the maintainer.
+
+### Review follow-up (same release)
+
+Reviewing the first build on a phone-sized touch context turned up four gaps.
+Each was reproduced with a probe first, then got a test that failed on that
+build (7 new tests, `test_player_controls.py` now 65).
+
+- **Controls popped up after a double-tap seek.** The first tap of a double
+  tap goes through the single-tap path and reveals the controls; the centre
+  buttons only stepped aside while the ripple showed, so ~0.7 s later they
+  and the bar came back over the playing video for the rest of the 2.6 s.
+  _Decision:_ `tapSeek` hides the controls (and cancels the hide timer) when
+  the video is playing, as YouTube does. Paused, the controls stay up as before.
+- **Second tap landed on the revealed centre button.** At 360 / 390 px the
+  centre ⟲10 / ⟳10 buttons lie almost entirely inside the left / right
+  thirds, so with the controls hidden the second tap of a double tap often
+  hit the button the first tap had just revealed: one plain 10 s seek, no
+  ripple, no chaining, controls left up. _Decision:_ the centre side buttons
+  go through `centreSeek`, which treats a press within `DOUBLE_TAP_MS`
+  (300 ms, now a named constant shared with the surface handler) of a
+  surface tap as the second half of a double tap (`tapSeek`). Delaying the
+  buttons' pointer events was the alternative; it would make a deliberate
+  quick press on a just-revealed button do nothing.
+- **No way to change episode in fullscreen.** With 上一集 / 下一集 gone from
+  the player, fullscreen (where the episode grid and the 下一集 card are out of
+  reach, and touch has no Alt + →) only offered auto-advance. _Decision:_ a
+  下一集 button in the bar's right group, shown only in fullscreen and only
+  when there is a next episode. Outside fullscreen the player still has no
+  episode buttons, as requested. No 上一集: going back is rarer and the
+  page's grid is one tap away after leaving fullscreen.
+- **← / → did nothing near either end.** The old keyboard guard
+  (`currentTime > 5`, `< duration - 5`) predates the buttons; the buttons
+  clamp, so the keys now call the same `seekBy` and clamp too.
+- **Docs.** The e2e README's file table had been duplicated by the rebase
+  (and the second copy lacked `test_play_details.py`); merged back into one.
+  README.md described the landscape cap as `mobile-landscape:max-h-[100svh]`;
+  it is `.o-player-frame` (one screen minus the pinned nav), see above.
+- **Test race found on the way.** The new helper that waits for the controls
+  to hide passed instantly right after a double-tap seek (still hidden,
+  about to fade in after `_park` paused), so the next tap hit a visible
+  button about half the time. It now waits for "shown" first, then "hidden";
+  60 repeated runs of the touch tests passed afterwards.
+
+Checks after the follow-up (production build): `pnpm typecheck` clean,
+eslint / prettier clean on changed files, `pnpm test` 105 / 105,
+`test_player_controls.py` 65 / 65, `test_play_perf.py` + `test_failover.py`
+29 / 29, `test_play_details.py` 38 / 38, `run-av-filter.sh` API 24 / 24 and
+browser 31 / 31.
+
+### Usability pass (same release)
+
+A walk through the whole flow (home → search → result → play → settings →
+double tap → episode switch → details → fullscreen) on all eight viewports,
+with screenshots of every step, plus a probe of each finding from two code
+reviews. Each finding below was reproduced on the previous build first.
+
+- **Double tap low on the video (serious).** The bottom bar covers roughly the
+  lower half of a portrait phone's player (timeline, button row, and a
+  gradient above them). With the controls hidden, the first tap revealed the
+  bar and the second landed on it: the timeline jumped to the finger
+  (+8.8 s instead of +10), the settings button opened the menu, or the
+  gradient swallowed the tap. _Decision:_ fix the cause rather than each
+  control. Controls revealed by a tap ignore taps for `DOUBLE_TAP_MS`
+  (`tapGuard`), and also while the ripple shows, so chained taps reach the
+  video even while paused. The bar's gradient never takes taps; only the
+  timeline and button row do. This replaces `centreSeek` from the first
+  follow-up, which only covered the two centre seek buttons. 300 ms is
+  shorter than anyone needs to see a control and then aim at it, and a test
+  checks that revealed buttons work after it.
+- **Middle double tap while paused.** The centre play button covers the
+  middle, so both taps hit it: play, then pause at once. _Decision:_ the
+  centre play button ignores a second press within `DOUBLE_TAP_MS`, so a
+  middle double tap toggles once wherever it lands.
+- **Ripple overstated near the ends.** At 0:03 four taps back showed
+  「30 秒」 for a 3 s move. _Decision:_ the ripple adds up the distance
+  actually moved (`tapSeek` measures it after the clamped seek).
+- **Landscape height cap still wrong.** At 667 × 375 the mobile title bar
+  (56 px, not sticky) sits above the player, so the whole control bar ended
+  under the fixed tab bar. At 844 × 390 the page's `md:pt-2` pushed the
+  player 8 px off-screen. The fit test passed both because it added up
+  heights. _Decision:_ `.o-player-frame` also subtracts the title bar below
+  `md` and the 8 px from `md` up. The test now checks positions at scroll 0
+  (on screen, nothing pinned overlapping).
+- **Settings menu.** Keyboard focus fell to `<body>` when a row unmounted on
+  a page change, and Space then toggled playback. Level 2 kept level 1's
+  scroll position, which could hide the back row. The first measurement ran
+  mid pop-in animation (`translateY(4px)`), so the menu sat 4 px from the
+  player's top instead of 8. _Decision:_ `PopoverMenu` takes a `pageKey`: on
+  change it scrolls to the top and focuses the new page's back row, or the
+  row you came from on return. It re-measures on `animationend`. The back
+  row is now `role="menuitem"` like the other rows.
+- **Seek labels** are functions of `SEEK_STEP` (`t.seekBackward(n)`), so the
+  aria-label and tooltip cannot drift from the step.
+
+Considered and kept as is:
+
+- **→ / ⟳10 / double tap near the end** go to the end, the video ends and
+  auto-advances. This matches YouTube and Netflix, and it is the same for
+  the buttons, the keys and the gesture. The old keyboard-only guard
+  (nothing within 5 s of the end) was the inconsistent one.
+- **弹幕 switch at both levels.** It is a quick toggle on level 1 and the
+  same switch inside 弹幕设置 next to the source. This is a common pattern,
+  and both stay in sync (tested).
+
+Tests: 15 new (13 fail on the build before this pass; 2 check that revealed
+buttons work after the window), and 3 updated (position-based fit, honest
+ripple totals), for 80 in `test_player_controls.py`. The 32 touch tests
+passed 5 repeated runs in a row.
+
+Checks (production build): `pnpm typecheck` clean, eslint / prettier clean
+on changed files, `pnpm test` 105 / 105, `test_player_controls.py` 80 / 80,
+`test_play_perf.py` + `test_failover.py` 29 / 29, `test_play_details.py`
+38 / 38, `run-av-filter.sh` API 24 / 24 and browser 31 / 31. The full-flow
+screenshots ran clean on all eight viewports.
+
+### Touch: double tap only, no seek buttons (same release)
+
+Product decision after the usability pass. On phones the centre ⟲10 / ⟳10
+buttons sat inside the left / right thirds, which are the double-tap areas,
+so they kept getting in the way of the gesture. The tap guard above worked
+around that, but the buttons added nothing that double tap does not already
+do. _Decision:_
+
+- **Touch** (`touchLayout`): no ⟲10 / ⟳10 buttons, in the centre or in the
+  bar. Seeking is double tap on a side (plus the timeline). The centre keeps
+  a large play / pause button (`renderTransport('center')` renders only that).
+- **Mouse:** unchanged. The bar has ⟲10 / play / ⟳10 and there is no
+  double-tap seek; double-click is still fullscreen.
+
+The tap guard and the centre play button's debounce stay. The bar and the
+centre play button still appear under a revealing tap. Tests:
+`test_buttons_seek_ten_seconds` now runs on mouse viewports only, a new
+`test_touch_has_no_seek_buttons` covers touch, and
+`test_double_tap_on_the_revealed_centre_button` was removed with the
+buttons. Centre-layer checks key on the play button. 78 tests in
+`test_player_controls.py`.
+
+Checks (production build): `pnpm typecheck` clean, eslint / prettier clean
+on changed files, `pnpm test` 105 / 105, `test_player_controls.py` 78 / 78
+(the 32 touch tests passed 3 repeated runs), `test_play_perf.py` +
+`test_failover.py` 29 / 29, `test_play_details.py` 38 / 38,
+`run-av-filter.sh` API 24 / 24 and browser 31 / 31. The full-flow walk
+(home → search → play → settings → double tap → episode → details →
+fullscreen) ran clean on all eight viewports. The curated screenshots in
+`docs/screenshots/player-3.13.0/` were regenerated from this build.
+
 ## 2026-10-12 — Play page: collapsible description, entity cleanup, Douban rating (3.12.0)
 
 Branch: `ccr-3a769764-ajviad`. Three reports from a phone: the description ran

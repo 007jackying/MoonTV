@@ -10,7 +10,8 @@ the three buttons (back 10, play / pause, forward 10) sit in the centre of the
 video, YouTube-mobile style, and show / hide with the rest of the controls;
 with a mouse they stay at the left of the bottom bar. Mouse input keeps its old
 behaviour (click = play / pause, double-click = fullscreen), and episode
-navigation stays on Alt + ← / → and the episode grid.
+navigation stays on Alt + ← / → and the episode grid, plus a 下一集 button in
+the bar while fullscreen (where the grid is out of reach).
 
 Every viewport the app supports is covered: phones in portrait and
 landscape, tablets, and desktop. The player's compact layout is decided by
@@ -465,6 +466,83 @@ def test_double_tap_seeks_while_playing(browser, name):
         ctx.close()
 
 
+CENTRE_OPACITY = f"""() => getComputedStyle(document.querySelector(
+    "button[aria-label='{FORWARD_LABEL}']").parentElement.parentElement).opacity"""
+
+
+def _play_slowly_with_controls_hidden(page, t):
+    """Play from `t` at 0.25x (the 12 s fixture must not end mid-test) and
+    wait until the controls, centre buttons included, have auto-hidden."""
+    _park(page, t)
+    # Pausing brings the controls back. Wait for that first: right after a
+    # double-tap seek they are still hidden, and the check below would pass
+    # before they had even started to fade in.
+    page.wait_for_function(f"() => ({CENTRE_OPACITY})() === '1'", timeout=3000)
+    page.evaluate(
+        "const v = document.querySelector('video'); v.playbackRate = 0.25; v.play()"
+    )
+    page.wait_for_function(f"() => ({CENTRE_OPACITY})() === '0'", timeout=6000)
+
+
+@pytest.mark.parametrize("name", ["phone", "tablet"])
+def test_double_tap_seek_keeps_controls_hidden(browser, name):
+    """Regression: the first tap of a double tap reveals the controls, so once
+    the ripple faded the centre buttons and the bar popped up over the playing
+    video. Like YouTube, they now stay hidden after a double-tap seek."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _play_slowly_with_controls_hidden(page, 11)
+        _tap(page, 0.12)
+        page.locator("text=10 秒").first.wait_for(timeout=2000)
+        # Ripple (700 ms) over, well inside the 2.6 s the controls would stay.
+        page.wait_for_function(
+            "() => !document.body.innerText.includes('10 秒')", timeout=2000
+        )
+        page.wait_for_timeout(350)  # the 300 ms fade
+        assert page.evaluate(CENTRE_OPACITY) == "0"
+        s = _state(page)
+        assert s["paused"] is False and s["t"] < 3, s
+        _shot(page, f"{name}-after-double-tap")
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("name", ["phone-small", "phone"])
+def test_double_tap_on_the_revealed_centre_button(browser, name):
+    """On phones the centre ⟲10 / ⟳10 buttons sit inside the left / right
+    thirds. With the controls hidden, the first tap of a double tap reveals
+    them and the second lands on the button. That second tap must still count
+    as a double tap (ripple, chaining), not as a silent button press."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        # Only the back side chains: +20 s would run off the 12 s fixture and
+        # reach `ended`, which auto-advances to the next episode.
+        cases = ((BACK_LABEL, 11, -10, 3), (FORWARD_LABEL, 0.5, 10, 2))
+        for label, start, delta, taps in cases:
+            _play_slowly_with_controls_hidden(page, start)
+            b = page.locator(f"button[aria-label='{label}']").bounding_box()
+            x, y = b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
+            t0 = _state(page)["t"]
+            page.touchscreen.tap(x, y)
+            page.wait_for_timeout(120)
+            page.touchscreen.tap(x, y)
+            page.locator("text=10 秒").first.wait_for(timeout=2000)
+            if taps == 3:
+                # A third tap on the same spot chains (the centre is hidden now).
+                page.wait_for_timeout(150)
+                page.touchscreen.tap(x, y)
+                page.locator("text=20 秒").first.wait_for(timeout=2000)
+            s = _state(page)
+            expected = max(0.0, min(s["d"] - 0.1, t0 + (taps - 1) * delta))
+            assert abs(s["t"] - expected) < 0.8, (label, t0, s)
+            assert s["paused"] is False
+            page.wait_for_timeout(CHAIN_GAP_MS)
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
 @pytest.mark.parametrize("name", ["phone-small", "phone", "tablet"])
 def test_consecutive_taps_accumulate(browser, name):
     """After a double tap, every further tap on the same side adds 10 s."""
@@ -607,6 +685,49 @@ def test_arrow_keys_still_seek(browser):
         _wait_time_near(page, 11)
         page.keyboard.press("ArrowLeft")
         _wait_time_near(page, 1)
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+def test_arrow_keys_clamp_like_the_buttons(browser):
+    """← / → used to do nothing within 5 s of the start / end; they now clamp
+    at both ends, the same as the 10 s buttons."""
+    ctx, page, errors = _open(browser, "desktop")
+    try:
+        _park(page, 3)
+        page.keyboard.press("ArrowLeft")
+        _wait_time_near(page, 0, tol=0.05)
+        _park(page, 8)
+        page.keyboard.press("ArrowRight")
+        _wait_time_near(page, _state(page)["d"] - 0.1, tol=0.15)
+        assert _state(page)["paused"] is True
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("name", ["phone-landscape", "desktop"])
+def test_next_episode_button_only_in_fullscreen(browser, name):
+    """The player has no episode buttons, since the page's episode grid and
+    下一集 card do that job. Neither is reachable in fullscreen, and touch has
+    no Alt + →, so fullscreen gets a 下一集 button in the bar."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        nxt = _player(page).get_by_role("button", name="下一集", exact=True)
+        assert nxt.count() == 0
+        _press(page, name, _player(page).get_by_role("button", name="全屏", exact=True))
+        page.wait_for_function("() => !!document.fullscreenElement", timeout=3000)
+        page.wait_for_timeout(300)
+        assert nxt.count() == 1
+        _shot(page, f"{name}-fullscreen")
+        _press(page, name, nxt)
+        page.wait_for_function(
+            "() => document.body.innerText.includes('第 2 集')", timeout=10000
+        )
+        # Switching episode keeps the player (and with it fullscreen).
+        assert page.evaluate("() => !!document.fullscreenElement")
+        assert page.locator("video").count() == 1
         assert not errors, errors
     finally:
         ctx.close()

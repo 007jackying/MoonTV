@@ -82,8 +82,9 @@ coarse)`; `renderTransport('center' | 'bar')` renders the three buttons
 - `pnpm typecheck` clean; eslint and prettier clean on every changed file.
   The one repo-wide eslint error (`api/admin/data_migration/import/route.ts`)
   and the prettier warnings are pre-existing.
-- `pnpm test`: 88 / 88 (with `runtime.ts` generated from the real config).
-- `test_player_controls.py`: 58 / 58 on the production build, 8 viewports.
+- `pnpm test`: 105 / 105 (with `runtime.ts` generated from the real config).
+- `test_player_controls.py`: 58 / 58 on the production build, 8 viewports
+  (65 / 65 after the review below).
   Against the code before this change: 43 fail, 15 pass (the guards for
   unchanged behaviour, and the fit check on the six viewports that already
   fit). The tap-through and landscape-fit tests were confirmed red before
@@ -99,6 +100,54 @@ coarse)`; `renderTransport('center' | 'bar')` renders the three buttons
   Chromium's touch emulation covers pointer events and the compatibility
   click, but not Safari's gesture heuristics.
 - Release tagging `v3.13.0` is left to the maintainer.
+
+### Review follow-up (same release)
+
+Reviewing the first build on a phone-sized touch context turned up four gaps.
+Each was reproduced with a probe first, then got a test that failed on that
+build (7 new tests, `test_player_controls.py` now 65).
+
+- **Controls popped up after a double-tap seek.** The first tap of a double
+  tap goes through the single-tap path and reveals the controls; the centre
+  buttons only stepped aside while the ripple showed, so ~0.7 s later they
+  and the bar came back over the playing video for the rest of the 2.6 s.
+  _Decision:_ `tapSeek` hides the controls (and cancels the hide timer) when
+  the video is playing, as YouTube does. Paused, the controls stay up as before.
+- **Second tap landed on the revealed centre button.** At 360 / 390 px the
+  centre ⟲10 / ⟳10 buttons lie almost entirely inside the left / right
+  thirds, so with the controls hidden the second tap of a double tap often
+  hit the button the first tap had just revealed: one plain 10 s seek, no
+  ripple, no chaining, controls left up. _Decision:_ the centre side buttons
+  go through `centreSeek`, which treats a press within `DOUBLE_TAP_MS`
+  (300 ms, now a named constant shared with the surface handler) of a
+  surface tap as the second half of a double tap (`tapSeek`). Delaying the
+  buttons' pointer events was the alternative; it would make a deliberate
+  quick press on a just-revealed button do nothing.
+- **No way to change episode in fullscreen.** With 上一集 / 下一集 gone from
+  the player, fullscreen (where the episode grid and the 下一集 card are out of
+  reach, and touch has no Alt + →) only offered auto-advance. _Decision:_ a
+  下一集 button in the bar's right group, shown only in fullscreen and only
+  when there is a next episode. Outside fullscreen the player still has no
+  episode buttons, as requested. No 上一集: going back is rarer and the
+  page's grid is one tap away after leaving fullscreen.
+- **← / → did nothing near either end.** The old keyboard guard
+  (`currentTime > 5`, `< duration - 5`) predates the buttons; the buttons
+  clamp, so the keys now call the same `seekBy` and clamp too.
+- **Docs.** The e2e README's file table had been duplicated by the rebase
+  (and the second copy lacked `test_play_details.py`); merged back into one.
+  README.md described the landscape cap as `mobile-landscape:max-h-[100svh]`;
+  it is `.o-player-frame` (one screen minus the pinned nav), see above.
+- **Test race found on the way.** The new helper that waits for the controls
+  to hide passed instantly right after a double-tap seek (still hidden,
+  about to fade in after `_park` paused), so the next tap hit a visible
+  button about half the time. It now waits for "shown" first, then "hidden";
+  60 repeated runs of the touch tests passed afterwards.
+
+Checks after the follow-up (production build): `pnpm typecheck` clean,
+eslint / prettier clean on changed files, `pnpm test` 105 / 105,
+`test_player_controls.py` 65 / 65, `test_play_perf.py` + `test_failover.py`
+29 / 29, `test_play_details.py` 38 / 38, `run-av-filter.sh` API 24 / 24 and
+browser 31 / 31.
 
 ## 2026-10-12 — Play page: collapsible description, entity cleanup, Douban rating (3.12.0)
 

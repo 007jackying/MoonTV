@@ -22,18 +22,7 @@ proxy does not fail a test (see _Console errors_ below).
 | `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                   |
 | `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                            |
 | `test_play_details.py`    | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                    |
-| `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                       |
-| `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                        |
-| `run-av-filter.sh`        | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                            |
-| File                      | Purpose                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------                               |
-| `mock-cms.mjs`            | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.                                                                                                               |
-| `serve.mjs`               | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                                                                                                                      |
-| `make-media.sh`           | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                                                                                                                         |
-| `measure.py`              | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                                                                                                                     |
-| `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                   |
-| `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                            |
-| `test_player_controls.py` | Playwright/pytest suite (58 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons and their placement, YouTube-style double-tap seeking, the two-level settings menu, and the player fitting on screen. Saves screenshots per viewport.                               |
+| `test_player_controls.py` | Playwright/pytest suite (65 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons and their placement, YouTube-style double-tap seeking, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
 | `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                       |
 | `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                        |
 | `run-av-filter.sh`        | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                            |
@@ -363,7 +352,19 @@ The suite asserts
   a single tap only shows / hides the controls;
 - with a mouse, click still toggles playback and double-click still goes
   fullscreen, without seeking;
-- Alt + ← / → still switches episodes and ← / → still seeks 10 s;
+- Alt + ← / → still switches episodes and ← / → still seeks 10 s, clamped
+  at 0 and at the end like the buttons (they used to do nothing within 5 s
+  of either end);
+- after a double-tap seek while playing, the controls stay hidden (the first
+  tap of the double tap reveals them; they used to pop up over the video as
+  soon as the ripple faded);
+- on phones the centre ⟲10 / ⟳10 buttons lie inside the left / right thirds,
+  so the second tap of a double tap that starts with the controls hidden lands
+  on the button the first tap revealed: it still counts as a double tap
+  (ripple, and a third tap chains to 20 秒);
+- the player has no 下一集 button, except in fullscreen (where the episode grid
+  and the 下一集 card are out of reach), and pressing it switches episode
+  without leaving fullscreen;
 - the settings menu: level 1 is exactly 去广告 / 弹幕 / 片头片尾 › / 弹幕设置 ›,
   switches flip in place, each category opens a level-2 page with a
   "返回 · <category>" header, the summaries follow the state (关 → 开), the
@@ -377,11 +378,18 @@ The suite asserts
   viewport, so the bottom bar is reachable (on landscape phones it used to be
   pushed below the fold or under the nav).
 
-Against the code before this change 43 of the 58 fail; the other 15 are the
-guards for unchanged behaviour plus the fit check on the six viewports that
-already fit.
+Against the code before this change 43 of the original 58 fail; the other 15
+are the guards for unchanged behaviour plus the fit check on the six viewports
+that already fit. The 7 tests added in review (controls staying hidden, the
+double tap on a revealed centre button, arrow-key clamping, the fullscreen
+下一集 button) all fail on the first 3.13.0 build and pass after the fixes.
 
-Screenshots: `shots/player-controls-<viewport>-{bar,settings,settings-skip,ripple-forward,ripple-back,ripple-chain,hidden}.png`.
+The touch tests that need the controls hidden play at 0.25× (the 12 s fixture
+must not reach `ended`) and first wait for the controls to be shown after the
+pause in `_park`, then hidden: right after a double-tap seek they are still
+hidden, so waiting only for "hidden" can pass before they fade back in.
+
+Screenshots: `shots/player-controls-<viewport>-{bar,settings,settings-skip,ripple-forward,ripple-back,ripple-chain,hidden,after-double-tap,fullscreen}.png`.
 
 ### Console errors
 

@@ -18,6 +18,7 @@ import {
   RotateCcw,
   RotateCw,
   Settings2,
+  SkipForward,
   Volume1,
   Volume2,
   VolumeX,
@@ -102,6 +103,7 @@ interface VideoPlayerProps {
   loadingSubtitle?: string;
   /** 每路播放开始时调用一次，返回需要恢复到的秒数（0 表示从头） */
   takeResumeTime: () => number;
+  /** 换集：播放器内只有 Alt + ← / → 和全屏时的「下一集」按钮会用到 */
   hasPrev: boolean;
   hasNext: boolean;
   onPrev: () => void;
@@ -134,6 +136,8 @@ const HIDE_CONTROLS_MS = 2600;
 const SEEK_STEP = 10;
 /** 双击后在此时间内继续点击同侧，会继续累加快进 / 快退 */
 const SEEK_CHAIN_MS = 700;
+/** 触屏两次点击的间隔小于此值算作双击 */
+const DOUBLE_TAP_MS = 300;
 
 function isTypingTarget(target: EventTarget | null) {
   const el = target as HTMLElement | null;
@@ -644,14 +648,13 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
         switch (e.key) {
+          // 与快退 / 快进按钮一致：每次 10 秒，在开头 / 结尾夹紧
           case 'ArrowLeft':
-            if (video.currentTime > 5) seek(video.currentTime - 10);
+            seekBy(-SEEK_STEP);
             e.preventDefault();
             break;
           case 'ArrowRight':
-            if (video.currentTime < (video.duration || 0) - 5) {
-              seek(video.currentTime + 10);
-            }
+            seekBy(SEEK_STEP);
             e.preventDefault();
             break;
           case 'ArrowUp': {
@@ -684,7 +687,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       document.addEventListener('keydown', onKey);
       return () => document.removeEventListener('keydown', onKey);
     }, [
-      seek,
+      seekBy,
       applyVolume,
       togglePlay,
       toggleFullscreen,
@@ -710,6 +713,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const video = videoRef.current;
       if (!video || phaseRef.current !== 'ready') return;
       seekBy(dir * SEEK_STEP);
+      // 同 YouTube：播放中双击快进 / 快退后控制栏保持收起。双击的第一下会唤出控制栏，
+      // 不收回的话提示消失后中央按钮和底栏会立刻盖到画面上（暂停时控制栏本就常驻）
+      if (!video.paused) {
+        if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+        setControlsVisible(false);
+      }
       const now = Date.now();
       const prev = seekRippleRef.current;
       const total =
@@ -784,7 +793,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           // 已在快进 / 快退中：继续点击侧边每次再跳 10 秒
           tapSeek(zone);
           lastTapRef.current = 0;
-        } else if (now - lastTapRef.current < 300) {
+        } else if (now - lastTapRef.current < DOUBLE_TAP_MS) {
           if (zone === 0) togglePlay();
           else tapSeek(zone);
           lastTapRef.current = 0;
@@ -890,6 +899,18 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       );
     };
 
+    // 中央的快退 / 快进键：控制栏隐藏时单击画面会立刻唤出它们，双击侧边的第二下常常正好
+    // 落在刚出现的按钮上（手机上按钮基本都在左 / 右三分之一里）。这一下按双击处理，
+    // 和双击空白处一样显示提示、可继续连点，而不是一次没有反馈的普通跳转
+    const centreSeek = (dir: -1 | 1) => {
+      if (Date.now() - lastTapRef.current < DOUBLE_TAP_MS) {
+        lastTapRef.current = 0;
+        tapSeek(dir);
+      } else {
+        seekBy(dir * SEEK_STEP);
+      }
+    };
+
     // 快退 10 秒 / 播放暂停 / 快进 10 秒：鼠标设备在底部控制栏，触屏在画面中央
     const renderTransport = (place: 'bar' | 'center') => {
       const center = place === 'center';
@@ -912,7 +933,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           <button
             type='button'
             className={sideBtn}
-            onClick={() => seekBy(-SEEK_STEP)}
+            onClick={() => (center ? centreSeek(-1) : seekBy(-SEEK_STEP))}
             title={t.seekBackward}
             aria-label={t.seekBackward}
           >
@@ -949,7 +970,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           <button
             type='button'
             className={sideBtn}
-            onClick={() => seekBy(SEEK_STEP)}
+            onClick={() => (center ? centreSeek(1) : seekBy(SEEK_STEP))}
             title={t.seekForward}
             aria-label={t.seekForward}
           >
@@ -1022,7 +1043,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             if (e.cancelable) e.preventDefault();
           }}
           onDoubleClick={() => {
-            // 触屏的双击已用于暂停 / 播放
+            // 触屏的双击已用于快进 / 快退（两侧）和暂停 / 播放（中间）
             if (lastPointerTypeRef.current !== 'touch') toggleFullscreen();
           }}
         />
@@ -1237,6 +1258,24 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               </span>
 
               <span className='flex-1' />
+
+              {/* 下一集：只在全屏时出现。平时换集用页面上的选集列表 / 「下一集」卡片，
+                  全屏后它们都看不到，触屏又没有 Alt + → */}
+              {isFullscreen && props.hasNext && (
+                <button
+                  type='button'
+                  className={iconBtn}
+                  onClick={props.onNext}
+                  title={t.nextEpisode}
+                  aria-label={t.nextEpisode}
+                >
+                  <SkipForward
+                    size={iconSize}
+                    className='fill-current'
+                    strokeWidth={2.75}
+                  />
+                </button>
+              )}
 
               {/* 倍速 */}
               <div className='relative'>

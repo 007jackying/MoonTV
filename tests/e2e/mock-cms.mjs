@@ -13,6 +13,10 @@
  *   CMS_SITES=slow:2500,fast:80,mid:600,...   (per-site delay in ms)
  *   BANDWIDTH_KBPS=...                          (per-segment throttle)
  *
+ * Detail fixtures: `fast` returns a messy, entity-padded two-paragraph synopsis
+ * and a Douban id; `mid` a short synopsis and no Douban id (DESCS / DOUBAN_IDS
+ * below, used by test_play_details.py). Every other site gets a one-liner.
+ *
  * The /__hits log is what lets test_av_filter.mjs assert that a request
  * (e.g. search suggestions, which only ever queries the *first* available
  * source) skipped the adult sources instead of merely returning fewer
@@ -77,6 +81,38 @@ function baseUrl() {
   return _baseUrl;
 }
 
+/**
+ * Per-site vod_content. `fast` mimics what real CMS sources send: a long
+ * two-paragraph synopsis in <p> tags, indented and padded with runs of
+ * `&nbsp;` (some double-encoded as `&amp;nbsp;`) — see test_play_details.py.
+ * `mid` is short enough that the play page must not show a "read more" toggle.
+ */
+const LONG_DESC =
+  '<p>对这个世界充满瑰丽幻想的高中女生佐仓七濑（上白石萌音 饰），在东京修学旅途中遇到了命中注定的那个男人。' +
+  '她偶然目击了医生天堂浬（佐藤健 饰）抢救生病路人的紧张场面，由此对天堂一见钟情。' +
+  '在此之后，她坚定目标，发愤图强，终于在五年后成为一名护士。' +
+  '更令她欣喜非常的是，七濑入院来到天堂浬所在的日浦综合医院上班。' +
+  '然而希望有多大，失望就有多大。天堂早就忘了眼前这个平凡的路人，' +
+  '而且医院中的他仿佛严厉的恶鬼，对待新人完全没有任何优待和宽容。' +
+  '七濑和同期们稍有差错就会遭到一连串暴风雨般的痛骂，甚至被骂到怀疑人生。' +
+  '也许爱情就是这样，总要近距离去感受它的甜蜜和粗粝……</p>' +
+  '<p>&nbsp;&nbsp;另一方面，天堂浬的过去也渐渐浮出水面。五年前，他曾因一场失败的手术失去了最重要的人，' +
+  '从此把自己封闭在冷酷的外壳之下。七濑的一次次莽撞与坚持，让他不得不重新面对那段不愿提起的往事。' +
+  '在日浦综合医院这个生死交错的地方，两人在一次次急救、值班与争吵中慢慢靠近。' +
+  '恋爱与成长，究竟哪一个会先到来？这是一部关于梦想、勇气与初心的医疗爱情剧。' +
+  ' &nbsp;'.repeat(30) +
+  ' &amp;nbsp;'.repeat(10) +
+  '</p>';
+const DESCS = {
+  fast: LONG_DESC,
+  mid: '<p>短简介&nbsp;&nbsp;。</p>',
+};
+/**
+ * Only `fast` carries a Douban id, so the play page renders the 豆瓣 button
+ * (and asks /api/douban/subject for its rating — mocked by the browser suite).
+ */
+const DOUBAN_IDS = { fast: 1292052 };
+
 function vodItem(siteKey, id) {
   const q = SITE_QUALITY[siteKey] || '720p';
   return {
@@ -86,8 +122,8 @@ function vodItem(siteKey, id) {
     vod_year: MOVIE_YEAR,
     type_name: '剧情',
     vod_class: '剧情',
-    vod_content: '用于 e2e 与性能回归测试的本地影片。',
-    vod_douban_id: 0,
+    vod_content: DESCS[siteKey] || '用于 e2e 与性能回归测试的本地影片。',
+    vod_douban_id: DOUBAN_IDS[siteKey] || 0,
     vod_play_url: episodesFor(siteKey),
     vod_play_from: siteKey,
   };

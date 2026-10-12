@@ -215,6 +215,37 @@ on changed files, `pnpm test` 105 / 105, `test_player_controls.py` 80 / 80,
 38 / 38, `run-av-filter.sh` API 24 / 24 and browser 31 / 31. The full-flow
 screenshots ran clean on all eight viewports.
 
+### Touch: double tap only, no seek buttons (same release)
+
+Product decision after the usability pass. On phones the centre ⟲10 / ⟳10
+buttons sat inside the left / right thirds, which are the double-tap areas,
+so they kept getting in the way of the gesture. The tap guard above worked
+around that, but the buttons added nothing that double tap does not already
+do. _Decision:_
+
+- **Touch** (`touchLayout`): no ⟲10 / ⟳10 buttons, in the centre or in the
+  bar. Seeking is double tap on a side (plus the timeline). The centre keeps
+  a large play / pause button (`renderTransport('center')` renders only that).
+- **Mouse:** unchanged. The bar has ⟲10 / play / ⟳10 and there is no
+  double-tap seek; double-click is still fullscreen.
+
+The tap guard and the centre play button's debounce stay. The bar and the
+centre play button still appear under a revealing tap. Tests:
+`test_buttons_seek_ten_seconds` now runs on mouse viewports only, a new
+`test_touch_has_no_seek_buttons` covers touch, and
+`test_double_tap_on_the_revealed_centre_button` was removed with the
+buttons. Centre-layer checks key on the play button. 78 tests in
+`test_player_controls.py`.
+
+Checks (production build): `pnpm typecheck` clean, eslint / prettier clean
+on changed files, `pnpm test` 105 / 105, `test_player_controls.py` 78 / 78
+(the 32 touch tests passed 3 repeated runs), `test_play_perf.py` +
+`test_failover.py` 29 / 29, `test_play_details.py` 38 / 38,
+`run-av-filter.sh` API 24 / 24 and browser 31 / 31. The full-flow walk
+(home → search → play → settings → double tap → episode → details →
+fullscreen) ran clean on all eight viewports. The curated screenshots in
+`docs/screenshots/player-3.13.0/` were regenerated from this build.
+
 ## 2026-10-12 — Play page: collapsible description, entity cleanup, Douban rating (3.12.0)
 
 Branch: `ccr-3a769764-ajviad`. Three reports from a phone: the description ran

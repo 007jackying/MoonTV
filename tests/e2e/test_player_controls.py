@@ -1,23 +1,24 @@
 """
-End-to-end tests for the player's 10-second seek controls.
+End-to-end tests for the player's seek controls.
 
-The two buttons beside play/pause skip back / forward 10 s (they used to jump
-to the previous / next episode). On touch screens, double-tapping the left or
-right third of the video seeks back / forward 10 s, YouTube style: each
-further tap on the same side within the chain window adds another 10 s, and a
-double tap in the middle third still toggles play / pause. On touch screens
-the three buttons (back 10, play / pause, forward 10) sit in the centre of the
-video, YouTube-mobile style, and show / hide with the rest of the controls;
-with a mouse they stay at the left of the bottom bar. Mouse input keeps its old
-behaviour (click = play / pause, double-click = fullscreen), and episode
-navigation stays on Alt + ← / → and the episode grid, plus a 下一集 button in
-the bar while fullscreen (where the grid is out of reach).
+Seeking 10 s works differently per input:
+- Touch (phones, tablets): double-tap the left or right third of the video,
+  YouTube style; each further tap on the same side within the chain window
+  adds another 10 s, and a double tap in the middle third toggles play /
+  pause. There are no ⟲10 / ⟳10 buttons on touch: they sat inside the
+  double-tap areas and got in the way. The centre of the video only has a
+  large play / pause button, which shows / hides with the rest of the controls.
+- Mouse: ⟲10 / play / ⟳10 at the left of the bottom bar (they used to be the
+  previous / next episode buttons). No double-tap seek: click = play / pause,
+  double-click = fullscreen, as before.
+Episode navigation stays on Alt + ← / → and the episode grid, plus a 下一集
+button in the bar while fullscreen (where the grid is out of reach).
 
 Every viewport the app supports is covered: phones in portrait and
 landscape, tablets, and desktop. The player's compact layout is decided by
 width (< 768 px); touch handling by the pointer type, not the width, so a
 landscape phone (wider than 768 px) still double-taps to seek, and the
-centred layout is keyed on `(hover: none) and (pointer: coarse)`, which a
+touch layout (centre play / pause, no seek buttons) is keyed on `(hover: none) and (pointer: coarse)`, which a
 `has_touch` context reports at any width.
 
 The mock HLS fixtures are 12 s long. Seek assertions therefore pause the
@@ -196,8 +197,13 @@ def _shot(page, name, settle_ms=0):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", list(VIEWPORTS))
+PLAY_SELECTOR = "button[aria-label='播放'], button[aria-label='暂停']"
+
+
+@pytest.mark.parametrize("name", MOUSE_VIEWPORTS)
 def test_buttons_seek_ten_seconds(browser, name):
+    """With a mouse the bar has ⟲10 / play / ⟳10. There is no double-tap seek
+    with a mouse (double-click is fullscreen), so these are how it seeks."""
     ctx, page, errors = _open(browser, name)
     try:
         # Old episode buttons are gone from the player.
@@ -220,30 +226,24 @@ def test_buttons_seek_ten_seconds(browser, name):
         )
         assert xs[0] < xs[1] < xs[2], xs
 
-        # The "10" glyph is part of the icon, and the hit target is at least
-        # 36 px (h-9) so it stays tappable on the smallest phone.
+        # The "10" glyph is part of the icon; the hit target is at least 36 px.
         assert fwd.inner_text().strip() == "10"
         box = fwd.bounding_box()
         assert box["width"] >= 36 and box["height"] >= 36, box
 
         _shot(page, f"{name}-bar")
 
-        touch = VIEWPORTS[name][1]
-
-        def press(btn):
-            btn.tap() if touch else btn.click()
-
         _park(page, 1)
-        press(fwd)
+        fwd.click()
         _wait_time_near(page, 11)
-        press(back)
+        back.click()
         _wait_time_near(page, 1)
 
         # Clamped at both ends.
-        press(back)
+        back.click()
         _wait_time_near(page, 0, tol=0.05)
         _park(page, 6)
-        press(fwd)
+        fwd.click()
         s = _state(page)
         _wait_time_near(page, s["d"] - 0.1, tol=0.15)
 
@@ -255,21 +255,34 @@ def test_buttons_seek_ten_seconds(browser, name):
         ctx.close()
 
 
+@pytest.mark.parametrize("name", TOUCH_VIEWPORTS)
+def test_touch_has_no_seek_buttons(browser, name):
+    """On touch screens seeking is the double tap on either side. ⟲10 / ⟳10
+    buttons sat inside those double-tap areas and got in the way, so touch
+    has none, in the centre or in the bar; the centre only has play / pause.
+    No episode buttons either (outside fullscreen)."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _park(page, 2)
+        for label in (BACK_LABEL, FORWARD_LABEL, "上一集", "下一集"):
+            assert page.locator(f"button[aria-label='{label}']").count() == 0, label
+        assert page.locator(PLAY_SELECTOR).count() == 1
+        _shot(page, f"{name}-bar")
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
 # ---------------------------------------------------------------------------
-# Layout: centred on touch screens, in the bar with a mouse
+# Layout: play / pause centred on touch screens, in the bar with a mouse
 # ---------------------------------------------------------------------------
 
-TRANSPORT_BOXES = """([b, f]) => {
+PLAY_BOX = """(sel) => {
     const v = document.querySelector('video').getBoundingClientRect();
-    const box = (el) => {
-        const r = el.getBoundingClientRect();
-        return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width };
-    };
-    const bb = document.querySelector(`button[aria-label='${b}']`);
-    const fb = document.querySelector(`button[aria-label='${f}']`);
+    const r = document.querySelector(sel).getBoundingClientRect();
     return {
         video: { left: v.left, top: v.top, w: v.width, h: v.height },
-        back: box(bb), play: box(bb.nextElementSibling), fwd: box(fb),
+        play: { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width },
     };
 }"""
 
@@ -279,17 +292,14 @@ def test_transport_buttons_placement(browser, name):
     ctx, page, errors = _open(browser, name)
     try:
         _park(page, 2)
-        m = page.evaluate(TRANSPORT_BOXES, [BACK_LABEL, FORWARD_LABEL])
+        m = page.evaluate(PLAY_BOX, PLAY_SELECTOR)
         v, play = m["video"], m["play"]
         rel_x = (play["cx"] - v["left"]) / v["w"]
         rel_y = (play["cy"] - v["top"]) / v["h"]
         if VIEWPORTS[name][1]:
-            # Centred over the video, symmetric, and bigger than the bar size.
+            # Centred over the video and bigger than the bar size.
             assert abs(rel_x - 0.5) < 0.02, rel_x
             assert abs(rel_y - 0.5) < 0.02, rel_y
-            left_gap = play["cx"] - m["back"]["cx"]
-            right_gap = m["fwd"]["cx"] - play["cx"]
-            assert abs(left_gap - right_gap) < 1.5, (left_gap, right_gap)
             assert play["w"] >= 60, play
         else:
             # Mouse: unchanged, at the left end of the bottom bar.
@@ -350,7 +360,7 @@ def test_whole_player_fits_on_screen(browser, name):
 
 @pytest.mark.parametrize("name", ["phone", "tablet-landscape"])
 def test_centre_controls_hide_with_the_controls(browser, name):
-    """Hidden centre buttons must not swallow taps meant for the video."""
+    """A hidden centre play button must not swallow taps meant for the video."""
     ctx, page, errors = _open(browser, name)
     try:
         _park(page, 0.2)
@@ -358,7 +368,7 @@ def test_centre_controls_hide_with_the_controls(browser, name):
         # Controls auto-hide 2.6 s after playback starts.
         page.wait_for_function(
             f"""() => {{
-                const b = document.querySelector("button[aria-label='{FORWARD_LABEL}']");
+                const b = document.querySelector("{PLAY_SELECTOR}");
                 return getComputedStyle(b.parentElement.parentElement).opacity === '0'
                     && getComputedStyle(b).pointerEvents === 'none';
             }}""",
@@ -369,7 +379,7 @@ def test_centre_controls_hide_with_the_controls(browser, name):
         _tap(page, 0.5, times=1, frac_y=0.5)
         page.wait_for_function(
             f"""() => {{
-                const b = document.querySelector("button[aria-label='{FORWARD_LABEL}']");
+                const b = document.querySelector("{PLAY_SELECTOR}");
                 return getComputedStyle(b).pointerEvents === 'auto';
             }}""",
             timeout=2000,
@@ -431,11 +441,11 @@ def test_double_tap_sides_seek_ten_seconds(browser, name):
         rb = ripple.bounding_box()
         vb = _surface_box(page)
         assert rb["x"] > vb["x"] + vb["width"] / 2, (rb, vb)
-        # The centre buttons step aside while the ripple shows; with the video
-        # paused the controls stay up and would otherwise sit on top of it.
+        # The centre play button steps aside while the ripple shows; with the
+        # video paused the controls stay up and would otherwise sit on top of it.
         assert page.evaluate(
             f"""() => getComputedStyle(document.querySelector(
-                "button[aria-label='{FORWARD_LABEL}']")).pointerEvents"""
+                "{PLAY_SELECTOR}")).pointerEvents"""
         ) == "none"
         _shot(page, f"{name}-ripple-forward", settle_ms=250)
 
@@ -479,13 +489,14 @@ def test_double_tap_seeks_while_playing(browser, name):
         ctx.close()
 
 
+# The centre layer (opacity) > its button row (pointer events) > play / pause.
 CENTRE_OPACITY = f"""() => getComputedStyle(document.querySelector(
-    "button[aria-label='{FORWARD_LABEL}']").parentElement.parentElement).opacity"""
+    "{PLAY_SELECTOR}").parentElement.parentElement).opacity"""
 
 
 def _play_slowly_with_controls_hidden(page, t):
     """Play from `t` at 0.25x (the 12 s fixture must not end mid-test) and
-    wait until the controls, centre buttons included, have auto-hidden."""
+    wait until the controls, centre play button included, have auto-hidden."""
     _park(page, t)
     # Pausing brings the controls back. Wait for that first: right after a
     # double-tap seek they are still hidden, and the check below would pass
@@ -500,7 +511,7 @@ def _play_slowly_with_controls_hidden(page, t):
 @pytest.mark.parametrize("name", ["phone", "tablet"])
 def test_double_tap_seek_keeps_controls_hidden(browser, name):
     """Regression: the first tap of a double tap reveals the controls, so once
-    the ripple faded the centre buttons and the bar popped up over the playing
+    the ripple faded the centre button and the bar popped up over the playing
     video. Like YouTube, they now stay hidden after a double-tap seek."""
     ctx, page, errors = _open(browser, name)
     try:
@@ -516,43 +527,6 @@ def test_double_tap_seek_keeps_controls_hidden(browser, name):
         s = _state(page)
         assert s["paused"] is False and s["t"] < 3, s
         _shot(page, f"{name}-after-double-tap")
-        assert not errors, errors
-    finally:
-        ctx.close()
-
-
-@pytest.mark.parametrize("name", ["phone-small", "phone"])
-def test_double_tap_on_the_revealed_centre_button(browser, name):
-    """On phones the centre ⟲10 / ⟳10 buttons sit inside the left / right
-    thirds. With the controls hidden, the first tap of a double tap reveals
-    them and the second lands where the button now is. Controls a tap has just
-    revealed ignore taps for the double-tap window, so that second tap still
-    reaches the video and counts as a double tap (ripple, chaining)."""
-    ctx, page, errors = _open(browser, name)
-    try:
-        # Only the back side chains: +20 s would run off the 12 s fixture and
-        # reach `ended`, which auto-advances to the next episode.
-        cases = ((BACK_LABEL, 11, -10, 3), (FORWARD_LABEL, 0.5, 10, 2))
-        for label, start, delta, taps in cases:
-            _play_slowly_with_controls_hidden(page, start)
-            b = page.locator(f"button[aria-label='{label}']").bounding_box()
-            x, y = b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
-            t0 = _state(page)["t"]
-            page.touchscreen.tap(x, y)
-            page.wait_for_timeout(120)
-            page.touchscreen.tap(x, y)
-            page.locator("text=10 秒").first.wait_for(timeout=2000)
-            if taps == 3:
-                # A third tap on the same spot chains (the centre is hidden now);
-                # from ~11.6 s the second step is clamped at 0.
-                page.wait_for_timeout(150)
-                page.touchscreen.tap(x, y)
-                page.locator("text=/^1[12] 秒$/").first.wait_for(timeout=2000)
-            s = _state(page)
-            expected = max(0.0, min(s["d"] - 0.1, t0 + (taps - 1) * delta))
-            assert abs(s["t"] - expected) < 0.8, (label, t0, s)
-            assert s["paused"] is False
-            page.wait_for_timeout(CHAIN_GAP_MS)
         assert not errors, errors
     finally:
         ctx.close()
@@ -642,10 +616,11 @@ def test_controls_revealed_by_a_tap_work_after_the_double_tap_window(browser, na
         _play_slowly_with_controls_hidden(page, 1)
         _tap(page, 0.5, times=1, frac_y=0.3)
         page.wait_for_timeout(450)
-        t0 = _state(page)["t"]
-        page.locator(f"button[aria-label='{FORWARD_LABEL}']").tap()
-        _wait_time_near(page, t0 + 10)
-        assert page.evaluate(RIPPLE_SHOWN) is False  # a button press, no ripple
+        page.locator("button[aria-label='暂停']").tap()
+        page.wait_for_function(
+            "() => document.querySelector('video').paused", timeout=3000
+        )
+        assert page.evaluate(RIPPLE_SHOWN) is False  # a button press, no seek
         _player(page).get_by_role("button", name="设置", exact=True).tap()
         page.get_by_role("menu").wait_for(timeout=2000)
         assert not errors, errors
@@ -924,11 +899,11 @@ def test_settings_menu_has_two_levels(browser, name):
         menu = _open_settings(page, name)
         assert _row_labels(menu) == LEVEL1
         if VIEWPORTS[name][1]:
-            # The centre buttons step aside while a menu is open; on a short
-            # phone they would otherwise cover (and steal taps from) its rows.
+            # The centre play button steps aside while a menu is open; on a
+            # short phone it would otherwise cover (and steal taps from) its rows.
             assert page.evaluate(
                 f"""() => getComputedStyle(document.querySelector(
-                    "button[aria-label='{FORWARD_LABEL}']")).pointerEvents"""
+                    "{PLAY_SELECTOR}")).pointerEvents"""
             ) == "none"
         _assert_menu_inside_player(page)
         _assert_rows_reachable(page, menu)

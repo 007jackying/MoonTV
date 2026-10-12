@@ -13,19 +13,19 @@ proxy does not fail a test (see _Console errors_ below).
 
 ## Files
 
-| File                      | Purpose                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `mock-cms.mjs`            | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried. `fast` serves a messy real-world synopsis and a Douban id, `mid` a short synopsis (see _Play details suite_). |
-| `serve.mjs`               | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                                                                                                                      |
-| `make-media.sh`           | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                                                                                                                         |
-| `measure.py`              | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                                                                                                                     |
-| `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                   |
-| `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                            |
-| `test_play_details.py`    | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                    |
-| `test_player_controls.py` | Playwright/pytest suite (80 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons and their placement, YouTube-style double-tap seeking, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
-| `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                       |
-| `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                        |
-| `run-av-filter.sh`        | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                            |
+| File                      | Purpose                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mock-cms.mjs`            | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried. `fast` serves a messy real-world synopsis and a Douban id, `mid` a short synopsis (see _Play details suite_).                      |
+| `serve.mjs`               | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                                                                                                                                           |
+| `make-media.sh`           | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                                                                                                                                              |
+| `measure.py`              | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                                                                                                                                          |
+| `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                                        |
+| `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                                                 |
+| `test_play_details.py`    | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                                         |
+| `test_player_controls.py` | Playwright/pytest suite (78 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons (mouse), YouTube-style double-tap seeking (touch), the centre play / pause, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
+| `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                                            |
+| `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                                             |
+| `run-av-filter.sh`        | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                                                 |
 
 ## Source profiles
 
@@ -323,7 +323,7 @@ Touch contexts use `has_touch` (plus `is_mobile` below 1024 px), and taps go
 through `page.touchscreen.tap` / `locator.tap()`, so the player sees real
 `pointerType: 'touch'` events and the browser's follow-up compatibility
 click. `has_touch` alone makes Chromium report `(hover: none)` and
-`(pointer: coarse)`, which is what the player's centred touch layout keys on,
+`(pointer: coarse)`, which is what the player's touch layout keys on,
 so the 1180 px landscape tablet gets it too. Viewports straddle the player's
 compact breakpoint (768 px) and the play page's desktop layout (1024 px); the
 landscape phones (667 × 375 below `md`, 844 × 390 above it) also hit the
@@ -331,14 +331,15 @@ landscape phones (667 × 375 below `md`, 844 × 390 above it) also hit the
 in `globals.css`).
 The suite asserts
 
-- the player has 后退 10 秒 / 快进 10 秒 buttons (order back → play → forward,
-  at least 36 px) and no 上一集 / 下一集 buttons; each press moves 10 s,
-  clamped at 0 and at the end, and changes neither the episode nor the
+- with a mouse the bar has 后退 10 秒 / 快进 10 秒 buttons (order back → play
+  → forward, at least 36 px) and no 上一集 / 下一集 buttons; each press moves
+  10 s, clamped at 0 and at the end, and changes neither the episode nor the
   paused state;
-- on touch viewports the three buttons are centred over the video,
-  symmetric and at least 60 px; with a mouse they stay at the left of the
-  bottom bar;
-- once the controls auto-hide, the centre buttons stop taking pointer
+- on touch viewports there are no seek buttons at all (they sat inside the
+  double-tap areas and got in the way) and no episode buttons; the only
+  play / pause is centred over the video and at least 60 px. With a mouse it
+  stays at the left of the bottom bar;
+- once the controls auto-hide, the centre play button stops taking pointer
   events: a tap where the play button was only brings the controls back, and
   a tap where the hidden settings button was does not open the menu (the
   synthesised click used to "tap through" to the control the tap revealed);
@@ -358,10 +359,6 @@ The suite asserts
 - after a double-tap seek while playing, the controls stay hidden (the first
   tap of the double tap reveals them; they used to pop up over the video as
   soon as the ripple faded);
-- on phones the centre ⟲10 / ⟳10 buttons lie inside the left / right thirds,
-  so the second tap of a double tap that starts with the controls hidden lands
-  where the first tap revealed a button: it still reaches the video and counts
-  as a double tap (ripple, and a third tap chains);
 - the player has no 下一集 button, except in fullscreen (where the episode grid
   and the 下一集 card are out of reach), and pressing it switches episode
   without leaving fullscreen;
@@ -372,7 +369,7 @@ The suite asserts
 - the menu lies entirely inside the player and every row can be scrolled
   into view inside it; on portrait phones the level-2 page is taller than
   the space and scrolls within the menu without scrolling the page; the
-  centre buttons step aside while it is open;
+  centre play button steps aside while it is open;
 - at scroll 0 the whole player lies on screen and no pinned bar (the sticky
   top nav from 768 px up, the fixed bottom tab bar below it) overlaps it, so
   the bottom bar is reachable on every viewport. This is checked by position:
@@ -403,6 +400,10 @@ Of the 15 added in the usability pass after that, 13 fail on the code before
 it; the other 2 check that a revealed button still works once the double-tap
 window is over. Three existing tests changed with it: the fit check (by
 position), and the two ripple tests (honest totals when clamped).
+Finally the ⟲10 / ⟳10 buttons were removed from touch screens (double tap
+only): the button test now runs on mouse viewports, a new test checks touch
+has no seek buttons, and the test for a second tap landing on a centre seek
+button went away with the buttons.
 The touch tests that need the controls hidden play at 0.25× (the 12 s fixture
 must not reach `ended`) and first wait for the controls to be shown after the
 pause in `_park`, then hidden: right after a double-tap seek they are still

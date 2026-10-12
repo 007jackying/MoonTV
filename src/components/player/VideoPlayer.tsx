@@ -172,8 +172,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     } = props;
     const { t } = useI18n();
     const compact = useMediaQuery('(max-width: 767px)');
-    // 触屏（手机、平板，含横屏）：快退 / 播放 / 快进放到画面中央（同 YouTube 移动端），
-    // 按输入方式而不是屏宽判断，因此宽屏平板也生效；鼠标设备仍放在底部控制栏
+    // 触屏（手机、平板，含横屏）：播放 / 暂停键放到画面中央，快退 / 快进只用双击画面两侧
+    // （中央不放 ⟲10 / ⟳10，它们正好落在双击区域里，会挡住双击）。按输入方式而不是屏宽
+    // 判断，因此宽屏平板也生效；鼠标设备的快退 / 播放 / 快进仍在底部控制栏
     const touchLayout = useMediaQuery('(hover: none) and (pointer: coarse)');
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -717,7 +718,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       // 提示显示实际跳过的秒数：在开头 / 结尾被夹紧时不足 10 秒（如 0:03 处后退只显示 3 秒）
       const moved = Math.abs(video.currentTime - before);
       // 同 YouTube：播放中双击快进 / 快退后控制栏保持收起。双击的第一下会唤出控制栏，
-      // 不收回的话提示消失后中央按钮和底栏会立刻盖到画面上（暂停时控制栏本就常驻）
+      // 不收回的话提示消失后中央播放键和底栏会立刻盖到画面上（暂停时控制栏本就常驻）
       if (!video.paused) {
         if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
         setControlsVisible(false);
@@ -748,7 +749,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       []
     );
     // 单击唤出控制栏后的 DOUBLE_TAP_MS 内，刚出现的按钮 / 进度条不接收点击：
-    // 否则双击的第二下会落在它们上面（跳到手指所在的进度、打开设置、按到中央按钮），
+    // 否则双击的第二下会落在它们上面（跳到手指所在的进度、打开设置、按到中央播放键），
     // 而不是交给画面按双击处理。超过这个时间人才来得及看清再点，不影响正常操作
     const [tapGuard, setTapGuard] = useState(false);
     const tapGuardTimerRef = useRef<number | null>(null);
@@ -843,7 +844,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     // ---------------------------------------------------------------------
     const isLoading = phase === 'loading' || (phase === 'idle' && !!src);
     const showChrome = controlsVisible || isLoading || phase === 'error';
-    // 中央按钮在倍速 / 设置菜单打开时收起（矮画面里会盖住菜单），
+    // 中央播放键在倍速 / 设置菜单打开时收起（矮画面里会盖住菜单），
     // 双击快进 / 快退提示显示期间也收起（暂停时控制栏常驻，会和提示叠在一起）
     const centreVisible = showChrome && !menu && !seekRipple;
     // 控制栏可见但暂不接收点击：刚被单击唤出（见 guardRevealedControls），或双击快进 /
@@ -951,15 +952,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       togglePlay();
     };
 
-    // 快退 10 秒 / 播放暂停 / 快进 10 秒：鼠标设备在底部控制栏，触屏在画面中央
+    // 鼠标设备：底部控制栏里的 快退 10 秒 / 播放暂停 / 快进 10 秒。
+    // 触屏：画面中央只有播放暂停（快退 / 快进用双击画面两侧）
     const renderTransport = (place: 'bar' | 'center') => {
       const center = place === 'center';
-      const sideBtn = center
-        ? `flex items-center justify-center rounded-full bg-o-video-ink/40 transition-colors active:bg-o-video-paper/25 ${
-            compact ? 'h-12 w-12' : 'h-16 w-16'
-          }`
-        : iconBtn;
-      const seekIconSize = center ? (compact ? 28 : 34) : compact ? 22 : 24;
+      const seekIconSize = compact ? 22 : 24;
       const playSize = center
         ? compact
           ? 'h-[60px] w-[60px]'
@@ -970,15 +967,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const playIconSize = center ? (compact ? 26 : 32) : compact ? 17 : 20;
       return (
         <>
-          <button
-            type='button'
-            className={sideBtn}
-            onClick={() => seekBy(-SEEK_STEP)}
-            title={t.seekBackward(SEEK_STEP)}
-            aria-label={t.seekBackward(SEEK_STEP)}
-          >
-            <SeekIcon dir={-1} size={seekIconSize} />
-          </button>
+          {!center && (
+            <button
+              type='button'
+              className={iconBtn}
+              onClick={() => seekBy(-SEEK_STEP)}
+              title={t.seekBackward(SEEK_STEP)}
+              aria-label={t.seekBackward(SEEK_STEP)}
+            >
+              <SeekIcon dir={-1} size={seekIconSize} />
+            </button>
+          )}
           <button
             type='button'
             onClick={center ? centreTogglePlay : togglePlay}
@@ -1007,15 +1006,17 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
               />
             )}
           </button>
-          <button
-            type='button'
-            className={sideBtn}
-            onClick={() => seekBy(SEEK_STEP)}
-            title={t.seekForward(SEEK_STEP)}
-            aria-label={t.seekForward(SEEK_STEP)}
-          >
-            <SeekIcon dir={1} size={seekIconSize} />
-          </button>
+          {!center && (
+            <button
+              type='button'
+              className={iconBtn}
+              onClick={() => seekBy(SEEK_STEP)}
+              title={t.seekForward(SEEK_STEP)}
+              aria-label={t.seekForward(SEEK_STEP)}
+            >
+              <SeekIcon dir={1} size={seekIconSize} />
+            </button>
+          )}
         </>
       );
     };
@@ -1213,7 +1214,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           </div>
         )}
 
-        {/* 触屏：画面中央的快退 / 播放 / 快进，随控制栏显隐，菜单打开时收起；
+        {/* 触屏：画面中央的播放 / 暂停，随控制栏显隐，菜单打开时收起；
             层级高于底部控制栏，矮画面上两者的透明内边距重叠时按钮仍可点 */}
         {touchLayout && phase === 'ready' && (
           <div
@@ -1222,7 +1223,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             }`}
           >
             <div
-              className={`flex items-center ${compact ? 'gap-8' : 'gap-12'} ${
+              className={`flex items-center ${
                 centreVisible && !chromeLocked
                   ? 'pointer-events-auto'
                   : 'pointer-events-none'

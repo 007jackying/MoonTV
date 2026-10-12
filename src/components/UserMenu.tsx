@@ -23,7 +23,7 @@ import {
   setFilterAdultSources as persistFilterAdultSources,
 } from '@/lib/adult-filter.client';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
-import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
+import { CURRENT_VERSION } from '@/lib/version';
 
 import { useNavigationLoading } from './NavigationLoadingProvider';
 import { VersionPanel } from './VersionPanel';
@@ -120,10 +120,6 @@ export const UserMenu: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState('');
-
-  // 版本检查相关状态
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [isChecking, setIsChecking] = useState(true);
 
   // TVBox 设置
   const [tvboxEnabled, setTvboxEnabled] = useState(false);
@@ -255,22 +251,6 @@ export const UserMenu: React.FC = () => {
       setFilterAdultSources(getFilterAdultSources());
 
     }
-  }, []);
-
-  // 版本检查
-  useEffect(() => {
-    const checkUpdate = async () => {
-      try {
-        const status = await checkForUpdates();
-        setUpdateStatus(status);
-      } catch (error) {
-        console.warn('版本检查失败:', error);
-      } finally {
-        setIsChecking(false);
-      }
-    };
-
-    checkUpdate();
   }, []);
 
   // 点击外部区域关闭下拉框
@@ -675,22 +655,7 @@ export const UserMenu: React.FC = () => {
             }}
             className='w-full px-3 py-2 text-center flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-xs'
           >
-            <div className='flex items-center gap-1'>
-              <span className='font-mono'>v{CURRENT_VERSION}</span>
-              {!isChecking &&
-                updateStatus &&
-                updateStatus !== UpdateStatus.FETCH_FAILED && (
-                  <div
-                    className={`w-2 h-2 rounded-full -translate-y-2 ${
-                      updateStatus === UpdateStatus.HAS_UPDATE
-                        ? 'bg-yellow-500'
-                        : updateStatus === UpdateStatus.NO_UPDATE
-                        ? 'bg-green-400'
-                        : ''
-                    }`}
-                  ></div>
-                )}
-            </div>
+            <span className='font-mono'>v{CURRENT_VERSION}</span>
           </button>
         </div>
       </div>
@@ -1379,9 +1344,6 @@ export const UserMenu: React.FC = () => {
         >
           <User className='h-[18px] w-[18px]' strokeWidth={2.75} />
         </button>
-        {updateStatus === UpdateStatus.HAS_UPDATE && (
-          <div className='absolute top-[2px] right-[2px] w-2 h-2 bg-o-accent rounded-full'></div>
-        )}
       </div>
 
       {/* 使用 Portal 将菜单面板渲染到 document.body */}

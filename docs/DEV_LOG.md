@@ -6,6 +6,62 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-12 — User-facing changelog, no links to the code repository
+
+Requested by the owner: the in-app changelog is read by clients, so it must
+say what changed for them, not how; and nothing in the app should send a
+visitor to the GitHub repository or reveal the source.
+
+### What changed
+
+- **CHANGELOG rewritten in plain language**, every version. Dropped entries
+  that only concern tests, deployment (Docker / Cloudflare / D1 / Netlify),
+  CI, storage internals, the version-check mechanism or GitHub. Versions with
+  nothing user-facing left (1.0.1, 1.0.2, 1.0.4, 1.0.5, 2.8.0) were removed
+  from the list. The technical record for 3.9.0–3.13.0 stays in this log and
+  the old wording is in git history. A comment at the top of `CHANGELOG`
+  states the rule for future entries; the parser ignores it.
+- **No remote version check.** The site is updated by redeploying, so a
+  visitor can never act on "有新版本". `src/lib/version.ts` now exports only
+  `CURRENT_VERSION`; `checkForUpdates`, `compareVersions`, `UpdateStatus`,
+  `REPO_URL`, `REPO_BRANCH` and `CHANGELOG_URL` are gone. The browser no
+  longer requests `raw.githubusercontent.com` (VERSION.txt / CHANGELOG),
+  which also exposed the repository path in the network tab.
+- **Version shown as plain text.** Login page: the version is no longer a
+  button opening the repository, and the 有新版本 / 已是最新 badge is gone.
+  User menu: the update dot on the avatar and beside the version are gone;
+  the version still opens the version panel. Version panel: removed the
+  「前往仓库」 buttons, the update banner and the remote changelog; it shows
+  the current version and the bundled changelog only.
+
+### Audit
+
+`git grep -i` over the whole tree (client, API routes, `public/`, config,
+scripts) for github / githubusercontent / jsdelivr / the owner name /
+仓库 / 源码. After this change no user-reachable code links or requests the
+repository. Remaining hits, all left as is:
+
+- Code comments crediting libraries (`mp4-transmuxer.ts`, `stream-saver.ts`)
+  — not shipped as links.
+- `package.json` installs `mux.js` from a third-party GitHub repo at build
+  time — not visible to visitors.
+- `.github/workflows`, README and `docs/` — not served by the app.
+- The 豆瓣 data-source "Thanks to @Zwei / @CMLiussss" credits in the user
+  settings and the admin page open those third parties' GitHub profiles (they
+  run the proxies / CDN). Not the owner's repository; kept, pending the
+  owner's call.
+
+`next.config.js` does not enable `productionBrowserSourceMaps`, so production
+bundles ship without source maps.
+
+### Checks
+
+- `pnpm test`: 9 suites, 105 tests pass.
+- `pnpm typecheck` passes. `eslint src`: only the existing
+  `no-constant-condition` error in `api/admin/data_migration/import/route.ts`,
+  unrelated and present on `main`.
+- E2E not run (owner said it is not needed for this change).
+
 ## 2026-10-12 — Player: 10 s seek, double-tap, centred touch controls, two-level settings (3.13.0)
 
 Branch: `ccr-cd92788a-sb26eu`. Requested from production screenshots: the

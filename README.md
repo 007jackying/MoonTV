@@ -26,7 +26,7 @@
 
 - 🔍 **多源聚合搜索**：快速返回结果。
 - 🛡️ **AV 源过滤**：默认全局隐藏成人采集源，搜索、换源、搜索建议、播放源列表都不再使用；可在「本地设置」里一键关掉。
-- 📄 **丰富详情页**：支持剧集列表、演员、年份、简介等完整信息展示。
+- 📄 **丰富详情页**：支持剧集列表、演员、年份、简介等完整信息展示；长简介默认折叠为 4 行，可「展开全文 / 收起」；「豆瓣」按钮直接显示豆瓣评分（如「豆瓣 7.5」）。
 - ▶️ **流畅在线播放**：基于 HLS.js 的自研播放器，换集 / 换源时冻结上一帧并显示加载步骤，始终只有一路声音；支持拖动预览、倍速、画中画、AirPlay、键盘快捷键、长按 3 倍速。
 - 📥 **视频下载**：支持 M3U8 视频下载，多线程并发加速，边下边存功能（Chrome/Edge）。
 - ❤️ **收藏 + 继续观看**：支持 Redis/Upstash 存储，多端同步进度。
@@ -187,6 +187,7 @@ node tests/e2e/serve.mjs                       # 启动 mock + next dev（性能
 node tests/e2e/serve.mjs --build               # 或对生产构建跑
 python -m pytest tests/e2e/test_play_perf.py -v    # 播放页 21 个用例
 python -m pytest tests/e2e/test_failover.py -v     # 播放失败自动换源 7 个用例
+python tests/e2e/test_play_details.py              # 播放页简介折叠 / 格式清洗 / 豆瓣评分（38 项断言，需先 CODEC=vp9 生成测试流）
 E2E_CHROMIUM=/path/to/chromium python -m pytest …  # 预装 Chromium 与 Playwright 版本不匹配时
 python tests/e2e/measure.py --scenario clicked     # 首帧耗时
 ```
@@ -207,6 +208,12 @@ python tests/e2e/measure.py --scenario clicked     # 首帧耗时
 并给出提示、只切一次就直接选测速通过的源（不按列表顺序试 `dead`）、源列表按健康状况排序、
 失败过的源不会被重试、关闭测速时按列表顺序且不重复、全部坏掉时停下并提示，以及失败期间不弹
 「发现更好的源」。这 7 个用例在改动前的 `main` 上全部失败。
+
+`test_play_details.py` 覆盖播放页详情区：简介里的 HTML 标签、`&nbsp;` 填充（含二次转义
+`&amp;nbsp;`）被清洗、段落保留为换行；长简介在手机与桌面布局下折叠为 4 行并显示「展开全文」，
+按钮滚到底部时不被底部导航遮挡且能点中，展开 / 收起正常，收起时把滚出屏幕的段落滚回；短简介
+不显示按钮；「豆瓣」按钮显示评分，暂无评分或豆瓣不可达时退回「豆瓣」。评分在浏览器侧
+`page.route` 模拟（harness 无法访问豆瓣），服务端解析由单元测试覆盖。
 
 首帧实测（同一 mock，生产构建，多次运行）：点击搜索结果 ≈0.4s、从豆瓣卡片进入 ≈0.4s、
 开启自动优选 ≈0.5s；改造前（`main`，同样是生产构建）分别为 0.86s / 4.6s / 4.7s。
@@ -474,6 +481,8 @@ NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 - cmliussss-cdn-ali: 浏览器向豆瓣 CDN 请求数据，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由阿里云 cdn 提供加速
 
 - custom: 用户自定义 proxy，由 NEXT_PUBLIC_DOUBAN_PROXY 定义
+
+播放页「豆瓣」按钮上的评分同样遵循该设置：`direct` 时请求本站 `/api/douban/subject`（服务器访问豆瓣，`DOUBAN_COOKIE` 同样生效），其余选项由浏览器经对应代理 / CDN 请求豆瓣的 `subject_abstract` 接口。拿不到评分时按钮只显示「豆瓣」。
 
 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
 

@@ -1,16 +1,65 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+  ensp: '\u2002',
+  emsp: '\u2003',
+  thinsp: '\u2009',
+  zwsp: '\u200b',
+  hellip: '…',
+  mdash: '—',
+  ndash: '–',
+  middot: '·',
+  bull: '•',
+  lsquo: '‘',
+  rsquo: '’',
+  ldquo: '“',
+  rdquo: '”',
+  laquo: '«',
+  raquo: '»',
+  times: '×',
+  deg: '°',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+};
+
+function decodeCodePoint(raw: string, cp: number): string {
+  return Number.isInteger(cp) && cp > 0 && cp <= 0x10ffff
+    ? String.fromCodePoint(cp)
+    : raw;
+}
+
+function decodeEntitiesOnce(text: string): string {
+  return (
+    text
+      .replace(
+        /&(?:#(\d+)|#x([0-9a-f]+)|([a-z][a-z0-9]*));/gi,
+        (raw, dec, hex, name) => {
+          if (dec) return decodeCodePoint(raw, Number(dec));
+          if (hex) return decodeCodePoint(raw, parseInt(hex, 16));
+          return NAMED_ENTITIES[name.toLowerCase()] ?? raw;
+        }
+      )
+      // 部分源会漏掉分号，如 "&nbsp&nbsp"
+      .replace(/&nbsp(?![a-z0-9;])/gi, '\u00a0')
+  );
+}
+
 function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
-      String.fromCharCode(parseInt(h, 16))
-    );
+  // 采集站常见二次转义（&amp;nbsp;），最多解码三轮直到稳定
+  let out = text;
+  for (let i = 0; i < 3 && out.includes('&'); i++) {
+    const next = decodeEntitiesOnce(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
 }
 
 function getDoubanImageProxyConfig(): {
@@ -75,14 +124,23 @@ export function processImageUrl(originalUrl: string): string {
 export function cleanHtmlTags(text: string): string {
   if (!text) return '';
 
-  const cleanedText = text
-    .replace(/<[^>]+>/g, '\n') // 将 HTML 标签替换为换行
-    .replace(/\n+/g, '\n') // 将多个连续换行合并为一个
-    .replace(/[ \t]+/g, ' ') // 将多个连续空格和制表符合并为一个空格，但保留换行符
-    .replace(/^\n+|\n+$/g, '') // 去掉首尾换行
-    .trim(); // 去掉首尾空格
-
-  return decodeHtmlEntities(cleanedText);
+  // 先解码实体：转义过的标签（&lt;p&gt;）也能在下一步被剥掉
+  return (
+    decodeHtmlEntities(text)
+      .replace(/<!--[\s\S]*?-->/g, '')
+      // 块级标签 / <br> 换行，其余行内标签直接去掉，避免句子被拆断
+      .replace(
+        /<\/?(?:br|p|div|li|ul|ol|h[1-6]|tr|table|section|article|blockquote)\b[^>]*>/gi,
+        '\n'
+      )
+      .replace(/<\/?[a-z][^>]*>/gi, '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u200b|\u200c|\u200d|\ufeff/g, '') // 零宽字符
+      .replace(/[^\S\n]+/g, ' ') // 空格 / 制表符 / &nbsp; / 全角空格等合并为一个空格
+      .replace(/ *\n */g, '\n') // 去掉行首尾空格
+      .replace(/\n+/g, '\n') // 将多个连续换行合并为一个
+      .trim()
+  );
 }
 
 /**

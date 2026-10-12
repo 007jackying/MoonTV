@@ -54,6 +54,18 @@ repository. Remaining hits, all left as is:
 `next.config.js` does not enable `productionBrowserSourceMaps`, so production
 bundles ship without source maps.
 
+### Home-page notice removed (3.13.1)
+
+The owner asked to remove the 「提示」 popup on the home page (the default
+「本网站仅提供影视信息搜索服务…」 disclaimer). It could not be switched off from
+the admin panel: `getConfig` refills an empty `SiteConfig.Announcement` with
+`ANNOUNCEMENT` or that default (`src/lib/config.ts`). Removed the popup and its
+`hasSeenAnnouncement` bookkeeping from `src/app/page.tsx`, the now-unused
+`notice` / `gotIt` i18n keys, and the 站点公告 textarea in the admin site
+settings. The `Announcement` field stays in the config type, the admin API
+and data import / export so stored configs keep working; nothing displays it.
+CHANGELOG gets a 3.13.1 entry; `VERSION.txt` and `version.ts` bumped by hand.
+
 ### Checks
 
 - `pnpm test`: 9 suites, 105 tests pass.

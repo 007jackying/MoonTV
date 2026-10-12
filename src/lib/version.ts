@@ -7,6 +7,6 @@
  * 站点由运营者部署和更新, 访客无需也不应看到代码仓库地址。
  * 版本面板只展示随构建打包的 src/lib/changelog.ts。
  */
-const CURRENT_VERSION = '3.13.0';
+const CURRENT_VERSION = '3.13.1';
 
 export { CURRENT_VERSION };

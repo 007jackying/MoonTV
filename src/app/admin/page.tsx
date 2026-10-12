@@ -2477,35 +2477,6 @@ const SiteConfigComponent = ({ config }: { config: AdminConfig | null }) => {
         />
       </div>
 
-      {/* 站点公告 */}
-      <div>
-        <label
-          className={`block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 ${isLocalStorage ? 'opacity-50' : ''
-            }`}
-        >
-          站点公告
-          {isLocalStorage && (
-            <span className='ml-2 text-xs text-gray-500 dark:text-gray-400'>
-              (本地存储下请通过环境变量修改)
-            </span>
-          )}
-        </label>
-        <textarea
-          value={siteSettings.Announcement}
-          onChange={(e) =>
-            !isLocalStorage &&
-            setSiteSettings((prev) => ({
-              ...prev,
-              Announcement: e.target.value,
-            }))
-          }
-          disabled={isLocalStorage}
-          rows={3}
-          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent ${isLocalStorage ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-        />
-      </div>
-
       {/* 豆瓣数据源设置 */}
       <div className='space-y-3'>
         <div>

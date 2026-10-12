@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Heart, X } from 'lucide-react';
+import { Heart } from 'lucide-react';
 import { Suspense, useEffect, useState } from 'react';
 import Swal from 'sweetalert2';
 
@@ -25,7 +25,6 @@ import { useI18n } from '@/components/LanguageProvider';
 import { useNavigationLoading } from '@/components/NavigationLoadingProvider';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
-import { useSite } from '@/components/SiteProvider';
 import {
   EmptyState,
   PosterSkeleton,
@@ -46,11 +45,8 @@ function HomeClient() {
     BangumiCalendarData[]
   >([]);
   const [loading, setLoading] = useState(true);
-  const { announcement } = useSite();
   const { startLoading } = useNavigationLoading();
   const { t } = useI18n();
-
-  const [showAnnouncement, setShowAnnouncement] = useState(false);
 
   // 检查是否启用简洁模式
   const [simpleMode, setSimpleMode] = useState(false);
@@ -65,18 +61,6 @@ function HomeClient() {
       }
     }
   }, []);
-
-  // 检查公告弹窗状态
-  useEffect(() => {
-    if (typeof window !== 'undefined' && announcement) {
-      const hasSeenAnnouncement = localStorage.getItem('hasSeenAnnouncement');
-      if (hasSeenAnnouncement !== announcement) {
-        setShowAnnouncement(true);
-      } else {
-        setShowAnnouncement(Boolean(!hasSeenAnnouncement && announcement));
-      }
-    }
-  }, [announcement]);
 
   // 收藏夹数据
   type FavoriteItem = {
@@ -197,11 +181,6 @@ function HomeClient() {
 
     return unsubscribe;
   }, [activeTab]);
-
-  const handleCloseAnnouncement = (announcement: string) => {
-    setShowAnnouncement(false);
-    localStorage.setItem('hasSeenAnnouncement', announcement); // 记录已查看弹窗
-  };
 
   const handleClearFavorites = async () => {
     const { isConfirmed } = await Swal.fire({
@@ -400,42 +379,6 @@ function HomeClient() {
           </>
         )}
       </div>
-
-      {announcement && showAnnouncement && (
-        <div className='fixed inset-0 z-[1000] flex animate-o-pop items-center justify-center bg-o-video-ink/50 p-4 backdrop-blur-sm'>
-          <div
-            role='dialog'
-            aria-modal='true'
-            aria-labelledby='announcement-title'
-            className='flex w-full max-w-md flex-col gap-4 rounded-[32px] bg-o-surface p-6 shadow-o-lg md:p-7'
-          >
-            <div className='flex items-start justify-between gap-4'>
-              <h3
-                id='announcement-title'
-                className='m-0 font-heading text-[25px] leading-tight'
-              >
-                {t.notice}
-              </h3>
-              <button
-                onClick={() => handleCloseAnnouncement(announcement)}
-                className='o-btn o-btn-icon -mr-2 -mt-1'
-                aria-label={t.cancel}
-              >
-                <X className='h-5 w-5' strokeWidth={2.75} />
-              </button>
-            </div>
-            <p className='m-0 rounded-[20px] bg-o-bg px-4 py-3 leading-relaxed text-o-neutral-800'>
-              {announcement}
-            </p>
-            <button
-              onClick={() => handleCloseAnnouncement(announcement)}
-              className='o-btn o-btn-primary o-press w-full py-3'
-            >
-              {t.gotIt}
-            </button>
-          </div>
-        </div>
-      )}
     </PageLayout>
   );
 }

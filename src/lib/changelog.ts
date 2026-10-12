@@ -11,6 +11,20 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '3.13.1',
+    date: '2026-10-12',
+    added: [
+      // 无新增内容
+    ],
+    changed: [
+      '打开首页时不再弹出「提示」窗口',
+      '「版本信息」只显示当前版本和更新内容',
+    ],
+    fixed: [
+      // 无修复内容
+    ],
+  },
+  {
     version: '3.13.0',
     date: '2026-10-12',
     added: [

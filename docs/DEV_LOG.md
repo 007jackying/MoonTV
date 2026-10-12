@@ -6,6 +6,79 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-12 — Play page: collapsible description, entity cleanup, Douban rating (3.12.0)
+
+Branch: `ccr-3a769764-ajviad`. Three reports from a phone: the description ran
+off the bottom of the screen with no way to fold it, some sources' synopses
+ended in a long run of literal `&nbsp;`, and the 豆瓣 button should show the
+rating ("豆瓣 7.5").
+
+### What changed
+
+- **Description** — `ExpandableDescription` in `PlayDetails.tsx`, shared by
+  the desktop and mobile layouts: clamped to 4 lines (`line-clamp-4`) with a
+  展开全文 / 收起 toggle that only renders when the text overflows (measured
+  with a `ResizeObserver`). The expanded state is keyed to the description
+  string, so switching title / episode collapses it without an effect. 收起
+  scrolls the paragraph back if its top had scrolled off-screen.
+- **Cleaning** — `cleanHtmlTags` (`src/lib/utils.ts`) now decodes entities
+  first (named incl. `&nbsp;`, decimal, hex; up to three rounds for
+  `&amp;nbsp;`; `&nbsp` without a semicolon), then strips tags: block tags
+  become a line break, inline tags are dropped (previously every tag became a
+  line break, splitting sentences at `<span>`), and whitespace is collapsed
+  per line, including NBSP, full-width spaces and zero-width characters.
+- **Rating** — `/api/douban/subject?id=` (edge) tries Douban's
+  `subject_abstract`, then the mobile `rexxar` API; parsing lives in
+  `src/lib/douban-rating.ts`. `getDoubanRating` in `douban.client.ts` follows
+  the 豆瓣数据源 setting like every other Douban call (server route for
+  `direct`, proxy / CDN otherwise) and memoises per id. `fetchDoubanData`
+  gained an optional `referer` (rexxar needs `m.douban.com`).
+
+### Decisions
+
+- **Upstream failure answers `200 { rate: null }` with `no-store`, not 502.**
+  The client treats "unreachable" and "unrated" the same (plain 豆瓣), and a
+  deployment whose server cannot reach Douban would otherwise log a red 502
+  on every play page. This surfaced in e2e: once the mock `fast` source had a
+  Douban id, every existing play-page suite hit the route.
+- **The rating number uses the body font**, like the source card's speed
+  figures; Caprasimo at 13px made "7.5" hard to read.
+- **No `rate` passed through the URL** from Douban cards. The fetch is cached
+  and fast enough; passing it would add a second source of truth.
+- **Left `html, body { height: 100%; overflow-x: hidden }` alone.** It makes
+  `<body>` the scroll container (overflow-x forces overflow-y to `auto`), so
+  `window.scrollTo()` does nothing. It is app-wide and older than this
+  change; content is fully reachable by touch scrolling, so it is documented
+  in `tests/e2e/README.md` rather than changed here.
+
+### Checks run
+
+- Jest: 103 passed (8 suites), including new `clean-html.test.ts` (10) and
+  `douban-rating.test.ts` (5) and the i18n key-parity test.
+- `tsc --noEmit` clean; ESLint `--max-warnings=0` and Prettier clean on every
+  changed file.
+- e2e on a production build (`serve.mjs --build`, VP9 fixtures):
+  `test_play_details.py` 38/38 (new); `test_play_perf.py` + `test_failover.py`
+  29/29; `run-av-filter.sh` API 24/24, browser 31/31 — the mock fixture
+  changes do not disturb the other suites.
+
+### Found while testing
+
+- The first version of the suite aborted media like the AV suite does; the
+  player's failover then swapped the page to `slow2` mid-test. The suite now
+  serves real media and asserts it is still on `fast` at the end.
+- Douban is unreachable from the CI sandbox, so the rating is mocked with
+  `page.route` in the browser and the server parsing is unit-tested; the real
+  route is exercised only for its failure path.
+
+### Open / not done
+
+- The CDN data sources (`cmliussss-cdn-*`) are assumed to pass
+  `/j/subject_abstract` through like `/j/search_subjects`; not verified from
+  here. If they do not, the button simply shows 豆瓣 without a number.
+- `mux.js` is a GitHub tarball dependency that the sandbox proxy blocks;
+  local verification used the npm `mux.js@7` build. Not part of the diff.
+
 ## 2026-10-05 — Automatic failover on the play page (3.11.0)
 
 Branch: `claude/kind-heisenberg-zr8fhr`. Reported from production: opening

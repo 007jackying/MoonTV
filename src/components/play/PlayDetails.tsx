@@ -2,6 +2,8 @@
 'use client';
 
 import {
+  ChevronDown,
+  ChevronUp,
   Download,
   ExternalLink,
   Heart,
@@ -12,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ReactNode, useEffect, useRef, useState } from 'react';
 
+import { getDoubanRating } from '@/lib/douban.client';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
@@ -73,6 +76,7 @@ function DetailTags({
   );
 }
 
+/** 豆瓣按钮：有评分时显示为「豆瓣 7.5」 */
 function DoubanLink({
   doubanId,
   className,
@@ -83,6 +87,7 @@ function DoubanLink({
   iconSize: number;
 }) {
   const { t } = useI18n();
+  const rating = useDoubanRating(doubanId);
   if (!doubanId) return null;
   return (
     <a
@@ -90,11 +95,37 @@ function DoubanLink({
       target='_blank'
       rel='noopener noreferrer'
       className={className}
+      aria-label={rating ? `${t.douban} ${t.doubanRating(rating)}` : undefined}
     >
       <ExternalLink size={iconSize} strokeWidth={2.75} />
       {t.douban}
+      {rating && (
+        // 数字沿用正文字体（与播放源卡片的测速数字一致），Caprasimo 小字号难辨认
+        <span className='font-body font-semibold tabular-nums text-o-accent-700'>
+          {rating}
+        </span>
+      )}
     </a>
   );
+}
+
+/** 豆瓣评分（异步获取，暂无评分 / 失败时为 null，按钮只显示「豆瓣」） */
+function useDoubanRating(doubanId: number): string | null {
+  const [rating, setRating] = useState<{ id: number; rate: string } | null>(
+    null
+  );
+  useEffect(() => {
+    if (!doubanId) return;
+    let cancelled = false;
+    getDoubanRating(doubanId).then((rate) => {
+      if (!cancelled && rate) setRating({ id: doubanId, rate });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doubanId]);
+  // 换片后旧评分立即失效，不等新请求返回
+  return rating?.id === doubanId ? rating.rate : null;
 }
 
 /** “更多”菜单：收藏、弹幕源、去搜索 */
@@ -188,7 +219,7 @@ export function MoreMenu({
 }
 
 // ---------------------------------------------------------------------------
-// 桌面：标题、标签、操作、简介 + 右侧“下一集”卡片
+// 桌面：标题、标签、操作（豆瓣带评分）、可折叠简介 + 右侧“下一集”卡片
 // ---------------------------------------------------------------------------
 export function PlayDetailsDesktop(props: PlayDetailsProps) {
   const { t } = useI18n();
@@ -246,9 +277,11 @@ export function PlayDetailsDesktop(props: PlayDetailsProps) {
           />
         </div>
         {detail?.desc && (
-          <p className='m-0 mt-1.5 max-w-[68ch] whitespace-pre-line text-base leading-[1.7] text-o-neutral-800'>
-            {detail.desc}
-          </p>
+          <ExpandableDescription
+            desc={detail.desc}
+            className='mt-1.5 max-w-[68ch]'
+            textClassName='text-base leading-[1.7]'
+          />
         )}
       </div>
 
@@ -292,7 +325,7 @@ export function PlayDetailsDesktop(props: PlayDetailsProps) {
 }
 
 // ---------------------------------------------------------------------------
-// 移动端：标题 + 标签 + 下载 / 豆瓣
+// 移动端：标题 + 标签 + 下载 / 豆瓣（带评分）；简介见 PlayDescriptionMobile
 // ---------------------------------------------------------------------------
 export function PlayDetailsMobileHead(props: PlayDetailsProps) {
   const { t } = useI18n();
@@ -333,8 +366,81 @@ export function PlayDetailsMobileHead(props: PlayDetailsProps) {
 export function PlayDescriptionMobile({ desc }: { desc?: string }) {
   if (!desc) return null;
   return (
-    <p className='m-0 whitespace-pre-line text-sm leading-[1.65] text-o-neutral-800'>
-      {desc}
-    </p>
+    <ExpandableDescription desc={desc} textClassName='text-sm leading-[1.65]' />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 简介：默认折叠为 4 行，超出时显示「展开全文 / 收起」（桌面与移动端共用）
+// ---------------------------------------------------------------------------
+function ExpandableDescription({
+  desc,
+  className = '',
+  textClassName = '',
+}: {
+  desc: string;
+  className?: string;
+  textClassName?: string;
+}) {
+  const { t } = useI18n();
+  const textRef = useRef<HTMLParagraphElement>(null);
+  // 记录展开的是哪段简介：换片 / 换集后自动恢复折叠
+  const [expandedDesc, setExpandedDesc] = useState<string | null>(null);
+  const expanded = expandedDesc === desc;
+  const [overflowing, setOverflowing] = useState(false);
+
+  // 仅在折叠状态下测量；文字未超出时不显示按钮
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflowing(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [desc, expanded]);
+
+  const toggle = () => {
+    if (!expanded) {
+      setExpandedDesc(desc);
+      return;
+    }
+    setExpandedDesc(null);
+    // 收起长简介后，若段落顶部已滚出视口则滚回，避免停在空白处
+    requestAnimationFrame(() => {
+      const el = textRef.current;
+      if (el && el.getBoundingClientRect().top < 0) {
+        el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      }
+    });
+  };
+
+  return (
+    <div className={`flex flex-col items-start gap-1 ${className}`}>
+      <p
+        ref={textRef}
+        className={`m-0 whitespace-pre-line text-o-neutral-800 ${textClassName} ${
+          expanded ? '' : 'line-clamp-4'
+        }`}
+      >
+        {desc}
+      </p>
+      {(overflowing || expanded) && (
+        <button
+          type='button'
+          onClick={toggle}
+          aria-expanded={expanded}
+          className='-my-1.5 flex min-h-[44px] items-center gap-1 text-sm font-medium text-o-accent-700'
+        >
+          {expanded ? t.readLess : t.readMore}
+          {expanded ? (
+            <ChevronUp className='h-3.5 w-3.5' strokeWidth={2.75} />
+          ) : (
+            <ChevronDown className='h-3.5 w-3.5' strokeWidth={2.75} />
+          )}
+        </button>
+      )}
+    </div>
   );
 }

@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console,no-case-declarations */
 
+import {
+  doubanAbstractUrl,
+  normalizeDoubanRate,
+  parseDoubanRate,
+} from './douban-rating';
 import { DoubanItem, DoubanResult } from './types';
 
 interface DoubanCategoriesParams {
@@ -65,9 +70,7 @@ async function fetchWithTimeout(
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
   // 检查是否使用代理
-  const finalUrl = proxyUrl
-    ? `${proxyUrl}${encodeURIComponent(url)}`
-    : url;
+  const finalUrl = proxyUrl ? `${proxyUrl}${encodeURIComponent(url)}` : url;
 
   const fetchOptions: RequestInit = {
     signal: controller.signal,
@@ -469,4 +472,60 @@ async function fetchDoubanRecommends(
   } catch (error) {
     throw new Error(`获取豆瓣推荐数据失败: ${(error as Error).message}`);
   }
+}
+
+// 同一豆瓣 ID 在本次会话内只请求一次（切换集数 / 桌面与移动端布局共用）
+const doubanRatingCache = new Map<number, Promise<string | null>>();
+
+/**
+ * 获取豆瓣评分（一位小数字符串，如 '7.5'）；暂无评分或请求失败返回 null。
+ * 与其它豆瓣请求一样遵循用户设置的豆瓣数据源 / 代理。
+ */
+export function getDoubanRating(doubanId: number): Promise<string | null> {
+  if (!doubanId) return Promise.resolve(null);
+  const cached = doubanRatingCache.get(doubanId);
+  if (cached) return cached;
+
+  const request = fetchDoubanRating(doubanId).catch(() => null);
+  doubanRatingCache.set(doubanId, request);
+  // 拿不到评分（请求失败或暂无评分）不缓存，下次进入播放页重试
+  request.then((rate) => {
+    if (rate === null) doubanRatingCache.delete(doubanId);
+  });
+  return request;
+}
+
+async function fetchDoubanRating(doubanId: number): Promise<string | null> {
+  const { proxyType, proxyUrl } = getDoubanProxyConfig();
+  let response: Response;
+  switch (proxyType) {
+    case 'cors-proxy-zwei':
+      response = await fetchWithTimeout(
+        doubanAbstractUrl(doubanId),
+        'https://ciao-cors.is-an.org/'
+      );
+      break;
+    case 'cmliussss-cdn-tencent':
+      response = await fetchWithTimeout(
+        doubanAbstractUrl(doubanId, 'movie.douban.cmliussss.net'),
+        ''
+      );
+      break;
+    case 'cmliussss-cdn-ali':
+      response = await fetchWithTimeout(
+        doubanAbstractUrl(doubanId, 'movie.douban.cmliussss.com'),
+        ''
+      );
+      break;
+    case 'custom':
+      response = await fetchWithTimeout(doubanAbstractUrl(doubanId), proxyUrl);
+      break;
+    case 'direct':
+    default:
+      response = await fetch(`/api/douban/subject?id=${doubanId}`);
+      if (!response.ok) return null;
+      return normalizeDoubanRate((await response.json())?.rate);
+  }
+  if (!response.ok) return null;
+  return parseDoubanRate(await response.json());
 }

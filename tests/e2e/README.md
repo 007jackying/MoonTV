@@ -13,17 +13,18 @@ proxy does not fail a test (see _Console errors_ below).
 
 ## Files
 
-| File                 | Purpose                                                                                                                                                                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mock-cms.mjs`       | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried.             |
-| `serve.mjs`          | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                    |
-| `make-media.sh`      | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                       |
-| `measure.py`         | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                   |
-| `test_play_perf.py`  | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest. |
-| `test_failover.py`   | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                          |
-| `test_av_filter.mjs` | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                     |
-| `test_av_filter.py`  | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                      |
-| `run-av-filter.sh`   | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                          |
+| File                   | Purpose                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mock-cms.mjs`         | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried. `fast` serves a messy real-world synopsis and a Douban id, `mid` a short synopsis (see _Play details suite_). |
+| `serve.mjs`            | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                                                                                                                      |
+| `make-media.sh`        | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                                                                                                                         |
+| `measure.py`           | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                                                                                                                     |
+| `test_play_perf.py`    | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                   |
+| `test_failover.py`     | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                            |
+| `test_play_details.py` | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                    |
+| `test_av_filter.mjs`   | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                       |
+| `test_av_filter.py`    | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                        |
+| `run-av-filter.sh`     | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                            |
 
 ## Source profiles
 
@@ -133,7 +134,7 @@ flakiness.
 
 ### Known quirks worked around
 
-- **Media requests are aborted** by the browser suite (`MEDIA_GLOBS`).
+- **Media requests are aborted** by the AV browser suite (`MEDIA_GLOBS`).
   `next dev` wedges once the play page pulls HLS playlists/segments through
   `/api/m3u8`. Playback is not what these tests assert, and the resulting
   console noise (hls.js `manifestLoadError`, browser `Failed to load resource`)
@@ -261,6 +262,50 @@ The suite asserts
 The first seven fail on the commit before failover was added; the last one
 failed on `1bb3029`, before the resume fix. This suite does not
 check console errors: the aborted media requests are the point of the test.
+
+### Play details suite
+
+```bash
+CODEC=vp9 ./tests/e2e/make-media.sh   # once; Playwright's Chromium has no H.264
+node tests/e2e/serve.mjs --build      # default `perf` profile
+python tests/e2e/test_play_details.py [--shots DIR]
+```
+
+A plain script (like `test_av_filter.py`), 38 assertions over phone (390×844,
+touch) and desktop (1440×900) layouts. It relies on two `mock-cms.mjs`
+fixtures: `fast` serves a two-paragraph synopsis in `<p>` tags, indented and
+padded with `&nbsp;` and double-encoded `&amp;nbsp;` (what real CMS sources
+send), plus Douban id `1292052`; `mid` serves a one-line synopsis and no
+Douban id. It checks
+
+- **format** — no entities or tags reach the page, the padding is gone and the
+  paragraph break survives as a single line break (server-side `cleanHtmlTags`);
+- **clamp** — the long text is clamped to exactly 4 lines with a collapsed
+  展开全文 toggle, on both layouts; the short one gets no toggle;
+- **nav** — scrolled to the bottom on a phone, the toggle sits above the fixed
+  bottom nav and is the element that receives a tap at its centre;
+- **toggle** — 展开全文 shows the whole text, 收起 clamps it again and, when
+  the paragraph's top had scrolled off-screen, scrolls it back (run at a
+  390×480 viewport, since on a full-size phone the expanded fixture fits);
+- **rating** — the 豆瓣 button reads `豆瓣 7.5` with an accessible name of
+  `豆瓣 评分 7.5`; with no rating, and with the real route while Douban is
+  unreachable (it answers `200 { rate: null }`), it stays a plain `豆瓣`;
+- **api** — `/api/douban/subject` answers 400 for a bad id.
+
+Two things differ from the other browser suites:
+
+- **Media is served, not aborted.** Aborting it trips the player's automatic
+  failover, which swaps the page to another source (and that source's
+  description) mid-test; the suite also asserts it is still on `fast` at the
+  end. Hence the VP9 fixtures.
+- **It scrolls `<body>`, not the window.** `html, body { height: 100%;
+overflow-x: hidden }` in `globals.css` makes `overflow-y` compute to `auto`,
+  so `<body>` is the scroll container and `window.scrollTo()` is a no-op.
+
+The rating is mocked with `page.route` because the harness cannot reach
+Douban; the server route's parsing is covered by
+`src/lib/__tests__/douban-rating.test.ts`, and the description cleaner by
+`src/lib/__tests__/clean-html.test.ts`.
 
 ### Console errors
 

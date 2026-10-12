@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
 import { fetchDoubanData } from '@/lib/douban';
+import { parseDoubanEpisodes } from '@/lib/douban-episodes';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 interface DoubanCategoryApiResponse {
@@ -9,6 +10,7 @@ interface DoubanCategoryApiResponse {
   items: Array<{
     id: string;
     title: string;
+    episodes_info?: string;
     card_subtitle: string;
     pic: {
       large: string;
@@ -74,6 +76,7 @@ export async function GET(request: Request) {
       poster: item.pic?.normal || item.pic?.large || '',
       rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
       year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
+      episodes: parseDoubanEpisodes(item.episodes_info),
     }));
 
     const response: DoubanResult = {

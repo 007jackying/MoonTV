@@ -6,6 +6,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getCacheTime } from '@/lib/config';
 import { getConfig } from '@/lib/config';
 import { fetchDoubanData } from '@/lib/douban';
+import { parseDoubanEpisodes } from '@/lib/douban-episodes';
 import { DoubanResult } from '@/lib/types';
 
 interface DoubanRecommendApiResponse {
@@ -13,6 +14,7 @@ interface DoubanRecommendApiResponse {
   items: Array<{
     id: string;
     title: string;
+    episodes_info?: string;
     year: string;
     type: string;
     pic: {
@@ -122,6 +124,7 @@ export async function GET(request: NextRequest) {
         poster: item.pic?.normal || item.pic?.large || '',
         rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
         year: item.year,
+        episodes: parseDoubanEpisodes(item.episodes_info),
       }));
     const response: DoubanResult = {
       code: 200,

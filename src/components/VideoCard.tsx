@@ -154,7 +154,7 @@ export default function VideoCard({
         (newFavorites: Record<string, any>) => {
           const isNowFavorited = !!newFavorites[storageKey];
           setFavorited(isNowFavorited);
-        }
+        },
       );
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -199,7 +199,7 @@ export default function VideoCard({
       actualEpisodes,
       actualQuery,
       favorited,
-    ]
+    ],
   );
 
   const handleDeleteRecord = useCallback(
@@ -215,7 +215,7 @@ export default function VideoCard({
         console.error('删除播放记录失败', err);
       }
     },
-    [from, actualSource, actualId, onDelete]
+    [from, actualSource, actualId, onDelete],
   );
 
   // 播放链接：卡片整体是一个 <a>，因此支持新标签页打开、键盘访问与触屏点击
@@ -227,7 +227,7 @@ export default function VideoCard({
     }
     if (actualSource && actualId) {
       return `/play?source=${actualSource}&id=${actualId}&title=${encodeURIComponent(
-        actualTitle
+        actualTitle,
       )}${actualYear ? `&year=${actualYear}` : ''}${
         isAggregate ? '&prefer=true' : ''
       }${
@@ -268,9 +268,9 @@ export default function VideoCard({
     void fetch(
       withAdultFilterParam(
         `/api/detail?source=${encodeURIComponent(
-          actualSource
-        )}&id=${encodeURIComponent(actualId)}`
-      )
+          actualSource,
+        )}&id=${encodeURIComponent(actualId)}`,
+      ),
     ).catch(() => {
       /* 预热失败无所谓，真正的请求会在播放页重新发起 */
     });
@@ -330,17 +330,14 @@ export default function VideoCard({
     }
     if (from === 'douban' || isAggregate) {
       const y = actualYear && actualYear !== 'unknown' ? actualYear : '';
-      if (isAggregate) {
-        return [
-          y,
-          actualEpisodes && actualEpisodes > 1
-            ? t.episodesShort(actualEpisodes)
-            : t.movie,
-        ]
-          .filter(Boolean)
-          .join(' · ');
-      }
-      return y;
+      const eps =
+        actualEpisodes && actualEpisodes > 1
+          ? t.episodesShort(actualEpisodes)
+          : '';
+      // 豆瓣卡片：电影或单集不显示集数
+      return [y, isAggregate ? eps || t.movie : eps]
+        .filter(Boolean)
+        .join(' · ');
     }
     return [
       source_name,
@@ -480,14 +477,17 @@ export default function VideoCard({
               </span>
             )}
 
-          {/* 集数 */}
-          {actualEpisodes && actualEpisodes > 1 && from !== 'search' && (
-            <span className='absolute right-2 top-2 rounded-full bg-o-video-ink/65 px-2 py-0.5 text-[11px] font-bold tabular-nums text-o-video-paper backdrop-blur-sm md:right-2.5 md:top-2.5'>
-              {currentEpisode
-                ? `${currentEpisode}/${actualEpisodes}`
-                : actualEpisodes}
-            </span>
-          )}
+          {/* 集数（豆瓣卡片已在年份旁显示） */}
+          {actualEpisodes &&
+            actualEpisodes > 1 &&
+            from !== 'search' &&
+            from !== 'douban' && (
+              <span className='absolute right-2 top-2 rounded-full bg-o-video-ink/65 px-2 py-0.5 text-[11px] font-bold tabular-nums text-o-video-paper backdrop-blur-sm md:right-2.5 md:top-2.5'>
+                {currentEpisode
+                  ? `${currentEpisode}/${actualEpisodes}`
+                  : actualEpisodes}
+              </span>
+            )}
 
           {/* 悬停操作：删除记录 / 收藏 / 豆瓣 */}
           <div className='absolute bottom-2.5 left-2.5 flex translate-y-2 gap-1.5 opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100'>
@@ -502,7 +502,7 @@ export default function VideoCard({
                     isBangumi
                       ? `https://bangumi.tv/subject/${actualDoubanId}`
                       : `https://movie.douban.com/subject/${actualDoubanId}`,
-                    '_blank'
+                    '_blank',
                   );
                 }}
                 className={iconBtn}
@@ -680,12 +680,12 @@ export default function VideoCard({
                     if (isBangumi) {
                       window.open(
                         `https://bangumi.tv/subject/${actualDoubanId}`,
-                        '_blank'
+                        '_blank',
                       );
                     } else {
                       window.open(
                         `https://movie.douban.com/subject/${actualDoubanId}`,
-                        '_blank'
+                        '_blank',
                       );
                     }
                   },

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console,no-case-declarations */
 
+import { parseDoubanEpisodes } from './douban-episodes';
 import {
   doubanAbstractUrl,
   normalizeDoubanRate,
@@ -20,6 +21,7 @@ interface DoubanCategoryApiResponse {
   items: Array<{
     id: string;
     title: string;
+    episodes_info?: string;
     card_subtitle: string;
     pic: {
       large: string;
@@ -36,6 +38,7 @@ interface DoubanListApiResponse {
   subjects: Array<{
     id: string;
     title: string;
+    episodes_info?: string;
     card_subtitle: string;
     cover: string;
     rate: string;
@@ -47,6 +50,7 @@ interface DoubanRecommendApiResponse {
   items: Array<{
     id: string;
     title: string;
+    episodes_info?: string;
     year: string;
     type: string;
     pic: {
@@ -168,6 +172,7 @@ export async function fetchDoubanCategories(
       poster: item.pic?.normal || item.pic?.large || '',
       rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
       year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
+      episodes: parseDoubanEpisodes(item.episodes_info),
     }));
 
     return {
@@ -298,6 +303,7 @@ export async function fetchDoubanList(
       poster: item.cover,
       rate: item.rate,
       year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
+      episodes: parseDoubanEpisodes(item.episodes_info),
     }));
 
     return {
@@ -462,6 +468,7 @@ async function fetchDoubanRecommends(
         poster: item.pic?.normal || item.pic?.large || '',
         rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
         year: item.year,
+        episodes: parseDoubanEpisodes(item.episodes_info),
       }));
 
     return {

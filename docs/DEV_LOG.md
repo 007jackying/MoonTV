@@ -149,6 +149,72 @@ eslint / prettier clean on changed files, `pnpm test` 105 / 105,
 29 / 29, `test_play_details.py` 38 / 38, `run-av-filter.sh` API 24 / 24 and
 browser 31 / 31.
 
+### Usability pass (same release)
+
+A walk through the whole flow (home → search → result → play → settings →
+double tap → episode switch → details → fullscreen) on all eight viewports,
+with screenshots of every step, plus a probe of each finding from two code
+reviews. Each finding below was reproduced on the previous build first.
+
+- **Double tap low on the video (serious).** The bottom bar covers roughly the
+  lower half of a portrait phone's player (timeline, button row, and a
+  gradient above them). With the controls hidden, the first tap revealed the
+  bar and the second landed on it: the timeline jumped to the finger
+  (+8.8 s instead of +10), the settings button opened the menu, or the
+  gradient swallowed the tap. _Decision:_ fix the cause rather than each
+  control. Controls revealed by a tap ignore taps for `DOUBLE_TAP_MS`
+  (`tapGuard`), and also while the ripple shows, so chained taps reach the
+  video even while paused. The bar's gradient never takes taps; only the
+  timeline and button row do. This replaces `centreSeek` from the first
+  follow-up, which only covered the two centre seek buttons. 300 ms is
+  shorter than anyone needs to see a control and then aim at it, and a test
+  checks that revealed buttons work after it.
+- **Middle double tap while paused.** The centre play button covers the
+  middle, so both taps hit it: play, then pause at once. _Decision:_ the
+  centre play button ignores a second press within `DOUBLE_TAP_MS`, so a
+  middle double tap toggles once wherever it lands.
+- **Ripple overstated near the ends.** At 0:03 four taps back showed
+  「30 秒」 for a 3 s move. _Decision:_ the ripple adds up the distance
+  actually moved (`tapSeek` measures it after the clamped seek).
+- **Landscape height cap still wrong.** At 667 × 375 the mobile title bar
+  (56 px, not sticky) sits above the player, so the whole control bar ended
+  under the fixed tab bar. At 844 × 390 the page's `md:pt-2` pushed the
+  player 8 px off-screen. The fit test passed both because it added up
+  heights. _Decision:_ `.o-player-frame` also subtracts the title bar below
+  `md` and the 8 px from `md` up. The test now checks positions at scroll 0
+  (on screen, nothing pinned overlapping).
+- **Settings menu.** Keyboard focus fell to `<body>` when a row unmounted on
+  a page change, and Space then toggled playback. Level 2 kept level 1's
+  scroll position, which could hide the back row. The first measurement ran
+  mid pop-in animation (`translateY(4px)`), so the menu sat 4 px from the
+  player's top instead of 8. _Decision:_ `PopoverMenu` takes a `pageKey`: on
+  change it scrolls to the top and focuses the new page's back row, or the
+  row you came from on return. It re-measures on `animationend`. The back
+  row is now `role="menuitem"` like the other rows.
+- **Seek labels** are functions of `SEEK_STEP` (`t.seekBackward(n)`), so the
+  aria-label and tooltip cannot drift from the step.
+
+Considered and kept as is:
+
+- **→ / ⟳10 / double tap near the end** go to the end, the video ends and
+  auto-advances. This matches YouTube and Netflix, and it is the same for
+  the buttons, the keys and the gesture. The old keyboard-only guard
+  (nothing within 5 s of the end) was the inconsistent one.
+- **弹幕 switch at both levels.** It is a quick toggle on level 1 and the
+  same switch inside 弹幕设置 next to the source. This is a common pattern,
+  and both stay in sync (tested).
+
+Tests: 15 new (13 fail on the build before this pass; 2 check that revealed
+buttons work after the window), and 3 updated (position-based fit, honest
+ripple totals), for 80 in `test_player_controls.py`. The 32 touch tests
+passed 5 repeated runs in a row.
+
+Checks (production build): `pnpm typecheck` clean, eslint / prettier clean
+on changed files, `pnpm test` 105 / 105, `test_player_controls.py` 80 / 80,
+`test_play_perf.py` + `test_failover.py` 29 / 29, `test_play_details.py`
+38 / 38, `run-av-filter.sh` API 24 / 24 and browser 31 / 31. The full-flow
+screenshots ran clean on all eight viewports.
+
 ## 2026-10-12 — Play page: collapsible description, entity cleanup, Douban rating (3.12.0)
 
 Branch: `ccr-3a769764-ajviad`. Three reports from a phone: the description ran

@@ -22,7 +22,7 @@ proxy does not fail a test (see _Console errors_ below).
 | `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                   |
 | `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                            |
 | `test_play_details.py`    | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                    |
-| `test_player_controls.py` | Playwright/pytest suite (65 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons and their placement, YouTube-style double-tap seeking, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
+| `test_player_controls.py` | Playwright/pytest suite (80 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons and their placement, YouTube-style double-tap seeking, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
 | `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                       |
 | `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                        |
 | `run-av-filter.sh`        | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                            |
@@ -346,8 +346,8 @@ The suite asserts
   +10 / −10 s and shows the ripple on that side, without toggling playback;
   the same works while playing with the controls hidden;
 - a third tap on the same side within the chain window adds another 10 s
-  and the ripple shows the total (20 秒); after the window a single tap does
-  not seek;
+  and the ripple shows the running total (11 → 1 → 0 shows 11 秒, the
+  distance actually moved); after the window a single tap does not seek;
 - a double tap in the middle third still toggles play / pause, with no seek;
   a single tap only shows / hides the controls;
 - with a mouse, click still toggles playback and double-click still goes
@@ -360,8 +360,8 @@ The suite asserts
   soon as the ripple faded);
 - on phones the centre ⟲10 / ⟳10 buttons lie inside the left / right thirds,
   so the second tap of a double tap that starts with the controls hidden lands
-  on the button the first tap revealed: it still counts as a double tap
-  (ripple, and a third tap chains to 20 秒);
+  where the first tap revealed a button: it still reaches the video and counts
+  as a double tap (ripple, and a third tap chains);
 - the player has no 下一集 button, except in fullscreen (where the episode grid
   and the 下一集 card are out of reach), and pressing it switches episode
   without leaving fullscreen;
@@ -373,23 +373,42 @@ The suite asserts
   into view inside it; on portrait phones the level-2 page is taller than
   the space and scrolls within the menu without scrolling the page; the
   centre buttons step aside while it is open;
-- the whole player plus the bars pinned over the page (the sticky top nav
-  from 768 px up, the fixed bottom tab bar below it) fits the screen on every
-  viewport, so the bottom bar is reachable (on landscape phones it used to be
-  pushed below the fold or under the nav).
+- at scroll 0 the whole player lies on screen and no pinned bar (the sticky
+  top nav from 768 px up, the fixed bottom tab bar below it) overlaps it, so
+  the bottom bar is reachable on every viewport. This is checked by position:
+  an earlier check that only added up heights passed while the mobile title
+  bar above the player pushed the control bar under the bottom tab bar at
+  667 × 375, and the player ran 8 px off-screen at 844 × 390;
+- with the controls hidden, a double tap low in a side third (60 / 75 / 90 %
+  down) still seeks 10 s: controls a tap has just revealed ignore taps for the
+  double-tap window, so the second tap cannot land on the timeline (jump to
+  the finger), the settings button (open the menu) or the bar's gradient
+  (swallowed). Paused, taps in the gradient above the timeline reach the video
+  and chain. After the window, revealed buttons work normally;
+- paused, a double tap in the middle (both taps on the centre play button)
+  starts playback instead of playing and pausing again;
+- the ripple adds up the distance actually moved: clamped at an end it says
+  8 秒 or 11 秒, not 10 秒 / 20 秒;
+- settings: keyboard focus moves to the level-2 back row and back to the
+  category row on return (it used to fall to `<body>`), level 2 opens
+  scrolled to the top even from a scrolled level 1, and the menu keeps its
+  8 px gap below the player's top edge;
 
 Against the code before this change 43 of the original 58 fail; the other 15
 are the guards for unchanged behaviour plus the fit check on the six viewports
 that already fit. The 7 tests added in review (controls staying hidden, the
 double tap on a revealed centre button, arrow-key clamping, the fullscreen
 下一集 button) all fail on the first 3.13.0 build and pass after the fixes.
-
+Of the 15 added in the usability pass after that, 13 fail on the code before
+it; the other 2 check that a revealed button still works once the double-tap
+window is over. Three existing tests changed with it: the fit check (by
+position), and the two ripple tests (honest totals when clamped).
 The touch tests that need the controls hidden play at 0.25× (the 12 s fixture
 must not reach `ended`) and first wait for the controls to be shown after the
 pause in `_park`, then hidden: right after a double-tap seek they are still
 hidden, so waiting only for "hidden" can pass before they fade back in.
 
-Screenshots: `shots/player-controls-<viewport>-{bar,settings,settings-skip,ripple-forward,ripple-back,ripple-chain,hidden,after-double-tap,fullscreen}.png`.
+Screenshots: `shots/player-controls-<viewport>-{bar,settings,settings-skip,ripple-forward,ripple-back,ripple-chain,hidden,after-double-tap,fullscreen,fit,settings-level2-top}.png`.
 
 ### Console errors
 

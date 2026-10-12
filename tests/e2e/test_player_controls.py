@@ -306,11 +306,17 @@ def test_whole_player_fits_on_screen(browser, name):
     screen, pushing the bottom bar (timeline, settings, fullscreen) off it."""
     ctx, page, errors = _open(browser, name)
     try:
-        # The player plus whatever stays on screen over the page (the sticky
-        # top nav from 768 px up, the fixed bottom tab bar below it) must fit
-        # the screen, or part of the player is always covered.
+        # On opening the page (scroll 0) the whole player must be on screen
+        # and nothing pinned (the sticky top nav from 768 px up, the fixed
+        # bottom tab bar below it) may overlap it. Checked by position: an
+        # earlier height-sum check missed the mobile title bar above the
+        # player, which pushed the control bar under the bottom tab bar.
+        page.evaluate("window.scrollTo(0, 0)")
+        page.wait_for_timeout(200)
         m = page.evaluate(
             """() => {
+                const p = document.querySelector('video').parentElement
+                    .getBoundingClientRect();
                 const pinned = [...document.querySelectorAll('body *')].filter((el) => {
                     const cs = getComputedStyle(el);
                     if (cs.position !== 'sticky' && cs.position !== 'fixed') return false;
@@ -318,16 +324,22 @@ def test_whole_player_fits_on_screen(browser, name):
                     // full-width bars only: not toasts, menus or the player's own UI
                     return r.height > 0 && r.width >= innerWidth - 1 && cs.display !== 'none'
                         && cs.visibility !== 'hidden';
+                }).map((el) => {
+                    const r = el.getBoundingClientRect();
+                    return { top: r.top, bottom: r.bottom, name: el.tagName + '.'
+                        + String(el.className).slice(0, 40) };
                 });
-                return {
-                    player: document.querySelector('video').parentElement
-                        .getBoundingClientRect().height,
-                    pinned: pinned.reduce((h, el) => h + el.getBoundingClientRect().height, 0),
-                    names: pinned.map((el) => el.tagName + '.' + el.className.slice(0, 40)),
-                };
+                return { top: p.top, bottom: p.bottom, vh: innerHeight, pinned };
             }"""
         )
-        assert m["player"] + m["pinned"] <= VIEWPORTS[name][0]["height"] + 0.5, m
+        assert m["top"] >= -0.5 and m["bottom"] <= m["vh"] + 0.5, m
+        overlapping = [
+            b for b in m["pinned"]
+            if b["top"] < m["bottom"] - 0.5 and b["bottom"] > m["top"] + 0.5
+        ]
+        assert not overlapping, m
+        if name.startswith("phone-landscape"):
+            _shot(page, f"{name}-fit")
         fs = _player(page).get_by_role("button", name="全屏", exact=True)
         fs.scroll_into_view_if_needed()
         assert fs.is_visible()
@@ -410,9 +422,9 @@ def test_tap_on_hidden_bar_button_does_not_press_it(browser, name):
 def test_double_tap_sides_seek_ten_seconds(browser, name):
     ctx, page, errors = _open(browser, name)
     try:
-        _park(page, 5)
+        _park(page, 1)
         _tap(page, 0.85)
-        _wait_time_near(page, 11.9, tol=0.15)  # 5 + 10, clamped to d - 0.1
+        _wait_time_near(page, 11)
         # The YouTube-style ripple sits on the right half and says how far.
         ripple = page.locator("text=10 秒").first
         ripple.wait_for(timeout=2000)
@@ -431,7 +443,8 @@ def test_double_tap_sides_seek_ten_seconds(browser, name):
         _park(page, 8)
         _tap(page, 0.12)
         _wait_time_near(page, 0, tol=0.05)  # 8 - 10, clamped to 0
-        ripple = page.locator("text=10 秒").first
+        # Clamped: the ripple says how far it really went, not 10.
+        ripple = page.locator("text=8 秒").first
         ripple.wait_for(timeout=2000)
         rb = ripple.bounding_box()
         assert rb["x"] + rb["width"] < vb["x"] + vb["width"] / 2, (rb, vb)
@@ -512,8 +525,9 @@ def test_double_tap_seek_keeps_controls_hidden(browser, name):
 def test_double_tap_on_the_revealed_centre_button(browser, name):
     """On phones the centre ⟲10 / ⟳10 buttons sit inside the left / right
     thirds. With the controls hidden, the first tap of a double tap reveals
-    them and the second lands on the button. That second tap must still count
-    as a double tap (ripple, chaining), not as a silent button press."""
+    them and the second lands where the button now is. Controls a tap has just
+    revealed ignore taps for the double-tap window, so that second tap still
+    reaches the video and counts as a double tap (ripple, chaining)."""
     ctx, page, errors = _open(browser, name)
     try:
         # Only the back side chains: +20 s would run off the 12 s fixture and
@@ -529,10 +543,11 @@ def test_double_tap_on_the_revealed_centre_button(browser, name):
             page.touchscreen.tap(x, y)
             page.locator("text=10 秒").first.wait_for(timeout=2000)
             if taps == 3:
-                # A third tap on the same spot chains (the centre is hidden now).
+                # A third tap on the same spot chains (the centre is hidden now);
+                # from ~11.6 s the second step is clamped at 0.
                 page.wait_for_timeout(150)
                 page.touchscreen.tap(x, y)
-                page.locator("text=20 秒").first.wait_for(timeout=2000)
+                page.locator("text=/^1[12] 秒$/").first.wait_for(timeout=2000)
             s = _state(page)
             expected = max(0.0, min(s["d"] - 0.1, t0 + (taps - 1) * delta))
             assert abs(s["t"] - expected) < 0.8, (label, t0, s)
@@ -543,6 +558,105 @@ def test_double_tap_on_the_revealed_centre_button(browser, name):
         ctx.close()
 
 
+@pytest.mark.parametrize("name", ["phone", "tablet"])
+@pytest.mark.parametrize("frac_y", [0.6, 0.75, 0.9])
+def test_double_tap_low_on_the_video(browser, name, frac_y):
+    """Regression: the bottom bar is tall (timeline, buttons and a gradient
+    above them). A double tap low in a side third, with the controls hidden,
+    had its second tap land on the bar the first tap revealed: it jumped to
+    the finger's spot on the timeline, opened the settings menu, or was
+    swallowed by the gradient. It must seek 10 s like anywhere else."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _play_slowly_with_controls_hidden(page, 1)
+        t0 = _state(page)["t"]
+        _tap(page, 0.85, frac_y=frac_y)
+        page.locator("text=10 秒").first.wait_for(timeout=2000)
+        s = _state(page)
+        assert abs(s["t"] - (t0 + 10)) < 0.6, (t0, s)
+        assert page.get_by_role("menu").count() == 0
+        assert s["paused"] is False
+        assert not page.evaluate("() => !!document.fullscreenElement")
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("name", ["phone", "tablet"])
+def test_low_taps_chain_while_paused(browser, name):
+    """Paused, the bar stays up. Its gradient and the space above the
+    timeline used to swallow taps, so a double tap low on a side did nothing.
+    Only the timeline and the button row take taps when the controls show;
+    taps above them reach the video, and chained taps keep adding up."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _park(page, 11)
+        page.wait_for_timeout(400)
+        # 60 % down is inside the bar's gradient padding on both phone and
+        # tablet, above the timeline.
+        bar_top = page.evaluate(
+            """() => document.querySelector("button[aria-label='设置']")
+                .closest('.absolute.inset-x-0.bottom-0').getBoundingClientRect().top"""
+        )
+        box = _surface_box(page)
+        assert box["y"] + box["height"] * 0.6 > bar_top, (bar_top, box)
+        _tap(page, 0.12, times=3, gap_ms=150, frac_y=0.6)
+        _wait_time_near(page, 0, tol=0.05)
+        page.locator("text=11 秒").first.wait_for(timeout=2000)
+        assert _state(page)["paused"] is True
+        assert page.get_by_role("menu").count() == 0
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("name", ["phone", "tablet"])
+def test_middle_double_tap_while_paused_starts_playback(browser, name):
+    """Regression: paused, the centre play button covers the middle, so both
+    taps of a middle double tap hit it: play, then pause straight away. A
+    double tap in the middle toggles once, wherever it lands."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _park(page, 3)
+        page.wait_for_timeout(400)
+        _tap(page, 0.5, frac_y=0.5)
+        page.wait_for_timeout(500)
+        assert _state(page)["paused"] is False
+        # A single tap on the play button still works right after the window.
+        page.wait_for_timeout(CHAIN_GAP_MS)
+        page.locator("button[aria-label='暂停']").tap()
+        page.wait_for_function(
+            "() => document.querySelector('video').paused", timeout=3000
+        )
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("name", ["phone", "tablet"])
+def test_controls_revealed_by_a_tap_work_after_the_double_tap_window(browser, name):
+    """The guard that lets a double tap reach the video lasts only the
+    double-tap window: a deliberate tap on a revealed button still works."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _play_slowly_with_controls_hidden(page, 1)
+        _tap(page, 0.5, times=1, frac_y=0.3)
+        page.wait_for_timeout(450)
+        t0 = _state(page)["t"]
+        page.locator(f"button[aria-label='{FORWARD_LABEL}']").tap()
+        _wait_time_near(page, t0 + 10)
+        assert page.evaluate(RIPPLE_SHOWN) is False  # a button press, no ripple
+        _player(page).get_by_role("button", name="设置", exact=True).tap()
+        page.get_by_role("menu").wait_for(timeout=2000)
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+RIPPLE_SHOWN = """() => [...document.querySelectorAll('div')]
+    .some((d) => /^\\d+ 秒$/.test((d.innerText || '').trim()))"""
+
+
 @pytest.mark.parametrize("name", ["phone-small", "phone", "tablet"])
 def test_consecutive_taps_accumulate(browser, name):
     """After a double tap, every further tap on the same side adds 10 s."""
@@ -550,10 +664,12 @@ def test_consecutive_taps_accumulate(browser, name):
     try:
         # Media is 12 s: start near the end and go backwards so 3 steps fit.
         _park(page, 11)
-        # double tap (-10) then one more tap (-10, chained): 11 → 1 → 0.
+        # double tap (-10) then one more tap (-10, chained): 11 → 1 → 0. The
+        # ripple adds up the distance actually moved, so the clamped last step
+        # counts 1 s: 11 秒, not 20 秒.
         _tap(page, 0.12, times=3, gap_ms=150)
         _wait_time_near(page, 0, tol=0.05)
-        page.locator("text=20 秒").first.wait_for(timeout=2000)
+        page.locator("text=11 秒").first.wait_for(timeout=2000)
         _shot(page, f"{name}-ripple-chain", settle_ms=250)
 
         # The chain expires; a single tap afterwards is just a tap (no seek).
@@ -773,9 +889,10 @@ def _open_settings(page, name):
 
 
 def _row_labels(menu):
-    """Row labels without their trailing hint / switch."""
+    """Row labels without their trailing hint / switch. The level-2 back row
+    is a menu item too, but it is the header, not a row."""
     return menu.evaluate(
-        """(m) => [...m.querySelectorAll("[role^='menuitem']")]
+        """(m) => [...m.querySelectorAll("[role^='menuitem']:not([aria-label^='返回'])")]
             .map((r) => r.querySelector('span').textContent.trim())"""
     )
 
@@ -831,7 +948,7 @@ def test_settings_menu_has_two_levels(browser, name):
         assert "关" in skip_row.inner_text()
         _press(page, name, skip_row)
         assert _row_labels(menu) == ["跳过片头片尾", "设置片头", "设置片尾"]
-        back = menu.get_by_role("button", name="返回 · 片头片尾")
+        back = menu.get_by_role("menuitem", name="返回 · 片头片尾")
         assert back.is_visible()
         _press(page, name, menu.get_by_role("menuitemcheckbox", name="跳过片头片尾"))
         # Turning skipping on adds the 删除跳过配置 row; still all reachable.
@@ -848,7 +965,7 @@ def test_settings_menu_has_two_levels(browser, name):
         assert _row_labels(menu) == ["显示弹幕", "弹幕源"]
         show = menu.get_by_role("menuitemcheckbox", name="显示弹幕")
         assert show.get_attribute("aria-checked") == after
-        _press(page, name, menu.get_by_role("button", name="返回 · 弹幕设置"))
+        _press(page, name, menu.get_by_role("menuitem", name="返回 · 弹幕设置"))
 
         # Closing and reopening always starts at level 1.
         _press(page, name, menu.get_by_role("menuitem", name="弹幕设置"))
@@ -886,6 +1003,61 @@ def test_settings_menu_scrolls_when_the_player_is_short(browser, name):
         menu.get_by_role("menuitem", name="删除跳过配置").wait_for(
             state="detached", timeout=3000
         )
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+def test_settings_levels_keep_keyboard_focus(browser):
+    """Regression: the row you activate unmounts when the page changes, so
+    keyboard focus fell to <body> (the next Tab restarted at the top of the
+    page, and Space toggled playback). Focus now moves to the level-2 back
+    row, and back to the category row on return."""
+    ctx, page, errors = _open(browser, "desktop")
+    try:
+        _park(page, 3)
+        _open_settings(page, "desktop")
+        page.get_by_role("menuitem", name="片头片尾").focus()
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(200)
+        label = page.evaluate("document.activeElement.getAttribute('aria-label')")
+        assert label == "返回 · 片头片尾", label
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(200)
+        focused = page.evaluate("document.activeElement.innerText")
+        assert focused.startswith("片头片尾"), focused
+        assert _state(page)["paused"] is True
+        assert not errors, errors
+    finally:
+        ctx.close()
+
+
+@pytest.mark.parametrize("name", ["phone-landscape-small", "phone-small"])
+def test_settings_level_two_opens_at_the_top(browser, name):
+    """Both levels share one scroll container. Opening a category from a
+    scrolled level 1 must show level 2 from the top (its back row), and the
+    menu keeps its 8 px gap below the player's top edge once it has popped
+    in (it used to be measured mid-animation, 4 px too tall)."""
+    ctx, page, errors = _open(browser, name)
+    try:
+        _park(page, 3)
+        menu = _open_settings(page, name)
+        page.wait_for_timeout(400)  # pop-in animation
+        g = page.evaluate(MENU_GEOMETRY)
+        assert g["menuTop"] - g["playerTop"] >= 7.5, g
+        # Level 1 (four rows) fits on every supported viewport, so make the
+        # menu short enough to scroll: the case of a smaller or zoomed screen.
+        menu.evaluate("(m) => { m.style.maxHeight = '110px'; }")
+        menu.evaluate("(m) => { m.scrollTop = m.scrollHeight; }")
+        scrolled = menu.evaluate("(m) => m.scrollTop")
+        _press(page, name, menu.get_by_role("menuitem", name="弹幕设置"))
+        page.wait_for_timeout(200)
+        assert menu.evaluate("(m) => m.scrollTop") == 0, scrolled
+        back = menu.get_by_role("menuitem", name="返回 · 弹幕设置")
+        r, g = back.bounding_box(), page.evaluate(MENU_GEOMETRY)
+        assert r["y"] >= g["menuTop"] - 0.5, (r, g)
+        assert scrolled > 0
+        _shot(page, f"{name}-settings-level2-top")
         assert not errors, errors
     finally:
         ctx.close()

@@ -712,7 +712,10 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const tapSeek = (dir: -1 | 1) => {
       const video = videoRef.current;
       if (!video || phaseRef.current !== 'ready') return;
+      const before = video.currentTime;
       seekBy(dir * SEEK_STEP);
+      // 提示显示实际跳过的秒数：在开头 / 结尾被夹紧时不足 10 秒（如 0:03 处后退只显示 3 秒）
+      const moved = Math.abs(video.currentTime - before);
       // 同 YouTube：播放中双击快进 / 快退后控制栏保持收起。双击的第一下会唤出控制栏，
       // 不收回的话提示消失后中央按钮和底栏会立刻盖到画面上（暂停时控制栏本就常驻）
       if (!video.paused) {
@@ -723,8 +726,8 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const prev = seekRippleRef.current;
       const total =
         prev && prev.dir === dir && now - prev.at < SEEK_CHAIN_MS
-          ? prev.total + SEEK_STEP
-          : SEEK_STEP;
+          ? prev.total + moved
+          : moved;
       seekRippleRef.current = { dir, total, at: now };
       setSeekRipple({ dir, total, key: now });
       if (seekRippleTimerRef.current) {
@@ -744,6 +747,30 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       },
       []
     );
+    // 单击唤出控制栏后的 DOUBLE_TAP_MS 内，刚出现的按钮 / 进度条不接收点击：
+    // 否则双击的第二下会落在它们上面（跳到手指所在的进度、打开设置、按到中央按钮），
+    // 而不是交给画面按双击处理。超过这个时间人才来得及看清再点，不影响正常操作
+    const [tapGuard, setTapGuard] = useState(false);
+    const tapGuardTimerRef = useRef<number | null>(null);
+    const guardRevealedControls = () => {
+      setTapGuard(true);
+      if (tapGuardTimerRef.current) {
+        window.clearTimeout(tapGuardTimerRef.current);
+      }
+      tapGuardTimerRef.current = window.setTimeout(
+        () => setTapGuard(false),
+        DOUBLE_TAP_MS
+      );
+    };
+    useEffect(
+      () => () => {
+        if (tapGuardTimerRef.current) {
+          window.clearTimeout(tapGuardTimerRef.current);
+        }
+      },
+      []
+    );
+
     const lastPointerTypeRef = useRef('mouse');
     const longPressTimerRef = useRef<number | null>(null);
     const longPressRateRef = useRef<number | null>(null);
@@ -799,8 +826,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           lastTapRef.current = 0;
         } else {
           lastTapRef.current = now;
-          if (controlsVisible && !paused) setControlsVisible(false);
-          else revealControls();
+          if (controlsVisible && !paused) {
+            setControlsVisible(false);
+          } else {
+            if (!controlsVisible) guardRevealedControls();
+            revealControls();
+          }
         }
       } else if (e.button === 0) {
         togglePlay();
@@ -815,6 +846,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     // 中央按钮在倍速 / 设置菜单打开时收起（矮画面里会盖住菜单），
     // 双击快进 / 快退提示显示期间也收起（暂停时控制栏常驻，会和提示叠在一起）
     const centreVisible = showChrome && !menu && !seekRipple;
+    // 控制栏可见但暂不接收点击：刚被单击唤出（见 guardRevealedControls），或双击快进 /
+    // 快退提示显示期间（暂停时控制栏常驻，连点同侧的后几下不能被底栏截走）
+    const chromeLocked = tapGuard || !!seekRipple;
     const VolumeIcon =
       muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
     const loadingTitle =
@@ -829,7 +863,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       : 'flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-o-video-paper/[0.14]';
     const iconSize = compact ? 16 : 18;
 
-    // 设置菜单：一级放常用开关和分类入口，分类点进去是二级页（带返回）
+    // 设置菜单：一级放常用开关和分类入口，分类点进去是二级页（带返回）。
+    // 从二级页返回时，焦点回到刚才进入的那一行（见 PopoverMenu 的 pageKey）
+    const settingsReturnRef = useRef<string | null>(null);
     const renderSettingRow = (item: PlayerSettingItem) => {
       if (item.kind === 'toggle') {
         return (
@@ -854,6 +890,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           <MenuRow
             key={item.id}
             hasPopup
+            autoFocus={item.id === settingsReturnRef.current}
             onClick={() => setSettingsPage(item.id)}
             trailing={
               <>
@@ -887,7 +924,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         <>
           <button
             type='button'
-            onClick={() => setSettingsPage(null)}
+            role='menuitem'
+            data-autofocus
+            onClick={() => {
+              settingsReturnRef.current = group.id;
+              setSettingsPage(null);
+            }}
             aria-label={`${t.back} · ${group.label}`}
             className='mb-1 flex w-full items-center gap-1.5 rounded-[14px] border-b border-o-video-paper/[0.12] px-2 pb-2.5 pt-2 text-left text-sm font-bold transition-colors hover:bg-o-video-paper/[0.12]'
           >
@@ -899,16 +941,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       );
     };
 
-    // 中央的快退 / 快进键：控制栏隐藏时单击画面会立刻唤出它们，双击侧边的第二下常常正好
-    // 落在刚出现的按钮上（手机上按钮基本都在左 / 右三分之一里）。这一下按双击处理，
-    // 和双击空白处一样显示提示、可继续连点，而不是一次没有反馈的普通跳转
-    const centreSeek = (dir: -1 | 1) => {
-      if (Date.now() - lastTapRef.current < DOUBLE_TAP_MS) {
-        lastTapRef.current = 0;
-        tapSeek(dir);
-      } else {
-        seekBy(dir * SEEK_STEP);
-      }
+    // 中央播放键占着画面正中：暂停时（控制栏常驻）双击中间，两下都会落在它上面，
+    // 播放又立刻暂停。DOUBLE_TAP_MS 内的第二下按“双击中间 = 切换一次”处理，忽略掉
+    const lastCentrePlayRef = useRef(0);
+    const centreTogglePlay = () => {
+      const now = Date.now();
+      if (now - lastCentrePlayRef.current < DOUBLE_TAP_MS) return;
+      lastCentrePlayRef.current = now;
+      togglePlay();
     };
 
     // 快退 10 秒 / 播放暂停 / 快进 10 秒：鼠标设备在底部控制栏，触屏在画面中央
@@ -933,15 +973,15 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           <button
             type='button'
             className={sideBtn}
-            onClick={() => (center ? centreSeek(-1) : seekBy(-SEEK_STEP))}
-            title={t.seekBackward}
-            aria-label={t.seekBackward}
+            onClick={() => seekBy(-SEEK_STEP)}
+            title={t.seekBackward(SEEK_STEP)}
+            aria-label={t.seekBackward(SEEK_STEP)}
           >
             <SeekIcon dir={-1} size={seekIconSize} />
           </button>
           <button
             type='button'
-            onClick={togglePlay}
+            onClick={center ? centreTogglePlay : togglePlay}
             title={paused ? t.play : t.pause}
             aria-label={paused ? t.play : t.pause}
             className={`flex flex-none items-center justify-center rounded-full bg-o-accent text-o-video-paper transition-colors hover:bg-o-accent-600 ${playSize}`}
@@ -970,9 +1010,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           <button
             type='button'
             className={sideBtn}
-            onClick={() => (center ? centreSeek(1) : seekBy(SEEK_STEP))}
-            title={t.seekForward}
-            aria-label={t.seekForward}
+            onClick={() => seekBy(SEEK_STEP)}
+            title={t.seekForward(SEEK_STEP)}
+            aria-label={t.seekForward(SEEK_STEP)}
           >
             <SeekIcon dir={1} size={seekIconSize} />
           </button>
@@ -1070,7 +1110,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   strokeWidth={2.75}
                 />
               )}
-              {t.seekSeconds(seekRipple.total)}
+              {t.seekSeconds(Math.round(seekRipple.total))}
             </div>
           </div>
         )}
@@ -1183,7 +1223,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           >
             <div
               className={`flex items-center ${compact ? 'gap-8' : 'gap-12'} ${
-                centreVisible ? 'pointer-events-auto' : 'pointer-events-none'
+                centreVisible && !chromeLocked
+                  ? 'pointer-events-auto'
+                  : 'pointer-events-none'
               }`}
             >
               {renderTransport('center')}
@@ -1193,22 +1235,26 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         {/* 底部控制栏 */}
         <div
-          className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-o-video-ink/[0.88] to-transparent transition-opacity duration-300 ${
+          // 渐变背景和上方留白只是装饰，不接收点击（交给画面：单击 / 双击照常），
+          // 只有里面的进度条和按钮可点
+          className={`pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-o-video-ink/[0.88] to-transparent transition-opacity duration-300 ${
             compact ? 'px-3 pb-2 pt-10' : 'px-6 pb-[18px] pt-[72px]'
-          } ${showChrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-          onPointerEnter={() => {
-            pointerOverControlsRef.current = true;
-          }}
-          onPointerLeave={() => {
-            pointerOverControlsRef.current = false;
-          }}
+          } ${showChrome ? 'opacity-100' : 'opacity-0'}`}
         >
           <div
             className={
               isLoading || phase === 'error'
                 ? 'pointer-events-none opacity-40'
+                : showChrome && !chromeLocked
+                ? 'pointer-events-auto'
                 : ''
             }
+            onPointerEnter={() => {
+              pointerOverControlsRef.current = true;
+            }}
+            onPointerLeave={() => {
+              pointerOverControlsRef.current = false;
+            }}
           >
             <PlayerTimeline
               currentTime={currentTime}
@@ -1355,7 +1401,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                   <Settings2 size={iconSize} strokeWidth={2.75} />
                 </button>
                 {menu === 'settings' && (
-                  <PopoverMenu wide boundsRef={containerRef}>
+                  <PopoverMenu
+                    wide
+                    boundsRef={containerRef}
+                    pageKey={settingsPage}
+                  >
                     {renderSettings()}
                   </PopoverMenu>
                 )}
@@ -1573,9 +1623,16 @@ function PopoverMenu({
   children,
   wide = false,
   boundsRef,
+  pageKey,
 }: {
   children: ReactNode;
   wide?: boolean;
+  /**
+   * 多级菜单的当前页。换页时同一个滚动容器换了内容：回到顶部（否则二级页沿用一级的
+   * 滚动位置，顶部的返回行可能看不到），并把焦点移到新页的 data-autofocus 元素
+   * （点击的行已被卸载，键盘用户的焦点会掉到 body 上）
+   */
+  pageKey?: string | null;
   /**
    * 播放器容器。它是 overflow-hidden 的，手机竖屏时只有两百多像素高：
    * 菜单按播放器内实际可用高度限高，超出部分在菜单内滚动，而不是被播放器裁掉
@@ -1585,23 +1642,41 @@ function PopoverMenu({
   const ref = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState<number>();
 
-  useLayoutEffect(() => {
+  const measure = useCallback(() => {
     const menu = ref.current;
     const bounds = boundsRef.current;
     if (!menu || !bounds) return;
-    const measure = () => {
-      const available =
-        menu.getBoundingClientRect().bottom -
-        bounds.getBoundingClientRect().top -
-        MENU_TOP_GAP;
-      setMaxHeight(Math.max(96, Math.min(MENU_MAX_HEIGHT, available)));
-    };
+    const available =
+      menu.getBoundingClientRect().bottom -
+      bounds.getBoundingClientRect().top -
+      MENU_TOP_GAP;
+    setMaxHeight(Math.max(96, Math.min(MENU_MAX_HEIGHT, available)));
+  }, [boundsRef]);
+
+  useLayoutEffect(() => {
+    const bounds = boundsRef.current;
+    if (!bounds) return;
     measure();
     // 旋转屏幕、进出全屏时播放器尺寸会变
     const ro = new ResizeObserver(measure);
     ro.observe(bounds);
     return () => ro.disconnect();
-  }, [boundsRef]);
+  }, [boundsRef, measure]);
+
+  const firstPage = useRef(true);
+  useLayoutEffect(() => {
+    if (firstPage.current) {
+      firstPage.current = false;
+      return;
+    }
+    const menu = ref.current;
+    if (!menu) return;
+    menu.scrollTop = 0;
+    const target =
+      menu.querySelector<HTMLElement>('[data-autofocus]') ||
+      menu.querySelector<HTMLElement>('button');
+    target?.focus({ preventScroll: true });
+  }, [pageKey]);
 
   return (
     <div
@@ -1612,6 +1687,8 @@ function PopoverMenu({
         wide ? 'w-64' : 'w-28'
       }`}
       onPointerUp={(e) => e.stopPropagation()}
+      // 弹出动画的起始帧带 translateY，首次测量的底边偏低几像素：动画结束后再量一次
+      onAnimationEnd={measure}
     >
       {children}
     </div>
@@ -1626,6 +1703,7 @@ function MenuRow({
   role = 'menuitem',
   checked,
   hasPopup = false,
+  autoFocus = false,
 }: {
   children: ReactNode;
   onClick: () => void;
@@ -1635,6 +1713,8 @@ function MenuRow({
   checked?: boolean;
   /** 点开进入二级菜单 */
   hasPopup?: boolean;
+  /** 菜单换页后获得焦点（见 PopoverMenu 的 pageKey） */
+  autoFocus?: boolean;
 }) {
   return (
     <button
@@ -1642,6 +1722,7 @@ function MenuRow({
       role={role}
       aria-checked={role === 'menuitemcheckbox' ? checked : undefined}
       aria-haspopup={hasPopup ? 'menu' : undefined}
+      data-autofocus={autoFocus || undefined}
       onClick={onClick}
       className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-sm font-semibold transition-colors ${
         active

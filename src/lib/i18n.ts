@@ -33,8 +33,8 @@ const zh = {
   // 播放器
   play: '播放',
   pause: '暂停',
-  seekBackward: '后退 10 秒',
-  seekForward: '快进 10 秒',
+  seekBackward: (n: number) => `后退 ${n} 秒`,
+  seekForward: (n: number) => `快进 ${n} 秒`,
   seekSeconds: (n: number) => `${n} 秒`,
   nextEpisode: '下一集',
   volume: '音量',
@@ -248,8 +248,8 @@ const en: Messages = {
 
   play: 'Play',
   pause: 'Pause',
-  seekBackward: 'Back 10 seconds',
-  seekForward: 'Forward 10 seconds',
+  seekBackward: (n) => `Back ${n} seconds`,
+  seekForward: (n) => `Forward ${n} seconds`,
   seekSeconds: (n) => `${n} seconds`,
   nextEpisode: 'Next episode',
   volume: 'Volume',

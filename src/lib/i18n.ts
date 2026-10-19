@@ -51,6 +51,8 @@ const zh = {
   noticeSpeed: (n: number) => `${n}× 倍速`,
   noticeFastForward: '快进中 3×',
   noticeSkippedIntro: (t: string) => `已跳过片头 (${t})`,
+  noticeAdsRemoved: (n: number, seconds: number) =>
+    `已去除 ${n} 段广告（${seconds} 秒）`,
   noticeSkippedOutro: (t: string) => `已跳过片尾 (${t})`,
   noticeIntroSet: (t: string) => `片头设为 ${t}`,
   noticeOutroSet: (t: string) => `片尾设为 -${t}`,
@@ -264,6 +266,8 @@ const en: Messages = {
   noticeSpeed: (n) => `${n}× speed`,
   noticeFastForward: 'Fast-forward 3×',
   noticeSkippedIntro: (t) => `Skipped intro (${t})`,
+  noticeAdsRemoved: (n, seconds) =>
+    `Removed ${n} ad break${n === 1 ? '' : 's'} (${seconds}s)`,
   noticeSkippedOutro: (t) => `Skipped outro (${t})`,
   noticeIntroSet: (t) => `Intro ends at ${t}`,
   noticeOutroSet: (t) => `Outro starts at -${t}`,

@@ -12,17 +12,25 @@ import {
 import { filterAdsFromM3U8, formatClock, isHlsUrl } from '@/lib/player/engine';
 
 describe('player engine helpers', () => {
-  it('removes discontinuity markers used by ad splices', () => {
+  it('removes ad segments, not just the discontinuity markers (rules in adFilter.test.ts)', () => {
+    const content = (from: number) =>
+      Array.from({ length: 10 }, (_, i) => [
+        '#EXTINF:4,',
+        `${String(from + i).padStart(4, '0')}.ts`,
+      ]).flat();
     const m3u8 = [
       '#EXTM3U',
-      '#EXTINF:4,',
-      'a.ts',
+      ...content(0),
       '#EXT-X-DISCONTINUITY',
       '#EXTINF:4,',
-      'ad.ts',
+      'https://ad.example.com/x/ad.ts',
+      '#EXT-X-DISCONTINUITY',
+      ...content(10),
     ].join('\n');
-    expect(filterAdsFromM3U8(m3u8)).not.toContain('DISCONTINUITY');
-    expect(filterAdsFromM3U8(m3u8)).toContain('ad.ts');
+    const out = filterAdsFromM3U8(m3u8, 'https://v.example.com/hls/index.m3u8');
+    expect(out).not.toContain('ad.ts');
+    // 正片两段之间的标记保留
+    expect(out.match(/#EXT-X-DISCONTINUITY/g)).toHaveLength(1);
     expect(filterAdsFromM3U8('')).toBe('');
   });
 

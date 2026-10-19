@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Regenerate the local HLS fixtures used by the e2e / perf harness.
 # Produces a 720p and 1080p VOD HLS ladder with a master playlist, so the
-# cheap measurement primitive has a real RESOLUTION= attribute to parse.
+# cheap measurement primitive has a real RESOLUTION= attribute to parse, plus
+# two short "ad" clips that test_ad_filter.py splices into the playlists.
 #
 #   bash tests/e2e/make-media.sh             # H.264 + AAC in MPEG-TS (default)
 #   CODEC=vp9 bash tests/e2e/make-media.sh   # VP9 + Opus in fMP4
@@ -51,8 +52,28 @@ gen_variant() {
   echo "  generated $dir"
 }
 
+# Ad clips for test_ad_filter.py: 6 s of solid red (easy to spot in a frame) with
+# a 1 kHz tone, in their own directory like ads injected by CMS sources.
+#   ads/     timestamps start from zero, like a separately encoded clip
+#   adsfar/  timestamps 5000 s away, like a clip cut from an unrelated stream
+gen_ad() {
+  local dir="$OUT/$1" offset=$2
+  mkdir -p "$dir"
+  ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i "color=c=red:size=1280x720:rate=25:duration=6" \
+    -f lavfi -i "sine=frequency=1000:duration=6" \
+    "${VIDEO[@]}" -pix_fmt yuv420p -g 50 -b:v 600k \
+    "${AUDIO[@]}" -b:a 96k -ac 2 -output_ts_offset "$offset" \
+    -f hls -hls_time 2 -hls_playlist_type vod "${SEGMENTS[@]}" \
+    -hls_segment_filename "$dir/ad_%03d.$SEG_EXT" \
+    "$dir/ad.m3u8"
+  echo "  generated $dir"
+}
+
 echo "Generating $CODEC HLS fixtures in $OUT ..."
-rm -rf "$OUT/720p" "$OUT/1080p"
+rm -rf "$OUT/720p" "$OUT/1080p" "$OUT/ads" "$OUT/adsfar"
 gen_variant 1280 720 1200k 720p
 gen_variant 1920 1080 3000k 1080p
+gen_ad ads 0
+gen_ad adsfar 5000
 echo "Done."

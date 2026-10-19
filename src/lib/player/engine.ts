@@ -11,6 +11,8 @@
  * - 每次 attach 都带一个 generation，回调通过 isCurrent() 丢弃过期事件。
  */
 
+import { removeAdsFromM3U8, RemovedAdGroup } from './adFilter';
+
 export type HlsModule = typeof import('hls.js').default;
 type HlsInstance = InstanceType<HlsModule>;
 
@@ -22,6 +24,8 @@ export interface AttachOptions {
   onManifestLoaded?: () => void;
   onRecoverableError?: () => void;
   onFatalError?: (detail: string) => void;
+  /** 去广告删掉了插播广告时调用（每路流最多一次） */
+  onAdsRemoved?: (removed: RemovedAdGroup[]) => void;
   /** 预览缩略图用的轻量配置 */
   lightweight?: boolean;
   /**
@@ -45,20 +49,22 @@ export interface AttachedStream {
   hls: HlsInstance | null;
 }
 
-/** 去广告：去掉 #EXT-X-DISCONTINUITY 标记（与原实现一致） */
-export function filterAdsFromM3U8(m3u8Content: string): string {
-  if (!m3u8Content) return '';
-  return m3u8Content
-    .split('\n')
-    .filter((line) => !line.includes('#EXT-X-DISCONTINUITY'))
-    .join('\n');
+/** 去广告：删掉播放列表里的插播广告切片，规则见 ./adFilter.ts */
+export function filterAdsFromM3U8(
+  m3u8Content: string,
+  baseUrl?: string
+): string {
+  return removeAdsFromM3U8(m3u8Content || '', baseUrl).playlist;
 }
 
 export function isHlsUrl(url: string): boolean {
   return /\.m3u8($|[?#])/i.test(url) || /m3u8/i.test(url);
 }
 
-function createAdFilterLoader(Hls: HlsModule) {
+function createAdFilterLoader(
+  Hls: HlsModule,
+  onRemoved: (removed: RemovedAdGroup[]) => void
+) {
   const Base = Hls.DefaultConfig.loader as any;
   return class AdFilterLoader extends Base {
     constructor(config: any) {
@@ -74,7 +80,12 @@ function createAdFilterLoader(Hls: HlsModule) {
             networkDetails: any
           ) => {
             if (response.data && typeof response.data === 'string') {
-              response.data = filterAdsFromM3U8(response.data);
+              const result = removeAdsFromM3U8(
+                response.data,
+                response.url || context.url
+              );
+              response.data = result.playlist;
+              if (result.removed.length) onRemoved(result.removed);
             }
             return onSuccess(response, stats, ctx, networkDetails);
           };
@@ -97,6 +108,7 @@ export function attachStream(
   video.disableRemotePlayback = false;
 
   if (isHlsUrl(url) && Hls && Hls.isSupported()) {
+    let adsReported = false;
     const hls: HlsInstance = new Hls({
       debug: false,
       enableWorker: true,
@@ -110,7 +122,12 @@ export function attachStream(
       playlistLoadPolicy: loadPolicy(10000),
       fragLoadPolicy: loadPolicy(15000),
       loader: opts.blockAd
-        ? (createAdFilterLoader(Hls) as any)
+        ? (createAdFilterLoader(Hls, (removed) => {
+            // 切换清晰度会重新加载播放列表，只报告一次
+            if (adsReported || !isCurrent()) return;
+            adsReported = true;
+            opts.onAdsRemoved?.(removed);
+          }) as any)
         : Hls.DefaultConfig.loader,
     });
 

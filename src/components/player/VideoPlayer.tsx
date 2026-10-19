@@ -401,6 +401,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       setAutoplayBlocked(false);
 
       let resumeApplied = resume <= 0;
+      let adNotice: string | null = null;
 
       const stream: AttachedStream = attachStream(video, src, {
         Hls,
@@ -414,6 +415,14 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           setPhase('error');
           propsRef.current.onError?.();
         },
+        // 播放列表在加载阶段就处理完了，等画面出来再提示，否则提示会被加载卡片挡住
+        onAdsRemoved: (removed) => {
+          adNotice = t.noticeAdsRemoved(
+            removed.length,
+            Math.round(removed.reduce((sum, r) => sum + r.seconds, 0))
+          );
+          if (phaseRef.current === 'ready') showNotice(adNotice);
+        },
       });
 
       const tryBecomeReady = () => {
@@ -421,6 +430,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         if (!resumeApplied || video.seeking || video.readyState < 3) return;
         setPhase('ready');
         setHasFrozenFrame(false);
+        if (adNotice) showNotice(adNotice);
         setCurrentTime(video.currentTime);
         setDuration(video.duration || 0);
         video

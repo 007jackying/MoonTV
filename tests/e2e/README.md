@@ -22,6 +22,7 @@ proxy does not fail a test (see _Console errors_ below).
 | `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                                        |
 | `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                                                 |
 | `test_play_details.py`    | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                                         |
+| `test_ad_filter.py`       | Playwright/pytest suite for 去广告: splices the red ad clips into the mock playlist (pre-roll / mid-roll, own or unrelated timestamps) with request routing and samples frames to prove the ad never reaches the screen. Runs on H.264/TS (closest to real sources) or VP9/fMP4 fixtures.                                                                       |
 | `test_player_controls.py` | Playwright/pytest suite (78 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons (mouse), YouTube-style double-tap seeking (touch), the centre play / pause, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
 | `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                                            |
 | `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                                             |
@@ -410,6 +411,46 @@ pause in `_park`, then hidden: right after a double-tap seek they are still
 hidden, so waiting only for "hidden" can pass before they fade back in.
 
 Screenshots: `shots/player-controls-<viewport>-{bar,settings,settings-skip,ripple-forward,ripple-back,ripple-chain,hidden,after-double-tap,fullscreen,fit,settings-level2-top}.png`.
+
+### Ad filter suite
+
+```bash
+bash tests/e2e/make-media.sh                 # fixtures + the ad clips
+node tests/e2e/serve.mjs --build
+python -m pytest tests/e2e/test_ad_filter.py -v
+```
+
+`make-media.sh` also writes two 6 s solid-red ad clips with a 1 kHz tone:
+`media/ads/` (timestamps from zero, like a separately encoded clip) and
+`media/adsfar/` (timestamps 5000 s away, like a clip cut from another stream).
+Each test intercepts `/media/720p/v0.m3u8` with `page.route` and splices two
+ad segments (4 s) into the real playlist between `#EXT-X-DISCONTINUITY` tags,
+before the episode or after its third segment. Only two segments, because a
+6 s ad is exactly a third of the 12 s fixture and the filter refuses to remove
+more than a third. An init script draws the `<video>` into a canvas every
+100 ms and counts frames that are red at five points, and a
+`MutationObserver` records the 「已去除 N 段广告」 notice. The suite asserts
+
+- pre-roll and mid-roll: no red frame, playback from 0 to the end, the
+  timeline (read while loading, so from the playlist) is the episode's 12 s,
+  and the notice reads 「已去除 1 段广告（4 秒）」;
+- an ad with unrelated timestamps, pre-roll or mid-roll, does not freeze
+  playback (the old filter left a 5000 s gap and the episode never ended);
+- resuming from 继续观看 at 7 s, just after the splice, plays the episode;
+- control: with 去广告 off the ad is on screen (≥ 10 red samples) and the
+  timeline is 16 s, so the zero counts above are not a blind spot.
+
+Against the old filter (which only deleted the tags) the first four fail:
+mid-roll with the timeline at 16 s, pre-roll with the ad on screen as well,
+and both unrelated-timestamp cases by freezing. The resume test and the
+control pass there too; resume is a guard, not a regression test.
+
+**Prefer H.264.** Real sources are H.264 in MPEG-TS, and hls.js handles
+timestamps differently for TS (it remuxes) and fMP4 (it passes through), so
+the default H.264 fixtures are the realistic run. Open-source Chromium
+(Playwright's bundled build) has no H.264; use Chrome or Chrome for Testing
+via `E2E_CHROMIUM`. The suite also passes on `CODEC=vp9` fixtures, where the
+splice adds the ad's and the episode's fMP4 `#EXT-X-MAP` lines.
 
 ### Console errors
 

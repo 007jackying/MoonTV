@@ -6,6 +6,101 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-19 — 去广告 removes ad segments instead of discontinuity tags (3.14.0)
+
+Branch: `feat/ad-segment-removal`. Asked by the owner: "check how 去广告
+works", then "implement proper ad removal with tests".
+
+### What the old filter did, measured
+
+`filterAdsFromM3U8` deleted every `#EXT-X-DISCONTINUITY` line and nothing
+else; its unit test even asserted the ad segment survived. To see what that
+does to playback, an 8 s solid-red "ad" was spliced into a 24 s H.264 / TS
+episode whose six 4 s segments are each a different colour, played with the
+app's hls.js 1.6.11 in Chrome for Testing (the sandbox Chromium has no
+H.264), sampling the picture every 200 ms:
+
+| Ad                           | 去广告 off     | 去广告 on (old)                                   |
+| ---------------------------- | -------------- | ------------------------------------------------- |
+| mid-roll, own timestamps     | S0 S1 AD S2–S5 | S0–S5: ad gone, by accident                       |
+| pre-roll, own timestamps     | AD S0–S5       | AD S2–S5: ad plays, first 8 s of the episode lost |
+| mid-roll, timestamps +5000 s | S0 S1 AD S2–S5 | AD, S2–S3 skipped, then frozen                    |
+| pre-roll, timestamps +5000 s | AD S0–S5       | stuck on the ad                                   |
+
+Without the tag hls.js places the ad at its own timestamps. A mid-roll ad
+from 0 lands on time already played, so it is never shown; a pre-roll ad
+does the same to the episode's first segments; an ad 5000 s away leaves a
+gap playback cannot cross. The playlist also kept counting the ad, so the
+seek bar showed the episode plus the ad until the stream finished loading.
+In a standalone page, resuming with hls.js `startPosition` also landed 8 s
+early; the app seeks after loading from 0 instead, and the e2e run showed
+the app was not affected, so that is not claimed as fixed.
+
+### What changed
+
+- `src/lib/player/adFilter.ts` (`removeAdsFromM3U8`): groups segments by
+  `#EXT-X-DISCONTINUITY`; a group of at most 120 s is an ad if it matches a
+  known fingerprint, sits outside the episode's directory, has a different
+  naming pattern, fits none of the episode's frame grids, or breaks its
+  segment numbering. Ad groups are dropped (their KEY / MAP / BYTERANGE
+  lines kept, since they still apply to what follows); tags between the
+  remaining groups stay. Nothing removed → the playlist is returned as is,
+  tags included. Removals above a third of the duration → returned as is.
+- `engine.ts`: the loader passes the playlist URL for resolving relative
+  segment URIs and reports removals once per stream (`onAdsRemoved`);
+  `VideoPlayer` shows 「已去除 N 段广告（M 秒）」 once the first frame is up.
+
+### Decisions
+
+- **Rules and data from Chongjian528/MoonTV#2/#3 (MIT).** That fork hit
+  the same problem on real sources and found, by frame sampling, that 非凡
+  (ffzy) names segments with random hashes and puts a discontinuity about
+  every 20 s in the episode itself, so naming and "short group" rules fail
+  there; the signal is frame rate (episode 25 fps, durations multiples of
+  0.04; ads 30 fps, 5.567 / 3.333 …). Its known-ad fingerprints (非凡, 电影天堂,
+  如意, 量子, iKun, 魔都) and the real ffzy duration list are reused, credited
+  in the source and the tests. The sources are not reachable from this
+  sandbox, so this is the only real-source data available.
+- **Keep the tags between content groups.** The fork still strips all tags
+  on the hls.js path; the measurements above show that is what loses
+  content and freezes playback when a group's timestamps restart.
+- **Frame-rate rule only when the group fits none of the episode's grids.**
+  Episodes with whole-second segments fit 25, 30 and 24 fps at once; the
+  fork flags a group off any one of them, which would remove 30 fps content
+  from such an episode. Covered by a unit test.
+- **No name-length rule.** Unpadded numbering ("999.ts" → "1000.ts")
+  changes length mid-episode; the pattern rule (digits → `#`) covers the
+  real "different prefix" case.
+- **Paths, not hosts.** Some sources rotate segments across CDN hosts.
+- **Cap at a third.** If the rules would remove more, they do not fit that
+  source; better an ad than a missing scene.
+- **Downloads untouched.** `m3u8-downloader.ts` still saves ads; separate
+  change if wanted.
+
+### Checks run
+
+- `pnpm test`: 127 / 127 (22 new in `adFilter.test.ts`; the old engine test
+  that pinned tag-stripping now checks the new behaviour).
+- `pnpm typecheck` clean; eslint / prettier clean on changed files.
+- `test_ad_filter.py`: 6 / 6 on H.264 / TS fixtures in Chrome for Testing
+  and 6 / 6 on VP9 / fMP4 fixtures in the bundled Chromium. Against the old
+  filter: 4 fail (timeline 16 s instead of 12 s; pre-roll ad on screen;
+  both unrelated-timestamp cases freeze), resume and the off-control pass.
+- `test_player_controls.py`, `test_play_perf.py`, `test_failover.py`: all
+  pass on the same build (113 with the ad suite); `test_play_details.py`
+  38 / 38; `run-av-filter.sh` 31 / 31.
+
+### Open / not done
+
+- Real sources were not reachable from the sandbox; detection on live
+  playlists rests on the fork's sampled data and the rules above. Worth a
+  check on a few real episodes, especially 非凡 and 量子.
+- New ads on sources whose ads share the episode's path, naming and frame
+  rate need a fingerprint added to `KNOWN_AD_FINGERPRINTS`.
+- Downloads still include ads.
+- Sandbox shortcuts, not committed: `mux.js` stubbed in `node_modules`;
+  Chrome for Testing for H.264.
+
 ## 2026-10-12 — User-facing changelog, no links to the code repository
 
 Requested by the owner: the in-app changelog is read by clients, so it must

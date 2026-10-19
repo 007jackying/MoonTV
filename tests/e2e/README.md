@@ -363,10 +363,10 @@ The suite asserts
 - the player has no 下一集 button, except in fullscreen (where the episode grid
   and the 下一集 card are out of reach), and pressing it switches episode
   without leaving fullscreen;
-- the settings menu: level 1 is exactly 去广告 / 弹幕 / 片头片尾 › / 弹幕设置 ›,
-  switches flip in place, each category opens a level-2 page with a
-  "返回 · <category>" header, the summaries follow the state (关 → 开), the
-  弹幕 switch and 显示弹幕 stay in sync, and reopening starts at level 1;
+- the settings menu: level 1 is exactly 去广告 / 片头片尾 ›, switches flip in
+  place, each category opens a level-2 page with a "返回 · <category>"
+  header, the summaries follow the state (关 → 开), and reopening starts at
+  level 1;
 - the menu lies entirely inside the player and every row can be scrolled
   into view inside it; on portrait phones the level-2 page is taller than
   the space and scrolls within the menu without scrolling the page; the

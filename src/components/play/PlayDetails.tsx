@@ -7,7 +7,6 @@ import {
   Download,
   ExternalLink,
   Heart,
-  MessageSquareText,
   MoreHorizontal,
   Search,
   SkipForward,
@@ -34,7 +33,6 @@ export interface PlayDetailsProps {
   onDownload: () => void;
   onToggleFavorite: () => void;
   onNext: () => void;
-  onOpenDanmaku: () => void;
   onWrongMatch: () => void;
 }
 
@@ -128,18 +126,16 @@ function useDoubanRating(doubanId: number): string | null {
   return rating?.id === doubanId ? rating.rate : null;
 }
 
-/** “更多”菜单：收藏、弹幕源、去搜索 */
+/** “更多”菜单：收藏、去搜索 */
 export function MoreMenu({
   favorited,
   onToggleFavorite,
-  onOpenDanmaku,
   onWrongMatch,
   trigger,
   align = 'left',
 }: {
   favorited: boolean;
   onToggleFavorite: () => void;
-  onOpenDanmaku: () => void;
   onWrongMatch: () => void;
   trigger: (props: {
     onClick: () => void;
@@ -203,11 +199,6 @@ export function MoreMenu({
             onToggleFavorite
           )}
           {item(
-            <MessageSquareText className='h-4 w-4' strokeWidth={2.75} />,
-            t.danmakuSource,
-            onOpenDanmaku
-          )}
-          {item(
             <Search className='h-4 w-4' strokeWidth={2.75} />,
             t.wrongMatch,
             onWrongMatch
@@ -258,7 +249,6 @@ export function PlayDetailsDesktop(props: PlayDetailsProps) {
           <MoreMenu
             favorited={props.favorited}
             onToggleFavorite={props.onToggleFavorite}
-            onOpenDanmaku={props.onOpenDanmaku}
             onWrongMatch={props.onWrongMatch}
             trigger={(p) => (
               <button

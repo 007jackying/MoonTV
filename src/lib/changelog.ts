@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '3.15.0',
+    date: '2026-10-19',
+    added: [
+      // 无新增内容
+    ],
+    changed: [
+      '移除弹幕功能: 弹幕已无法正常加载, 播放器设置菜单、「更多」菜单和设置面板里不再有弹幕相关选项',
+    ],
+    fixed: [
+      // 无修复内容
+    ],
+  },
+  {
     version: '3.14.0',
     date: '2026-10-19',
     added: [

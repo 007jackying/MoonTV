@@ -367,7 +367,6 @@ async function initConfig() {
             DoubanImageProxy: process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '',
             DisableYellowFilter:
               process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
-            DanmakuApiBaseUrl: process.env.NEXT_PUBLIC_DANMU_API_BASE_URL || '',
             TVBoxEnabled: false,
             TVBoxPassword: '',
           },
@@ -429,7 +428,6 @@ async function initConfig() {
         DoubanImageProxy: process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '',
         DisableYellowFilter:
           process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
-        DanmakuApiBaseUrl: process.env.NEXT_PUBLIC_DANMU_API_BASE_URL || '',
         TVBoxEnabled: false,
         TVBoxPassword: '',
       },
@@ -514,11 +512,6 @@ export async function getConfig(): Promise<AdminConfig> {
         ? adminConfig.SiteConfig.DisableYellowFilter
         : process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
 
-    // 弹幕接口配置：数据库优先，其次环境变量，最后使用默认值
-    adminConfig.SiteConfig.DanmakuApiBaseUrl =
-      adminConfig.SiteConfig.DanmakuApiBaseUrl ||
-      process.env.NEXT_PUBLIC_DANMU_API_BASE_URL ||
-      '';
     // TVBox 开关与密码默认值
     const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
     if (storageType === 'localstorage') {
@@ -825,7 +818,6 @@ export async function resetConfig() {
       DoubanImageProxy: process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '',
       DisableYellowFilter:
         process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
-      DanmakuApiBaseUrl: process.env.NEXT_PUBLIC_DANMU_API_BASE_URL || '',
       TVBoxEnabled: false,
       TVBoxPassword: '',
     },

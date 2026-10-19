@@ -6,6 +6,42 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-10-19 — 弹幕 removed (3.15.0)
+
+Branch: `claude/great-ptolemy-5gadcy`. Asked by the owner: "remove 弹幕
+feature, it is no longer working".
+
+Removed:
+
+- `src/lib/danmaku.client.ts` (danmu_api client: search / match / episode
+  lookup), `src/lib/player/danmaku.ts` (XML / JSON parsing), the
+  `DanmakuLayer` overlay and the `DanmakuSelector` dialog, plus the
+  `Danmaku*` types and i18n strings.
+- Play page: danmaku state, the auto-match effect and its retry loop, the
+  "loading danmaku" pill, the 弹幕源 entry in the 更多 menu. `VideoPlayer`
+  lost the `danmakuUrl` / `danmakuVisible` props.
+- Player settings menu: level 1 is now 去广告 / 片头片尾 ›. The two-level
+  structure (`kind: 'group'`) stays, since 片头片尾 still uses it.
+- Settings panel: 自动匹配弹幕, 弹幕自动尝试次数, 优先弹幕平台.
+- Admin 站点配置: 弹幕接口基础地址; `SiteConfig.DanmakuApiBaseUrl`, the
+  `NEXT_PUBLIC_DANMU_API_BASE_URL` env var and `RUNTIME_CONFIG.DANMU_API_BASE_URL`.
+  A stored config that still has `DanmakuApiBaseUrl` is harmless: nothing
+  reads it, and the next save of 站点配置 drops it.
+
+Left as is: the `danmakuVisible`, `autoDanmakuEnabled`,
+`danmakuRetryCount` and `preferredDanmakuPlatform` keys already in users'
+localStorage. Nothing reads them; clearing them is not worth the code.
+Old CHANGELOG entries that mention 弹幕 stay, they are history.
+
+Checks: `pnpm typecheck` clean; `pnpm test` 124 passed (the danmaku parsing
+tests went with the parser); `pnpm lint:strict` reports only the existing
+`no-constant-condition` error in `data_migration/import/route.ts`, which this
+change does not touch. E2E against a production build (VP9 fixtures):
+`test_player_controls.py` 78 passed (settings tests now expect the two-row
+level 1 and flip 去广告 instead of 弹幕), `test_play_details.py` 38 passed.
+
+---
+
 ## 2026-10-19 — 去广告 removes ad segments instead of discontinuity tags (3.14.0)
 
 Branch: `feat/ad-segment-removal`. Asked by the owner: "check how 去广告

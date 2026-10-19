@@ -77,7 +77,6 @@ export default async function RootLayout({
   let doubanImageProxy = process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '';
   let disableYellowFilter =
     process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
-  let danmakuApiBaseUrl = process.env.NEXT_PUBLIC_DANMU_API_BASE_URL || '';
   let autoUpdateEnabled = false;
   if (storageType !== 'localstorage') {
     const config = await getConfig();
@@ -89,8 +88,6 @@ export default async function RootLayout({
     doubanImageProxyType = config.SiteConfig.DoubanImageProxyType;
     doubanImageProxy = config.SiteConfig.DoubanImageProxy;
     disableYellowFilter = config.SiteConfig.DisableYellowFilter;
-    danmakuApiBaseUrl =
-      config.SiteConfig.DanmakuApiBaseUrl || danmakuApiBaseUrl;
     autoUpdateEnabled = config.SubscriptionConfig?.autoUpdate === true;
   }
 
@@ -103,7 +100,6 @@ export default async function RootLayout({
     DOUBAN_IMAGE_PROXY_TYPE: doubanImageProxyType,
     DOUBAN_IMAGE_PROXY: doubanImageProxy,
     DISABLE_YELLOW_FILTER: disableYellowFilter,
-    DANMU_API_BASE_URL: danmakuApiBaseUrl,
   };
 
   return (

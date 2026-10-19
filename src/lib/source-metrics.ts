@@ -490,7 +490,7 @@ export interface SuggestDecision {
  * Should we offer the user a different source?
  *
  * Deliberately *offer*, never auto-apply: switching mid-playback loses the play
- * position, re-triggers resume and invalidates danmaku.
+ * position and re-triggers resume.
  *
  * Two independent reasons qualify, so a genuinely higher-resolution source is
  * still offered when it is no faster — measuring only speed would mean never

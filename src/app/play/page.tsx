@@ -24,13 +24,6 @@ import {
 
 import { withAdultFilterParam } from '@/lib/adult-filter.client';
 import {
-  AnimeOption,
-  extractEpisodeNumber,
-  extractSeasonFromTitle,
-  getDanmakuBySelectedAnime,
-  matchAnime,
-} from '@/lib/danmaku.client';
-import {
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
@@ -58,8 +51,6 @@ import { SearchResult } from '@/lib/types';
 import { getRequestTimeout } from '@/lib/utils';
 
 import AddDownloadModal from '@/components/AddDownloadModal';
-import DanmakuSelector from '@/components/DanmakuSelector';
-import { triggerGlobalError } from '@/components/GlobalErrorIndicator';
 import { useI18n } from '@/components/LanguageProvider';
 import PageLayout from '@/components/PageLayout';
 import {
@@ -141,25 +132,6 @@ function PlayPageClient() {
     return true;
   });
 
-  // 弹幕
-  const [selectedDanmakuAnime, setSelectedDanmakuAnime] =
-    useState<AnimeOption | null>(null);
-  const [selectedDanmakuEpisode, setSelectedDanmakuEpisode] = useState<
-    number | undefined
-  >(undefined);
-  const [showDanmakuSelector, setShowDanmakuSelector] = useState(false);
-  const [isDanmakuLoading, setIsDanmakuLoading] = useState(false);
-  const [danmakuUrl, setDanmakuUrl] = useState<string | null>(null);
-  const [danmakuLabel, setDanmakuLabel] = useState('');
-  const [danmakuVisible, setDanmakuVisible] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    return localStorage.getItem('danmakuVisible') !== 'false';
-  });
-  const [selectedState, setSelectedState] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  // 自动匹配结果对应的集数，避免换集后短暂沿用上一集的匹配
-  const autoMatchEpisodeRef = useRef<number | null>(null);
-
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams.get('year') || '');
@@ -177,18 +149,6 @@ function PlayPageClient() {
 
   // 集数相关
   const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
-
-  // 自动匹配弹幕设置
-  const [autoDanmakuEnabled, setAutoDanmakuEnabled] = useState(false);
-  const [preferredDanmakuPlatform, setPreferredDanmakuPlatform] =
-    useState('bilibili1');
-
-  useEffect(() => {
-    const savedAuto = localStorage.getItem('autoDanmakuEnabled');
-    if (savedAuto !== null) setAutoDanmakuEnabled(JSON.parse(savedAuto));
-    const savedPlatform = localStorage.getItem('preferredDanmakuPlatform');
-    if (savedPlatform) setPreferredDanmakuPlatform(savedPlatform);
-  }, []);
 
   const currentSourceRef = useRef(currentSource);
   const currentIdRef = useRef(currentId);
@@ -674,138 +634,6 @@ function PlayPageClient() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // 弹幕
-  // ---------------------------------------------------------------------------
-
-  // 换集或换源时清空上一集的弹幕
-  useEffect(() => {
-    setDanmakuUrl(null);
-    setDanmakuLabel('');
-  }, [currentEpisodeIndex, currentSource, currentId]);
-
-  // 根据选中的弹幕番剧计算当前集的弹幕地址
-  useEffect(() => {
-    if (!selectedDanmakuAnime || !detail) return;
-    const currentEpisodeTitle = detail?.episodes_titles?.[currentEpisodeIndex];
-    if (!currentEpisodeTitle) return;
-
-    let matchedEpisode: any = null;
-    if (selectedDanmakuEpisode !== undefined && selectedState) {
-      // ① 用户手动选择某一集（优先级最高）
-      matchedEpisode =
-        selectedDanmakuAnime.episodes[selectedDanmakuEpisode - 1];
-      setSelectedState(false);
-    } else if (
-      autoDanmakuEnabled &&
-      autoMatchEpisodeRef.current === currentEpisodeIndex
-    ) {
-      // ② 自动匹配模式：匹配结果只包含当前集
-      matchedEpisode = selectedDanmakuAnime.episodes[0];
-    }
-    if (!matchedEpisode) return;
-
-    const episodeNumber =
-      selectedDanmakuAnime.episodes.indexOf(matchedEpisode) + 1;
-    (async () => {
-      try {
-        const url = await getDanmakuBySelectedAnime(
-          selectedDanmakuAnime,
-          episodeNumber,
-          'xml'
-        );
-        setDanmakuUrl(url);
-        setDanmakuLabel(matchedEpisode.episodeTitle);
-      } catch (e) {
-        console.error('获取弹幕 URL 失败:', e);
-      }
-    })();
-  }, [currentEpisodeIndex, selectedDanmakuAnime, selectedDanmakuEpisode]);
-
-  // 自动匹配弹幕
-  useEffect(() => {
-    if (!autoDanmakuEnabled || !detail) return;
-
-    abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    let retryCount = 3;
-    try {
-      const saved = localStorage.getItem('danmakuRetryCount');
-      if (saved !== null) {
-        const parsed = parseInt(saved, 10);
-        if (!isNaN(parsed)) retryCount = parsed;
-      }
-    } catch {
-      // ignore
-    }
-
-    let attempt = 0;
-    let success = false;
-
-    const fetchDanmaku = async () => {
-      setIsDanmakuLoading(true);
-      while (!success && (retryCount === -1 || attempt <= retryCount)) {
-        attempt++;
-        try {
-          const title = videoTitleRef.current;
-          const currentEpisodeTitle =
-            detailRef.current?.episodes_titles?.[currentEpisodeIndex];
-          if (!currentEpisodeTitle) {
-            throw new Error('无法获取当前集数标题（episodes_titles 无效）');
-          }
-          const epNum =
-            extractEpisodeNumber(currentEpisodeTitle) ||
-            currentEpisodeIndex + 1;
-          const platform = preferredDanmakuPlatform;
-          const season = extractSeasonFromTitle(title);
-          const fileName = `${title} S${season}E${epNum} @${platform}`;
-          const matches = await matchAnime(fileName, abortController.signal);
-          if (abortController.signal.aborted) return;
-          if (matches.length > 0) {
-            const m = matches[0];
-            autoMatchEpisodeRef.current = currentEpisodeIndex;
-            setSelectedDanmakuAnime({
-              animeId: m.animeId,
-              animeTitle: m.animeTitle,
-              type: m.type,
-              typeDescription: m.typeDescription,
-              episodeCount: 1,
-              episodes: [
-                { episodeId: m.episodeId, episodeTitle: m.episodeTitle },
-              ],
-            });
-            success = true;
-            break;
-          }
-          await new Promise((res) => setTimeout(res, 1500));
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          console.error(`自动弹幕匹配第${attempt}次失败:`, err);
-          await new Promise((res) => setTimeout(res, 1500));
-        }
-      }
-      if (!success && !abortController.signal.aborted) {
-        triggerGlobalError(tRef.current.autoDanmakuFailed);
-      }
-      if (!abortController.signal.aborted) setIsDanmakuLoading(false);
-    };
-    fetchDanmaku();
-
-    return () => {
-      abortControllerRef.current?.abort();
-      abortControllerRef.current = null;
-      setIsDanmakuLoading(false);
-    };
-  }, [
-    currentEpisodeIndex,
-    autoDanmakuEnabled,
-    preferredDanmakuPlatform,
-    detail?.source,
-    detail?.id,
-  ]);
-
-  // ---------------------------------------------------------------------------
   // 播放记录
   // ---------------------------------------------------------------------------
   const saveCurrentPlayProgress = async () => {
@@ -1011,7 +839,7 @@ function PlayPageClient() {
 
   /**
    * 后台测速：只在明显更优时才给建议，绝不自动换源。
-   * 自动切换会丢进度、重置续播、打断弹幕，所以默认路径是"提示"而不是"替换"。
+   * 自动切换会丢进度、重置续播，所以默认路径是"提示"而不是"替换"。
    */
   const suggestBetterSource = async (sources: SearchResult[]) => {
     // 当前源已经放不了时由自动换源接手，不再给"更好"的建议
@@ -1291,15 +1119,6 @@ function PlayPageClient() {
     }
   };
 
-  const toggleDanmaku = (v: boolean) => {
-    setDanmakuVisible(v);
-    try {
-      localStorage.setItem('danmakuVisible', String(v));
-    } catch {
-      // ignore
-    }
-  };
-
   // 播放器设置菜单：一级只放常用开关和分类入口，其余放进二级页，
   // 手机竖屏的矮画面里也能完整显示（超出时菜单内滚动）
   const playerSettings: PlayerSettingItem[] = [
@@ -1319,13 +1138,6 @@ function PlayPageClient() {
         setSwitchKind('initial');
         setBlockAdEnabled(v);
       },
-    },
-    {
-      kind: 'toggle',
-      id: 'danmaku',
-      label: t.danmaku,
-      checked: danmakuVisible,
-      onChange: toggleDanmaku,
     },
     {
       kind: 'group',
@@ -1387,28 +1199,6 @@ function PlayPageClient() {
               },
             ]
           : []),
-      ],
-    },
-    {
-      kind: 'group',
-      id: 'danmaku-settings',
-      label: t.danmakuSettings,
-      hint: danmakuLabel || t.notSelected,
-      items: [
-        {
-          kind: 'toggle',
-          id: 'danmaku-visible',
-          label: t.showDanmaku,
-          checked: danmakuVisible,
-          onChange: toggleDanmaku,
-        },
-        {
-          kind: 'action',
-          id: 'danmaku-source',
-          label: t.danmakuSource,
-          hint: danmakuLabel || t.notSelected,
-          onSelect: () => setShowDanmakuSelector(true),
-        },
       ],
     },
   ];
@@ -1547,7 +1337,6 @@ function PlayPageClient() {
     onDownload: () => setShowAddDownload(true),
     onToggleFavorite: handleToggleFavorite,
     onNext: handleNextEpisode,
-    onOpenDanmaku: () => setShowDanmakuSelector(true),
     onWrongMatch: goToSearch,
   };
 
@@ -1680,7 +1469,6 @@ function PlayPageClient() {
           align='right'
           favorited={favorited}
           onToggleFavorite={handleToggleFavorite}
-          onOpenDanmaku={() => setShowDanmakuSelector(true)}
           onWrongMatch={goToSearch}
           trigger={(p) => (
             <button
@@ -1770,37 +1558,7 @@ function PlayPageClient() {
                   : undefined
               }
               settings={playerSettings}
-              danmakuUrl={danmakuUrl}
-              danmakuVisible={danmakuVisible}
-            >
-              {isDanmakuLoading && (
-                <div className='pointer-events-none absolute inset-x-4 top-4 z-30 flex justify-center'>
-                  <div className='rounded-full bg-o-video-ink/85 px-4 py-2 text-[13px] font-semibold text-o-video-paper'>
-                    {t.autoDanmakuLoading}
-                  </div>
-                </div>
-              )}
-              {showDanmakuSelector && (
-                <DanmakuSelector
-                  videoTitle={videoTitle}
-                  isVisible={showDanmakuSelector}
-                  currentEpisode={currentEpisodeIndex + 1}
-                  currentEpisodeTitle={
-                    detail?.episodes_titles?.[currentEpisodeIndex]
-                  }
-                  onSelect={async (
-                    anime: AnimeOption,
-                    episodeNumber?: number
-                  ) => {
-                    setShowDanmakuSelector(false);
-                    setSelectedDanmakuAnime(anime);
-                    setSelectedDanmakuEpisode(episodeNumber);
-                    setSelectedState(true);
-                  }}
-                  onClose={() => setShowDanmakuSelector(false)}
-                />
-              )}
-            </VideoPlayer>
+            />
           </div>
 
           {/* 桌面侧栏：与播放器等高 */}

@@ -828,13 +828,13 @@ def test_next_episode_button_only_in_fullscreen(browser, name):
 # Settings menu: two levels, always fully reachable inside the player
 # ---------------------------------------------------------------------------
 #
-# Level 1 holds the everyday switches (去广告, 弹幕) and one row per category
-# (片头片尾 ›, 弹幕设置 ›) with a one-word summary; each category opens a level-2
-# page with a back header. The player is overflow-hidden and only ~220 px tall
+# Level 1 holds the everyday switch (去广告) and one row per category
+# (片头片尾 ›) with a one-word summary; each category opens a level-2 page
+# with a back header. The player is overflow-hidden and only ~220 px tall
 # on a portrait phone, so the menu is height-capped to the space above its
 # button inside the player and scrolls within itself when that is not enough.
 
-LEVEL1 = ["去广告", "弹幕", "片头片尾", "弹幕设置"]
+LEVEL1 = ["去广告", "片头片尾"]
 
 MENU_GEOMETRY = """() => {
     const menu = document.querySelector("[role='menu']");
@@ -910,12 +910,13 @@ def test_settings_menu_has_two_levels(browser, name):
         _shot(page, f"{name}-settings", settle_ms=250)
 
         # Level-1 switches flip in place and keep the menu open.
-        danmaku = menu.get_by_role("menuitemcheckbox", name="弹幕", exact=True)
-        before = danmaku.get_attribute("aria-checked")
-        _press(page, name, danmaku)
-        after = danmaku.get_attribute("aria-checked")
-        assert after != before
+        blockad = menu.get_by_role("menuitemcheckbox", name="去广告", exact=True)
+        before = blockad.get_attribute("aria-checked")
+        _press(page, name, blockad)
+        assert blockad.get_attribute("aria-checked") != before
         assert menu.is_visible()
+        _press(page, name, blockad)
+        assert blockad.get_attribute("aria-checked") == before
 
         # Category: 片头片尾 → level 2 with a back header.
         skip_row = menu.get_by_role("menuitem", name="片头片尾")
@@ -935,15 +936,8 @@ def test_settings_menu_has_two_levels(browser, name):
         assert _row_labels(menu) == LEVEL1
         assert "开" in menu.get_by_role("menuitem", name="片头片尾").inner_text()
 
-        # Category: 弹幕设置 → the same switch as level 1, plus the source.
-        _press(page, name, menu.get_by_role("menuitem", name="弹幕设置"))
-        assert _row_labels(menu) == ["显示弹幕", "弹幕源"]
-        show = menu.get_by_role("menuitemcheckbox", name="显示弹幕")
-        assert show.get_attribute("aria-checked") == after
-        _press(page, name, menu.get_by_role("menuitem", name="返回 · 弹幕设置"))
-
         # Closing and reopening always starts at level 1.
-        _press(page, name, menu.get_by_role("menuitem", name="弹幕设置"))
+        _press(page, name, menu.get_by_role("menuitem", name="片头片尾"))
         _press(page, name, _player(page).get_by_role("button", name="设置", exact=True))
         menu.wait_for(state="detached", timeout=3000)
         menu = _open_settings(page, name)
@@ -1020,15 +1014,15 @@ def test_settings_level_two_opens_at_the_top(browser, name):
         page.wait_for_timeout(400)  # pop-in animation
         g = page.evaluate(MENU_GEOMETRY)
         assert g["menuTop"] - g["playerTop"] >= 7.5, g
-        # Level 1 (four rows) fits on every supported viewport, so make the
+        # Level 1 (two rows) fits on every supported viewport, so make the
         # menu short enough to scroll: the case of a smaller or zoomed screen.
-        menu.evaluate("(m) => { m.style.maxHeight = '110px'; }")
+        menu.evaluate("(m) => { m.style.maxHeight = '60px'; }")
         menu.evaluate("(m) => { m.scrollTop = m.scrollHeight; }")
         scrolled = menu.evaluate("(m) => m.scrollTop")
-        _press(page, name, menu.get_by_role("menuitem", name="弹幕设置"))
+        _press(page, name, menu.get_by_role("menuitem", name="片头片尾"))
         page.wait_for_timeout(200)
         assert menu.evaluate("(m) => m.scrollTop") == 0, scrolled
-        back = menu.get_by_role("menuitem", name="返回 · 弹幕设置")
+        back = menu.get_by_role("menuitem", name="返回 · 片头片尾")
         r, g = back.bounding_box(), page.evaluate(MENU_GEOMETRY)
         assert r["y"] >= g["menuTop"] - 0.5, (r, g)
         assert scrolled > 0

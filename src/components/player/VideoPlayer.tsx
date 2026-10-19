@@ -45,7 +45,6 @@ import {
   teardownStream,
 } from '@/lib/player/engine';
 
-import DanmakuLayer from './DanmakuLayer';
 import PlayerTimeline from './PlayerTimeline';
 import { useThumbnailPreview } from './useThumbnailPreview';
 import { useI18n } from '../LanguageProvider';
@@ -123,9 +122,7 @@ interface VideoPlayerProps {
   /** 失败后正在自动处理：显示转圈 */
   errorBusy?: boolean;
   settings: PlayerSettingItem[];
-  danmakuUrl: string | null;
-  danmakuVisible: boolean;
-  /** 叠加在画面上的额外内容（弹幕选择器、提示等） */
+  /** 叠加在画面上的额外内容（提示等） */
   children?: ReactNode;
 }
 
@@ -166,8 +163,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       errorDetail,
       errorBusy = false,
       settings,
-      danmakuUrl,
-      danmakuVisible,
       children,
     } = props;
     const { t } = useI18n();
@@ -1070,15 +1065,6 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             className='absolute inset-0 h-full w-full object-cover opacity-60 blur-sm'
           />
         )}
-
-        {/* 弹幕 */}
-        <DanmakuLayer
-          videoRef={videoRef}
-          url={danmakuUrl}
-          visible={danmakuVisible}
-          active={phase === 'ready'}
-          compact={compact}
-        />
 
         {/* 点击层 */}
         <div

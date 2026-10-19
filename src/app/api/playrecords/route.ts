@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { proxyRecordCovers } from '@/lib/image-seal';
 import { PlayRecord } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -29,7 +30,9 @@ export async function GET(request: NextRequest) {
     }
 
     const records = await db.getAllPlayRecords(authInfo.username);
-    return NextResponse.json(records, { status: 200 });
+    return NextResponse.json(await proxyRecordCovers(records), {
+      status: 200,
+    });
   } catch (err) {
     console.error('获取播放记录失败', err);
     return NextResponse.json(

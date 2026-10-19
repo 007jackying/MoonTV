@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
+import { proxiedImageUrl } from '@/lib/image-seal';
 
 export const runtime = 'edge';
 
@@ -22,6 +23,26 @@ export async function GET() {
     }
 
     const data = await response.json();
+
+    // 封面换成本站 /api/img/ 地址。页面只用第一个可用的尺寸（large → grid），
+    // 只下发这一张，其余尺寸的令牌只会让响应变大
+    if (Array.isArray(data)) {
+      await Promise.all(
+        data.flatMap(
+          (day: {
+            items?: Array<{ images?: Record<string, string> | null }>;
+          }) =>
+            (day.items || []).map(async (item) => {
+              if (!item.images) return;
+              const { large, common, medium, small, grid } = item.images;
+              const best = large || common || medium || small || grid;
+              item.images = best
+                ? { large: await proxiedImageUrl(best) }
+                : null;
+            })
+        )
+      );
+    }
 
     const cacheTime = await getCacheTime();
     return NextResponse.json(data, {

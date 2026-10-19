@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+import { proxySealedImage, tokenFromProxiedUrl } from '@/lib/image-fetch';
+
 export const runtime = 'edge';
 
 // OrionTV 兼容接口
@@ -9,6 +11,12 @@ export async function GET(request: Request) {
 
   if (!imageUrl) {
     return NextResponse.json({ error: 'Missing image URL' }, { status: 400 });
+  }
+
+  // 海报已是本站 /api/img/<令牌> 地址（OrionTV 会再套一层 image-proxy）
+  const token = tokenFromProxiedUrl(imageUrl.replace(/^https?:\/\/[^/]+/i, ''));
+  if (token) {
+    return proxySealedImage(token);
   }
 
   try {

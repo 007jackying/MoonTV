@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getCacheTime } from '@/lib/config';
 import { fetchDoubanData, resolveDoubanProxy } from '@/lib/douban';
 import { parseDoubanEpisodes } from '@/lib/douban-episodes';
+import { proxyImageFields } from '@/lib/image-seal';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 interface DoubanCategoryApiResponse {
@@ -86,7 +87,7 @@ export async function GET(request: Request) {
     const response: DoubanResult = {
       code: 200,
       message: '获取成功',
-      list: list,
+      list: await proxyImageFields(list, 'poster'),
     };
 
     const cacheTime = await getCacheTime();

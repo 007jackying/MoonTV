@@ -496,6 +496,7 @@ services:
 | NEXT_PUBLIC_DISABLE_YELLOW_FILTER   | 关闭色情内容过滤                                   | true/false                       | false                                                                                                                      |
 | NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址（仅服务端使用，经 /api/danmaku 转发） | 接口地址                         | (空)                                                                                                                       |
 | DISABLE_DEVTOOLS_GUARD              | 关闭生产环境的开发者工具防护（排查问题时用）       | true / false                     | false                                                                                                                      |
+| IMAGE_PROXY_SECRET                  | 海报地址加密密钥（不填则使用 PASSWORD）            | 任意字符串                       | (空)                                                                                                                       |
 
 NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 
@@ -512,12 +513,17 @@ NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 
 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
 
-- direct：由浏览器直接请求豆瓣分配的默认图片域名
-- server：由服务器代理请求豆瓣分配的默认图片域名
-- img3：由浏览器请求豆瓣官方的精品 cdn（阿里云）
-- cmliussss-cdn-tencent：由浏览器请求豆瓣 CDN，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由腾讯云 cdn 提供加速
-- cmliussss-cdn-ali：由浏览器请求豆瓣 CDN，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由阿里云 cdn 提供加速
-- custom: 用户自定义 proxy，由 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY 定义
+所有海报（豆瓣、采集站、Bangumi）都经本站 `/api/img/<令牌>` 加载：令牌由服务器加密生成，浏览器看不到真实图片地址，下列选项只决定服务器去哪里取豆瓣图片：
+
+- direct / server：服务器直接请求豆瓣分配的默认图片域名
+- img3：服务器请求豆瓣官方的精品 cdn（阿里云）
+- cmliussss-cdn-tencent：服务器请求豆瓣 CDN，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由腾讯云 cdn 提供加速
+- cmliussss-cdn-ali：服务器请求豆瓣 CDN，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由阿里云 cdn 提供加速
+- custom: 自定义 proxy，由 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY 定义
+
+海报经服务器转发后，图片流量计入本站（每张图服务器先下载一次、再发给浏览器一次）。图片响应带一年期 `immutable` 缓存头，同一浏览器再次访问不会重复下载；前面套一层 CDN（如 Cloudflare）时，同一张海报只会回源一次。用 `tests/e2e/measure_bandwidth.py` 可以测量实际部署的页面流量。
+
+令牌密钥由 `IMAGE_PROXY_SECRET` 派生（未设置时使用 `PASSWORD`）；更换密钥后已保存的封面地址会失效，重新搜索 / 观看后恢复。
 
 ## 配置说明
 

@@ -1,4 +1,5 @@
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
+import { proxiedImageUrl, proxyImageFields } from '@/lib/image-seal';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 
@@ -83,6 +84,11 @@ function parseEpisodes(vod_play_url?: string, fallbackContent?: string): { episo
   return { episodes, titles };
 }
 
+/** 海报换成本站 /api/img/ 地址，采集站图片域名不暴露给客户端 */
+function sealPosters(results: SearchResult[]): Promise<SearchResult[]> {
+  return proxyImageFields(results, 'poster');
+}
+
 /** 映射 API 数据到 SearchResult */
 function mapItemToResult(item: ApiSearchItem, apiSite: ApiSite, apiName: string): SearchResult {
   const { episodes, titles } = parseEpisodes(item.vod_play_url, item.vod_content);
@@ -119,7 +125,7 @@ export async function* searchFromApiStream(
   if (!Array.isArray(data?.list)) return;
 
   // 第一页
-  yield data.list.map((item: ApiSearchItem) => mapItemToResult(item, apiSite, apiSite.name));
+  yield await sealPosters(data.list.map((item: ApiSearchItem) => mapItemToResult(item, apiSite, apiSite.name)));
 
   // 分页
   const { SiteConfig } = await getConfig();
@@ -149,7 +155,7 @@ export async function* searchFromApiStream(
           const results = pageData.list.map((item: ApiSearchItem) =>
             mapItemToResult(item, apiSite, apiSite.name)
           );
-          return { page, results };
+          return { page, results: await sealPosters(results) };
         })();
 
         pagePromises.push(promise);
@@ -178,7 +184,7 @@ export async function* searchFromApiStream(
           const results = pageData.list.map((item: ApiSearchItem) =>
             mapItemToResult(item, apiSite, apiSite.name)
           );
-          if (results.length > 0) yield results;
+          if (results.length > 0) yield await sealPosters(results);
         }
       }
     }
@@ -206,7 +212,7 @@ export async function getDetailFromApi(apiSite: ApiSite, id: string): Promise<Se
   return {
     id: id.toString(),
     title: video.vod_name,
-    poster: video.vod_pic,
+    poster: await proxiedImageUrl(video.vod_pic),
     episodes,
     episodes_titles: titles,
     source: apiSite.key,
@@ -262,7 +268,7 @@ async function handleSpecialSourceDetail(id: string, apiSite: ApiSite): Promise<
   return {
     id,
     title,
-    poster: cover,
+    poster: await proxiedImageUrl(cover),
     episodes: matches,
     episodes_titles,
     source: apiSite.key,

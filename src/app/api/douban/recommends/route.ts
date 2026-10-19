@@ -7,6 +7,7 @@ import { getCacheTime } from '@/lib/config';
 import { getConfig } from '@/lib/config';
 import { fetchDoubanData, resolveDoubanProxy } from '@/lib/douban';
 import { parseDoubanEpisodes } from '@/lib/douban-episodes';
+import { proxyImageFields, publicOrigin } from '@/lib/image-seal';
 import { DoubanResult } from '@/lib/types';
 
 interface DoubanRecommendApiResponse {
@@ -130,7 +131,12 @@ export async function GET(request: NextRequest) {
     const response: DoubanResult = {
       code: 200,
       message: '获取成功',
-      list: list,
+      // 未登录的调用方是 TVBox（经 /api/tvbox/categories），需要带域名的完整图片地址
+      list: await proxyImageFields(
+        list,
+        'poster',
+        auth?.username ? '' : publicOrigin(request)
+      ),
     };
 
     const cacheTime = await getCacheTime();

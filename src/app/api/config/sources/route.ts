@@ -3,7 +3,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import {
+  getAvailableApiSites,
+  getCacheTime,
+  toPublicApiSites,
+} from '@/lib/config';
 
 export const runtime = 'edge';
 
@@ -13,7 +17,8 @@ export async function GET(request: NextRequest) {
     const username = auth?.username;
     const sites = await getAvailableApiSites(username);
     const cacheTime = await getCacheTime();
-    return NextResponse.json(sites, {
+    // 采集站地址只在服务端使用，不下发给浏览器
+    return NextResponse.json(toPublicApiSites(sites), {
       headers: {
         'Cache-Control': `public, max-age=${cacheTime}, s-maxage=0`,
       },

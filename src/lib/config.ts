@@ -912,6 +912,17 @@ export async function getAvailableApiSites(
   return filtered.map(toApiSite);
 }
 
+/** 返回给浏览器 / 客户端 App 的源信息：去掉采集站真实地址，只保留 key、名称等展示字段 */
+export interface PublicApiSite {
+  key: string;
+  name: string;
+  is_adult?: boolean;
+}
+
+export function toPublicApiSites(sites: ApiSite[]): PublicApiSite[] {
+  return sites.map(({ key, name, is_adult }) => ({ key, name, is_adult }));
+}
+
 /**
  * 搜索 / 加载类接口取采集源的**统一入口**：先按用户分组与 disabled 过滤，
  * 再按请求上的 `filterAdult` 参数决定是否剔除 AV 源。

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import {
+  getAvailableApiSites,
+  getCacheTime,
+  toPublicApiSites,
+} from '@/lib/config';
 
 export const runtime = 'edge';
 
@@ -13,7 +17,8 @@ export async function GET(request: NextRequest) {
     const apiSites = await getAvailableApiSites(username);
     const cacheTime = await getCacheTime();
 
-    return NextResponse.json(apiSites, {
+    // 采集站地址只在服务端使用，客户端用 key 调 /api/search/one 等接口
+    return NextResponse.json(toPublicApiSites(apiSites), {
       headers: {
         'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
         'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,

@@ -19,11 +19,10 @@ export async function getCustomCategories(): Promise<{
   }));
 }
 
+/** 服务端只下发 key / 名称，采集站真实地址不会出现在浏览器里 */
 export interface ApiSite {
   key: string;
   name: string;
-  api: string;
-  detail?: string;
   is_adult?: boolean;
 }
 
@@ -47,8 +46,6 @@ export async function fetchApiSites(): Promise<ApiSite[]> {
     return data.map((site: any) => ({
       key: site.key,
       name: site.name,
-      api: site.api,
-      detail: site.detail,
       is_adult: site.is_adult,
     })) as ApiSite[];
   } catch (error) {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
-import { fetchDoubanData } from '@/lib/douban';
+import { fetchDoubanData, resolveDoubanProxy } from '@/lib/douban';
 import { parseDoubanEpisodes } from '@/lib/douban-episodes';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
@@ -63,7 +63,11 @@ export async function GET(request: Request) {
 
   try {
     // 调用豆瓣 API
-    const doubanData = await fetchDoubanData<DoubanApiResponse>(target);
+    const doubanData = await fetchDoubanData<DoubanApiResponse>(
+      target,
+      undefined,
+      await resolveDoubanProxy(searchParams)
+    );
 
     // 转换数据格式
     const list: DoubanItem[] = doubanData.subjects.map((item) => ({

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
-import { fetchDoubanData } from '@/lib/douban';
+import { fetchDoubanData, resolveDoubanProxy } from '@/lib/douban';
 import {
   doubanAbstractUrl,
   doubanRexxarUrl,
@@ -24,12 +24,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'id 参数无效' }, { status: 400 });
   }
 
+  const proxy = await resolveDoubanProxy(searchParams);
   let rate: string | null = null;
   let reached = false;
   const errors: string[] = [];
 
   try {
-    rate = parseDoubanRate(await fetchDoubanData(doubanAbstractUrl(id)));
+    rate = parseDoubanRate(
+      await fetchDoubanData(doubanAbstractUrl(id), undefined, proxy)
+    );
     reached = true;
   } catch (e) {
     errors.push((e as Error).message);
@@ -38,7 +41,11 @@ export async function GET(request: Request) {
   if (!rate) {
     try {
       rate = parseDoubanRate(
-        await fetchDoubanData(doubanRexxarUrl(id), 'https://m.douban.com/')
+        await fetchDoubanData(
+          doubanRexxarUrl(id),
+          'https://m.douban.com/',
+          proxy
+        )
       );
       reached = true;
     } catch (e) {

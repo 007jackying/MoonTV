@@ -477,35 +477,38 @@ services:
 
 ## 环境变量
 
-| 变量                                | 说明                                         | 可选值                           | 默认值                                                                                                                     |
-| ----------------------------------- | -------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| USERNAME                            | 非 localstorage 部署时的管理员账号           | 任意字符串                       | （空）                                                                                                                     |
-| PASSWORD                            | 非 localstorage 部署时为管理员密码           | 任意字符串                       | （空）                                                                                                                     |
-| NEXT_PUBLIC_SITE_NAME               | 站点名称                                     | 任意字符串                       | DreamTV                                                                                                                    |
-| ANNOUNCEMENT                        | 站点公告                                     | 任意字符串                       | 本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。 |
-| NEXT_PUBLIC_STORAGE_TYPE            | 播放记录/收藏的存储方式                      | localstorage、redis、d1、upstash | localstorage                                                                                                               |
-| REDIS_URL                           | redis 连接 url                               | 连接 url                         | 空                                                                                                                         |
-| UPSTASH_URL                         | upstash redis 连接 url                       | 连接 url                         | 空                                                                                                                         |
-| UPSTASH_TOKEN                       | upstash redis 连接 token                     | 连接 token                       | 空                                                                                                                         |
-| NEXT_PUBLIC_ENABLE_REGISTER         | 是否开放注册，仅在非 localstorage 部署时生效 | true / false                     | false                                                                                                                      |
-| NEXT_PUBLIC_SEARCH_MAX_PAGE         | 搜索接口可拉取的最大页数                     | 1-50                             | 5                                                                                                                          |
-| NEXT_PUBLIC_DOUBAN_PROXY_TYPE       | 豆瓣数据源请求方式                           | 见下方                           | direct                                                                                                                     |
-| NEXT_PUBLIC_DOUBAN_PROXY            | 自定义豆瓣数据代理 URL                       | url prefix                       | (空)                                                                                                                       |
-| NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE | 豆瓣图片代理类型                             | 见下方                           | direct                                                                                                                     |
-| NEXT_PUBLIC_DOUBAN_IMAGE_PROXY      | 自定义豆瓣图片代理 URL                       | url prefix                       | (空)                                                                                                                       |
-| NEXT_PUBLIC_DISABLE_YELLOW_FILTER   | 关闭色情内容过滤                             | true/false                       | false                                                                                                                      |
-| NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址                                 | 接口地址                         | (空)                                                                                                                       |
+| 变量                                | 说明                                               | 可选值                           | 默认值                                                                                                                     |
+| ----------------------------------- | -------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| USERNAME                            | 非 localstorage 部署时的管理员账号                 | 任意字符串                       | （空）                                                                                                                     |
+| PASSWORD                            | 非 localstorage 部署时为管理员密码                 | 任意字符串                       | （空）                                                                                                                     |
+| NEXT_PUBLIC_SITE_NAME               | 站点名称                                           | 任意字符串                       | DreamTV                                                                                                                    |
+| ANNOUNCEMENT                        | 站点公告                                           | 任意字符串                       | 本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。 |
+| NEXT_PUBLIC_STORAGE_TYPE            | 播放记录/收藏的存储方式                            | localstorage、redis、d1、upstash | localstorage                                                                                                               |
+| REDIS_URL                           | redis 连接 url                                     | 连接 url                         | 空                                                                                                                         |
+| UPSTASH_URL                         | upstash redis 连接 url                             | 连接 url                         | 空                                                                                                                         |
+| UPSTASH_TOKEN                       | upstash redis 连接 token                           | 连接 token                       | 空                                                                                                                         |
+| NEXT_PUBLIC_ENABLE_REGISTER         | 是否开放注册，仅在非 localstorage 部署时生效       | true / false                     | false                                                                                                                      |
+| NEXT_PUBLIC_SEARCH_MAX_PAGE         | 搜索接口可拉取的最大页数                           | 1-50                             | 5                                                                                                                          |
+| NEXT_PUBLIC_DOUBAN_PROXY_TYPE       | 豆瓣数据源请求方式                                 | 见下方                           | direct                                                                                                                     |
+| NEXT_PUBLIC_DOUBAN_PROXY            | 自定义豆瓣数据代理 URL                             | url prefix                       | (空)                                                                                                                       |
+| NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE | 豆瓣图片代理类型                                   | 见下方                           | direct                                                                                                                     |
+| NEXT_PUBLIC_DOUBAN_IMAGE_PROXY      | 自定义豆瓣图片代理 URL                             | url prefix                       | (空)                                                                                                                       |
+| NEXT_PUBLIC_DISABLE_YELLOW_FILTER   | 关闭色情内容过滤                                   | true/false                       | false                                                                                                                      |
+| NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址（仅服务端使用，经 /api/danmaku 转发） | 接口地址                         | (空)                                                                                                                       |
+| DISABLE_DEVTOOLS_GUARD              | 关闭生产环境的开发者工具防护（排查问题时用）       | true / false                     | false                                                                                                                      |
 
 NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 
+浏览器只请求本站 `/api/douban/*`，下列方式都由服务器执行，真实上游地址不会出现在浏览器的网络请求里：
+
 - direct: 由服务器直接请求豆瓣源站
-- cors-proxy-zwei: 浏览器向 cors proxy 请求豆瓣数据，该 cors proxy 由 [Zwei](https://github.com/bestzwei) 搭建
-- cmliussss-cdn-tencent: 浏览器向豆瓣 CDN 请求数据，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由腾讯云 cdn 提供加速
-- cmliussss-cdn-ali: 浏览器向豆瓣 CDN 请求数据，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由阿里云 cdn 提供加速
+- cors-proxy-zwei: 服务器经 cors proxy 请求豆瓣数据，该 cors proxy 由 [Zwei](https://github.com/bestzwei) 搭建
+- cmliussss-cdn-tencent: 服务器向豆瓣 CDN 请求数据，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由腾讯云 cdn 提供加速
+- cmliussss-cdn-ali: 服务器向豆瓣 CDN 请求数据，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由阿里云 cdn 提供加速
 
-- custom: 用户自定义 proxy，由 NEXT_PUBLIC_DOUBAN_PROXY 定义
+- custom: 自定义 proxy，由 NEXT_PUBLIC_DOUBAN_PROXY 定义（只能由站点配置，用户设置里不提供）
 
-播放页「豆瓣」按钮上的评分同样遵循该设置：`direct` 时请求本站 `/api/douban/subject`（服务器访问豆瓣，`DOUBAN_COOKIE` 同样生效），其余选项由浏览器经对应代理 / CDN 请求豆瓣的 `subject_abstract` 接口。拿不到评分时按钮只显示「豆瓣」。
+播放页「豆瓣」按钮上的评分同样遵循该设置，经本站 `/api/douban/subject` 获取（`DOUBAN_COOKIE` 同样生效）。拿不到评分时按钮只显示「豆瓣」。
 
 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
 

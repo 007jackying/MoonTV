@@ -7,6 +7,7 @@ import './globals.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
 import { getConfig } from '@/lib/config';
+import { devtoolsGuard } from '@/lib/devtools-guard';
 
 import ConditionalNav from '../components/ConditionalNav';
 import GlobalDownloadManager from '../components/GlobalDownloadManager';
@@ -70,41 +71,37 @@ export default async function RootLayout({
     process.env.ANNOUNCEMENT ||
     '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
   let enableRegister = process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
-  let doubanProxyType = process.env.NEXT_PUBLIC_DOUBAN_PROXY_TYPE || 'direct';
-  let doubanProxy = process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
   let doubanImageProxyType =
     process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE || 'direct';
   let doubanImageProxy = process.env.NEXT_PUBLIC_DOUBAN_IMAGE_PROXY || '';
   let disableYellowFilter =
     process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
-  let danmakuApiBaseUrl = process.env.NEXT_PUBLIC_DANMU_API_BASE_URL || '';
   let autoUpdateEnabled = false;
   if (storageType !== 'localstorage') {
     const config = await getConfig();
     siteName = config.SiteConfig.SiteName;
     announcement = config.SiteConfig.Announcement;
     enableRegister = config.UserConfig.AllowRegister;
-    doubanProxyType = config.SiteConfig.DoubanProxyType;
-    doubanProxy = config.SiteConfig.DoubanProxy;
     doubanImageProxyType = config.SiteConfig.DoubanImageProxyType;
     doubanImageProxy = config.SiteConfig.DoubanImageProxy;
     disableYellowFilter = config.SiteConfig.DisableYellowFilter;
-    danmakuApiBaseUrl =
-      config.SiteConfig.DanmakuApiBaseUrl || danmakuApiBaseUrl;
     autoUpdateEnabled = config.SubscriptionConfig?.autoUpdate === true;
   }
 
-  // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
+  // 将运行时配置注入到全局 window 对象，供客户端在运行时读取。
+  // 豆瓣数据代理、弹幕 API 等上游地址只在服务端使用，不要放进这里。
   const runtimeConfig = {
     STORAGE_TYPE: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
     ENABLE_REGISTER: enableRegister,
-    DOUBAN_PROXY_TYPE: doubanProxyType,
-    DOUBAN_PROXY: doubanProxy,
     DOUBAN_IMAGE_PROXY_TYPE: doubanImageProxyType,
     DOUBAN_IMAGE_PROXY: doubanImageProxy,
     DISABLE_YELLOW_FILTER: disableYellowFilter,
-    DANMU_API_BASE_URL: danmakuApiBaseUrl,
   };
+
+  // 仅生产环境启用开发者工具防护；排查线上问题时可设 DISABLE_DEVTOOLS_GUARD=true 临时关闭
+  const enableDevtoolsGuard =
+    process.env.NODE_ENV === 'production' &&
+    process.env.DISABLE_DEVTOOLS_GUARD !== 'true';
 
   return (
     <html lang='zh-CN' suppressHydrationWarning>
@@ -121,6 +118,13 @@ export default async function RootLayout({
             __html: `window.RUNTIME_CONFIG = ${JSON.stringify(runtimeConfig)};`,
           }}
         />
+        {enableDevtoolsGuard && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(${devtoolsGuard.toString()})();`,
+            }}
+          />
+        )}
       </head>
       <body
         className={`${caprasimo.variable} ${figtree.variable} min-h-screen bg-o-bg font-body text-o-ink`}

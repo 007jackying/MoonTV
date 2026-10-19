@@ -9,17 +9,10 @@ export type DanmakuFormat = 'json' | 'xml';
 
 /**
  * 获取弹幕 API 基础 URL
- * 从环境变量或配置中获取，默认为空（使用相对路径）
+ * 统一走本站代理（src/app/api/danmaku），真实弹幕 API 地址只保存在服务端
  */
 function getDanmakuApiBaseUrl(): string {
-  if (typeof window === 'undefined') return '';
-
-  const baseUrl =
-    (window as any).RUNTIME_CONFIG?.DANMU_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_DANMU_API_BASE_URL ||
-    '';
-
-  return baseUrl;
+  return '/api/danmaku';
 }
 
 /**

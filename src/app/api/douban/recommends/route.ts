@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getCacheTime } from '@/lib/config';
 import { getConfig } from '@/lib/config';
-import { fetchDoubanData } from '@/lib/douban';
+import { fetchDoubanData, resolveDoubanProxy } from '@/lib/douban';
 import { parseDoubanEpisodes } from '@/lib/douban-episodes';
 import { DoubanResult } from '@/lib/types';
 
@@ -111,10 +111,11 @@ export async function GET(request: NextRequest) {
   }
 
   const target = `${baseUrl}?${params.toString()}`;
-  console.log(target);
   try {
     const doubanData = await fetchDoubanData<DoubanRecommendApiResponse>(
-      target
+      target,
+      undefined,
+      await resolveDoubanProxy(searchParams)
     );
     const list = doubanData.items
       .filter((item) => item.type == 'movie' || item.type == 'tv')

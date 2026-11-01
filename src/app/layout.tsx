@@ -15,7 +15,6 @@ import { LanguageProvider } from '../components/LanguageProvider';
 import { NavigationLoadingIndicator } from '../components/NavigationLoadingIndicator';
 import { NavigationLoadingProvider } from '../components/NavigationLoadingProvider';
 import PageTransition from '../components/PageTransition';
-import ServiceWorkerRegistration from '../components/ServiceWorkerRegistration';
 import { SiteProvider } from '../components/SiteProvider';
 import SubscriptionAutoUpdate from '../components/SubscriptionAutoUpdate';
 import { ThemeProvider } from '../components/ThemeProvider';
@@ -131,7 +130,6 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <ServiceWorkerRegistration />
           <LanguageProvider>
             <NavigationLoadingProvider>
               <SiteProvider siteName={siteName} announcement={announcement}>

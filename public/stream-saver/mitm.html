@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>stream-saver</title>
+  </head>
+  <body>
+    <script>
+      // 边下边存的中间页：注册 /stream-saver/sw.js（作用域 /stream-saver/），
+      // 把主页面发来的下载请求转交给它。见 src/lib/stream-saver.ts
+      (function () {
+        var origin = location.origin;
+        if (!('serviceWorker' in navigator)) {
+          parent.postMessage(
+            { streamSaverError: 'Service Worker unavailable' },
+            origin
+          );
+          return;
+        }
+
+        var ready = navigator.serviceWorker
+          .register('sw.js', { scope: './' })
+          .then(function (reg) {
+            if (reg.active) return reg.active;
+            var pending = reg.installing || reg.waiting;
+            return new Promise(function (resolve, reject) {
+              pending.addEventListener('statechange', function onChange() {
+                if (pending.state === 'activated') {
+                  pending.removeEventListener('statechange', onChange);
+                  resolve(reg.active || pending);
+                } else if (pending.state === 'redundant') {
+                  pending.removeEventListener('statechange', onChange);
+                  reject(new Error('Service Worker became redundant'));
+                }
+              });
+            });
+          });
+
+        ready.then(
+          function (sw) {
+            // 定时唤醒，避免长时间下载时 Service Worker 被浏览器回收
+            setInterval(function () {
+              sw.postMessage('ping');
+            }, 10000);
+            parent.postMessage('stream-saver-ready', origin);
+          },
+          function (err) {
+            parent.postMessage(
+              { streamSaverError: String((err && err.message) || err) },
+              origin
+            );
+          }
+        );
+
+        window.onmessage = function (evt) {
+          if (evt.origin !== origin) return;
+          var data = evt.data;
+          if (!data || typeof data !== 'object' || !data.pathname) return;
+          ready.then(function (sw) {
+            sw.postMessage(data, evt.ports);
+          });
+        };
+      })();
+    </script>
+  </body>
+</html>

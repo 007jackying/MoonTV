@@ -6,6 +6,233 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-11-01 — Download feature: UX overhaul, memory leaks, broken streaming mode (3.16.0)
+
+Branch: `ccr-e53d5e99-wz04yf`. Asked by the owner: "look at the downloading
+feature — UX/UI and usability improvements, check for memory leaks or anything
+to optimise; review and revise until everything is perfect."
+
+### What was wrong (found by reading the code, then confirmed in a browser)
+
+Correctness:
+
+1. **「边下边存」(Service Worker mode) could never work.** `public/mitm.html`
+   registered `/sw.js`, which is the Workbox worker next-pwa generates; it has
+   no StreamSaver message / fetch handler, so the download URL never came back
+   and the TransformStream filled up after a couple of segments — the download
+   sat at the start forever. It was offered in every non-Safari browser.
+2. **Cancelling the file-system save picker silently fell back to memory
+   mode**, i.e. the very mode the user had just opted out of, for a file they
+   had said was too big. Restoring a file-system task after a reload did the
+   same (no user gesture → picker throws → memory mode).
+3. **Resume after reload was broken.** `parsedTask` (every segment URL, plus
+   the CryptoJS key object) was persisted to `localStorage` on every progress
+   tick; after a reload `downloadedSegments` came back as `{}`, so the merge
+   threw `get is not a function`, and the key was no longer a WordArray.
+4. **Two tabs downloaded the same video**: a second tab loaded the shared
+   `localStorage` list, saw `downloading` and auto-resumed it.
+5. **MP4 timeline**: `keepOriginalTimestamps: true` kept the source PTS, so
+   files started at the source offset (1.4 s on the fixtures; a range starting
+   mid-episode starts that many seconds/minutes in), and an
+   `#EXT-X-DISCONTINUITY` (kept between main-content groups by 去广告) made
+   the timeline jump backwards.
+6. **Streaming MP4 could interleave writes**: the mux.js `data` handler
+   awaited the init-segment write before clearing `isFirstSegment`, so the
+   next segment could write a second init segment / reorder data.
+7. **AES-128 without an `IV` attribute used a zero IV** for every segment
+   instead of the media sequence number (first block of each segment wrong).
+8. A failed parse in the add dialog was swallowed (`// 解析失败，静默处理`), and
+   typing in the URL box fired a parse per keystroke; editing the URL after a
+   parse kept the old playlist; start > end ranges were accepted.
+
+Memory / performance:
+
+- Memory mode kept every segment's `ArrayBuffer` on the task until the task
+  was deleted — completed downloads stayed resident.
+- Every segment completion did `setTasks` → `JSON.stringify` of all tasks
+  including every segment URL → `localStorage.setItem` → a window event on
+  which both nav bars re-parsed that JSON.
+- No request timeout: one hung segment stalled a worker forever, and in
+  streaming mode the other workers kept downloading ahead into an unbounded
+  `pendingWrites` map.
+- CryptoJS decryption on the main thread via a JS number array per segment;
+  mux.js and crypto-js were in the root layout bundle.
+- The MP4 merge concatenated all output into one `Uint8Array` and then
+  copied it into a Blob; `triggerDownload` revoked the object URL after
+  100 ms; the stream-saver blob fallback never revoked its URL.
+- `/api/m3u8` (unused) was an authenticated open proxy with a one-year public
+  cache header.
+
+### Decisions
+
+- **Engine / store / UI split.** `m3u8-downloader.ts` is a React-free
+  `DownloadJob` (pause / resume / cancel / `finishNow`), `download-store.ts`
+  is a singleton store read with `useSyncExternalStore`: progress
+  notifications are coalesced to one per 200 ms, persistence is debounced to
+  1 s, the nav badge subscribes to two numbers only. The manager UI and the
+  engine are lazy-loaded (prefetched on idle).
+- **sessionStorage, not localStorage**, for the task list: the data lives in
+  the tab, so other tabs must not see or resume it; it still survives a
+  reload. Interrupted tasks restart from scratch (memory and stream data are
+  gone either way) — file-system tasks wait for a click to re-pick the
+  location. The legacy `downloadTasks` key is deleted on start-up.
+- **Queue of 2** concurrent tasks; extra tasks show 排队中.
+- **Memory mode stores segments as Blobs** and releases them as soon as the
+  file is handed to the browser. Object URLs are revoked after 40 s
+  (FileSaver.js uses the same order of magnitude).
+- **Streaming lookahead** = `max(concurrency × 3, 8)` segments past the write
+  cursor; 30 s idle timeout per request; retries back off 1 / 2 / 4 / 8 s.
+- **Service Worker mode** gets its own worker at `/stream-saver/sw.js` with
+  scope `/stream-saver/` (more specific than the site worker, so it owns the
+  download URLs). `ServiceWorkerRegistration.tsx`, which only existed to
+  register `/sw.js` for this mode, is removed. If the worker cannot start,
+  the task falls back to memory mode and says so.
+- **File-system mode opens the picker inside the click** (in `addTask` /
+  `resumeTask`), before anything else is awaited; a cancelled picker means the
+  task is not created. The writable is held until the queued task starts.
+- **MP4**: `keepOriginalTimestamps: false`, one mux.js transmuxer per
+  discontinuity group, seeded with that group's playlist time. Per-segment
+  flush in both modes, so memory mode never holds the whole film in mux.js.
+  If no MP4 output is produced, save TS instead and tell the user.
+- **Ads**: download applies the player's `removeAdsFromM3U8`, default from the
+  player's 去广告 switch. Segment sequence numbers are mapped back from the
+  original playlist so AES IVs stay right.
+- **Pause aborts in-flight requests** and puts those segments back on the
+  queue (kept in ascending order, which the streaming lookahead relies on to
+  avoid a deadlock). Letting them finish meant a paused task kept growing for
+  a few seconds and kept the host's connections busy for other tasks.
+- Failures in memory mode stop at 部分片段失败 (data kept) with 重试失败片段 /
+  跳过失败片段并保存, instead of the old silent "downloading" that only the
+  segment viewer could resolve.
+- `/api/m3u8` removed.
+
+### Checks run
+
+- Jest: 24 engine tests (parsing incl. discontinuities, master playlists,
+  retries, timeouts, pause before start and mid-request, `finishNow`, AES with
+  sequence IV, ad removal, in-order streaming, pause / resume mid-stream,
+  lookahead bound, write failure, cancel) and 8 store tests (queue, pause frees a slot,
+  incomplete → retry only failures → save, remove, parse errors, sessionStorage
+  restore, legacy key cleanup, beforeunload).
+- Browser (Playwright Chromium against `next dev` and a throttled local HLS
+  server; fixtures made with ffmpeg): MP4 memory download with pause (progress
+  frozen at 12/60 from 0.3 s to 3.3 s after the click) and resume (120.02 s,
+  was 121.4 s with the source offset); AES-128 TS; a playlist with two
+  missing segments → incomplete → save anyway; Service Worker streaming; reload
+  mid-download (browser asks first, task restarts); a discontinuity stream as
+  MP4 in memory and streaming mode; a 01:00–01:30 range. Every output file
+  decodes with `ffmpeg -f null` without errors; MP4 durations are 20.03 s
+  (two 10 s clips) and 30.00 s (range), first video PTS 0, no backwards PTS.
+- Memory: JS heap 11.9 MB → 13.1 MB after three 28 MB downloads (forced GC).
+  `chrome://blob-internals`: 114 blobs / 52.8 MB mid-download, 1 blob (the
+  finished file) right after saving, 0 once the object URL is revoked.
+- Bundle (`next build`, this branch vs `5340c1e`): the root layout chunk went
+  from 101 KB to 66 KB and mux.js / crypto-js left it. Summing every JS file
+  the app build manifest lists for layout + page, gzipped: home 243 → 186 KB,
+  `/play` 258 → 215 KB, `/login` 231 → 168 KB. (Next's own "First Load JS"
+  column moves by only a few KB because it counts chunks differently.)
+- Layout: 1280 px, 390 px dark / English, 360 px light / Chinese; no
+  horizontal overflow. Screenshots in `docs/screenshots/downloads-3.16.0`.
+- Found and fixed during the browser pass: the forms plugin painted radios /
+  checkboxes / focus rings sage instead of the accent; switching quality lost
+  the size estimate (a variant playlist has no bandwidth — taken from the
+  master list now) and collapsed the form while reparsing; the toolbar and
+  the retry button wrapped badly at 360–390 px.
+- `tsc`, `eslint --max-warnings=0` on the changed files, full Jest suite.
+
+### Follow-up: multi-episode download, download folder, file names
+
+Asked by the owner after the first push: can we pick where to save, what is
+the file-name format, and can a series be downloaded in one go — "build all
+three together".
+
+- **Save location**: a page cannot choose a folder for the user. On Chrome /
+  Edge desktop the user picks one with `showDirectoryPicker`; the handle is
+  kept in IndexedDB and cached in memory (`src/lib/download-folder.ts`) so a
+  click handler can request permission without first awaiting IndexedDB and
+  losing the user gesture. Files are created per task when it starts
+  (`createFolderWriteStream`, ` (1)` suffix on clashes, entry removed on
+  abort). After a reload, folder tasks resume on their own if the permission is
+  still granted, otherwise they stop at 点击「继续」允许访问下载文件夹 and the
+  click requests it. 开始全部 requests it once for all of them.
+- **File names**: `片名 第03集` / `Title E03`, number from the source's episode
+  title (第 3 集, EP03, 03) or the position, zero-padded to
+  `max(2, digits(total))`, non-numeric titles (特别篇) appended; movies stay
+  `片名`. Previously `片名_第1集` or whatever the source called the episode
+  (`片名_HD中字`), which does not sort.
+- **Batch**: an episode picker in the add dialog (全选 / 从当前集起 / 只下当前集
+  / per episode). Each episode is its own task in the existing queue (2 at a
+  time), parsed when it starts; the quality is matched by resolution
+  (`preferredResolution`), intro / outro trimming by time (`config.skip`,
+  computed per episode). Manual segment ranges are hidden in batch mode since
+  segment counts differ. Disk mode in a batch requires the folder (a click can
+  open only one save dialog); the store refuses more than one per-file picker
+  per call. Tasks added together share `addedAt`, so the list shows the
+  newest batch first but its episodes in order.
+- Checks: 10 new unit tests (naming, preferred variant, batch + skip, folder
+  writes, folder required / one picker per click, permission lost after a
+  reload). In the browser, with `showDirectoryPicker` / `showSaveFilePicker`
+  stubbed to return Origin Private File System handles (the real dialogs
+  cannot be driven headless; everything after the picker is real): 3 episodes
+  in memory mode → 3 downloads named 第 01–03 集; 4 episodes into the folder →
+  4 files written there with 已保存到「Downloads」：… on each card; a single
+  episode via the per-file dialog. All files read back from OPFS decode with
+  ffmpeg (12.03 s each).
+- Before / after recordings of the old build (`5340c1e`) and this one, same
+  flows, were made for the owner (not committed). The old build, re-run for
+  them: the
+  Service Worker mode sat at 3/60 and 4/60 segments for 20 s in two runs; a
+  playlist with two missing segments stayed 下载中 97% indefinitely.
+
+### Follow-up: MP4 only, with a codec check
+
+Asked by the owner: "can we always do mp4 format? why do we even have the ts
+format?" then "do 1 and 2, no TS option at all".
+
+- **Why TS existed**: HLS segments are MPEG-TS, so joining them is free and
+  byte-exact; MP4 needs mux.js to re-package them.
+- **What mux.js silently drops** (measured on ffmpeg-made 4 s clips): H.265 +
+  AAC → audio-only MP4; H.264 + AC-3 or MP3 → video-only MP4 (no sound);
+  MPEG-2 → no output. Only the last case reached the existing "no output →
+  save TS" fallback, so an MP4 download of an H.265 source lost the picture.
+- **Decision**: the format choice is gone; `config.type` is always `MP4` from
+  the UI. `parseM3U8({ probeCodecs: true })` fetches and decrypts the first
+  segment and reads the PMT stream types (`src/lib/ts-probe.ts`: H.264 0x1B,
+  AAC 0x0F → MP4; H.265 0x24, AC-3 0x81, E-AC-3 0x87, MP2/MP3 0x03/0x04,
+  MPEG-2 0x02… → TS; ID3 0x15 ignored; an unknown private stream 0x06 is only
+  tolerated next to AAC). The format is decided before the file is created,
+  because the disk modes fix the extension then; the per-file save dialog uses
+  the probed format. The probed segment is kept on the task
+  (`prefetched`) and used by the download instead of a second request, and
+  released when the run ends. An unreadable segment counts as unknown and
+  falls back to trying MP4.
+- The dialog shows the codecs (H.264 · AAC) and, when the file will be TS,
+  says so before downloading; the task card repeats it (将保存为 / 已保存为).
+- Checks: 16 new unit tests (probe tables on synthetic PAT/PMT packets,
+  parse + prefetch reuse, store end to end). The probe read the five ffmpeg
+  clips correctly. In the browser: H.265 + AAC and H.264 + AC-3 HLS streams
+  saved as `.ts` with both streams intact (also into the download folder),
+  H.264 + AAC as `.mp4`; all decode with ffmpeg.
+
+### Open / not done
+
+- next-pwa's default `cross-origin` NetworkFirst route also caches every
+  cross-origin GET — video segments during playback and downloads — in Cache
+  Storage (32 entries). That is wasted disk I/O for media, but it is a
+  site-wide PWA decision, so it is left alone here.
+- An MP4 save in memory mode briefly holds the segments and the MP4 output
+  (≈ 2× the file size in Blob storage, not the JS heap) until the segments
+  are released.
+- Service Worker mode was exercised in Chromium only; Firefox has no
+  file-system picker, so it is the main user of that mode and is untested.
+- The play page builds the default file name with `第N集` regardless of the
+  UI language (unchanged).
+- Headless Chromium in this sandbox falls back to the file name `download`
+  for non-ASCII names unless it runs with a UTF-8 locale (`LANG=C.UTF-8`);
+  this is the container, not the app.
+
+---
+
 ## 2026-11-01 — unreachable sources fold to the end of the source list (3.15.0)
 
 Branch: `claude/pensive-hopper-1gh33e`. Asked by the owner: sources in the

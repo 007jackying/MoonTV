@@ -129,57 +129,26 @@
 
 ## 怎么复测
 
-默认只测 `disabled` 不为真的源；停用生效的标志是：跑完两轮，启用的源全部 `OK`。
-加 `ALL=1` 会把已停用的源也一起测，用来确认某个源是否已经恢复。
-
-脚本发送的请求头与应用自己的搜索请求相同（`src/lib/config.ts` 的
-`API_CONFIG.search.headers`）。被 UA 拦截的源只有用同样的 UA 测才有意义。
-另外，搜索是在**服务端**发起的，地域封锁看的是部署所在地区，而不是跑脚本的机器。
+用 `scripts/check-sources.mjs`（`pnpm check:sources`）。它发送的请求头与应用自己的
+搜索请求相同（`src/lib/config.ts` 的 `API_CONFIG.search.headers`）——被 UA 拦截的源
+只有用同样的 UA 测才有意义；失败原因按本文的分类输出，日期也一并带上，可以直接抄进
+`note`。另外，搜索是在**服务端**发起的，地域封锁看的是部署所在地区，而不是跑脚本的机器。
 
 ```bash
-node -e '
-const s = require("./config.json").api_site;
-// 与 API_CONFIG.search.headers 保持一致
-const H = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  Accept: "application/json",
-};
-const ALL = process.env.ALL === "1";
-const one = async ([k, v]) => {
-  if (v.disabled && !ALL) return null;
-  try {
-    const r = await fetch(v.api + "?ac=videolist&wd=" + encodeURIComponent("流浪地球"), { headers: H });
-    const t = await r.text();
-    if (!r.ok) return k + " HTTP_" + r.status;
-    if (!t.trim()) return k + " EMPTY";
-    if (t.includes("暂不支持搜索")) return k + " SEARCH_DISABLED";
-    try { return JSON.parse(t).list ? k + " OK" : k + " BAD_SHAPE"; }
-    catch { return k + " HTML"; }
-  } catch { return k + " NETWORK"; }
-};
-(async () => {
-  for (const r of [1, 2]) {
-    const out = [];
-    const e = Object.entries(s);
-    for (let i = 0; i < e.length; i += 8) out.push(...await Promise.all(e.slice(i, i + 8).map(one)));
-    const bad = out.filter(x => x && !x.endsWith("OK"));
-    console.log("--- round", r, "--- enabled:", e.filter(([,v])=>!v.disabled).length, "| failing:", bad.length);
-    console.log(bad.join("\n") || "(all OK)");
-  }
-})();
-'
+pnpm check:sources --enabled            # 只测启用的源；停用生效的标志是两轮全部 OK
+pnpm check:sources --disabled           # 只测已停用的源，看有没有恢复
+pnpm check:sources --enabled --play     # 端到端：搜索 → 解析 .m3u8 分集 → 请求播放列表
+pnpm check:sources kuaikan yhdm         # 只测指定 key
 ```
 
-预期输出（2026-10-04 停用后实测，启用的 54 个源两轮全 OK）：
+停用标准是两轮都失败，所以 `--enabled` 要跑两次；任何源失败时脚本退出码为 1。
+`--play` 比单纯的搜索检查更严格：能搜但解析不出 `.m3u8` 分集、或播放列表打不开的源
+在站内一样放不了。
 
-```
---- round 1 --- enabled: 54 | failing: 0
-(all OK)
---- round 2 --- enabled: 54 | failing: 0
-(all OK)
-```
+2026-10-04 停用时，启用的 54 个源两轮全部 OK（当时用的是本文旧版里的内联 `node -e`
+脚本，检查项与 `pnpm check:sources --enabled` 相同）。
 
-某个源恢复后，先用 `ALL=1` 跑上面的脚本确认它变 `OK`，再把 `config.json` 里
+某个源恢复后，先用 `pnpm check:sources --disabled`（或直接写它的 key）确认它变 `OK`，再把 `config.json` 里
 对应的 `disabled` 改成 `false`、删掉 `note`，并从本文里移除该行——两边保持一致。
 数据库存储的部署还要把新配置保存进后台「配置文件」。所有部署都生效后，才可以把
 `disabled: false` 也删掉。
@@ -190,7 +159,7 @@ const one = async ([k, v]) => {
 
 - **6 个 `HTTP_403` 源当时是用 `User-Agent: Mozilla/5.0` 测的**，而应用发送的是
   完整的 Chrome UA（上面的脚本已改成同样的请求头）。如果它们只是拦截了短 UA，
-  用 `ALL=1` 复测会变 `OK`，应该重新启用。
+  用 `pnpm check:sources --disabled` 复测会变 `OK`，应该重新启用。
 - **6 个 `SEARCH_DISABLED` 源只证明了搜索关闭，没证明详情接口也关了**。`disabled`
   会让 `/api/detail` 也拒绝这个源，用户收藏或播放记录里这些源的影片就打不开（播放页
   会退回搜索其它源）。可以用 `?ac=videolist&ids=<已知 id>` 测一下详情接口：如果仍然

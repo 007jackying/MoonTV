@@ -2,8 +2,9 @@
 /**
  * 实测 config.json 里的采集源是否可用。
  *
- * 每个源只发一次请求，与站内搜索完全相同：`<api>?ac=videolist&wd=<关键词>`，
+ * 搜索请求与站内搜索完全相同：`<api>?ac=videolist&wd=<关键词>`，
  * UA / Accept 与 src/lib/config.ts 的 API_CONFIG.search.headers 一致。
+ * 默认每个源只发这一次请求；加 --play 才会继续请求分集播放列表（见下）。
  * 结果按 config.json 里 `note` 的写法归类（HTTP 403、返回 HTML、缺少 list、
  * "暂不支持搜索"、DNS/连接失败……），方便直接抄进 note。
  *
@@ -22,7 +23,8 @@
  * 端到端（搜索 → 分集 → m3u8）：加 --play
  *   搜索通过后，按站内 parseEpisodes（src/lib/downstream.ts）同样的规则解析出
  *   .m3u8 分集，再真正请求第一集的播放列表（主列表会再跟进一层子列表），
- *   确认返回的是 #EXTM3U 且含分片。搜索无结果时改用最新列表（?ac=videolist）。
+ *   确认返回的是 #EXTM3U 且含分片。搜索结果为空时改用最新列表（?ac=videolist）；
+ *   有结果但都没有 .m3u8 分集时直接判失败——站内搜到的就是这些结果。
  *   注意：脚本在服务端发请求，不受浏览器 CORS 限制；个别源在浏览器里仍可能
  *   因 CORS 无法测速，但能播放。
  *
@@ -58,13 +60,18 @@ let entries = Object.entries(sites);
 if (keys.length) {
   const unknown = keys.filter((k) => !sites[k]);
   if (unknown.length) {
-    console.error(`config.json 里没有这些 key：${unknown.join(', ')}`);
+    console.error(
+      `${path.basename(CONFIG)} 里没有这些 key：${unknown.join(', ')}`,
+    );
     process.exit(2);
   }
   entries = entries.filter(([k]) => keys.includes(k));
 }
 if (flag('enabled')) entries = entries.filter(([, s]) => s.disabled !== true);
 if (flag('disabled')) entries = entries.filter(([, s]) => s.disabled === true);
+
+/** 与 Response.json() 一致：去掉 UTF-8 BOM 再解析（部分 CMS 会带 BOM） */
+const parseJson = (text) => JSON.parse(text.replace(/^\uFEFF/, ''));
 
 const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
 
@@ -95,15 +102,13 @@ async function getText(url) {
   return { res, text: res.ok ? await res.text() : '' };
 }
 
-/** 返回 null 表示可播放，否则返回失败原因 */
+/** 可播放时返回 { title, m3u8 }，否则返回 { reason, m3u8? } */
 async function checkPlayable(site, list) {
   let items = list;
-  if (
-    !items.some((it) => parseEpisodes(it.vod_play_url, it.vod_content).length)
-  ) {
+  if (items.length === 0) {
     try {
       const { res, text } = await getText(site.api + '?ac=videolist');
-      items = res.ok ? JSON.parse(text)?.list || [] : [];
+      items = res.ok ? parseJson(text)?.list || [] : [];
     } catch {
       items = [];
     }
@@ -183,13 +188,13 @@ async function probeSearch([key, site]) {
 
     if (!res.ok) return fail(`源站返回 HTTP ${res.status}`);
     if (!text.trim()) return fail('源站返回空响应体');
-    if (text.includes('暂不支持搜索'))
-      return fail('搜索接口已被源站关闭：HTTP 200 + "暂不支持搜索"');
 
     let data;
     try {
-      data = JSON.parse(text);
+      data = parseJson(text);
     } catch {
+      if (text.includes('暂不支持搜索'))
+        return fail('搜索接口已被源站关闭：HTTP 200 + "暂不支持搜索"');
       const html = /^\s*</.test(text) || type.includes('html');
       return fail(
         html

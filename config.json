@@ -635,49 +635,49 @@
     },
     "kuaikan": {
       "api": "https://www.kuaikanzy.net/api.php/provide/vod",
-      "name": "快看资源",
+      "name": "快看资源 (new test)",
       "detail": "https://www.kuaikanzy.net",
       "is_adult": false
     },
     "yhdm": {
       "api": "https://api.yhdm6.com/api.php/provide/vod",
-      "name": "樱花动漫",
+      "name": "樱花动漫 (new test)",
       "detail": "https://api.yhdm6.com",
       "is_adult": false
     },
     "dm84": {
       "api": "https://www.dm84.tv/api.php/provide/vod",
-      "name": "动漫巴士",
+      "name": "动漫巴士 (new test)",
       "detail": "https://www.dm84.tv",
       "is_adult": false
     },
     "jilupian": {
       "api": "https://www.jlpzy.net/api.php/provide/vod",
-      "name": "纪录片之家",
+      "name": "纪录片之家 (new test)",
       "detail": "https://www.jlpzy.net",
       "is_adult": false
     },
     "1080zy": {
       "api": "https://api.1080zyku.com/api.php/provide/vod",
-      "name": "1080资源库",
+      "name": "1080资源库 (new test)",
       "detail": "https://api.1080zyku.com",
       "is_adult": false
     },
     "haokan": {
       "api": "https://api.haokanapi.com/api.php/provide/vod",
-      "name": "好看资源",
+      "name": "好看资源 (new test)",
       "detail": "https://api.haokanapi.com",
       "is_adult": false
     },
     "taopian": {
       "api": "https://taopianapi.com/home/cjapi/as/mc10/vod",
-      "name": "淘片资源",
+      "name": "淘片资源 (new test)",
       "detail": "https://taopianapi.com",
       "is_adult": false
     },
     "xueba": {
       "api": "https://api.xuebatv.com/api.php/provide/vod",
-      "name": "学霸TV",
+      "name": "学霸TV (new test)",
       "detail": "https://api.xuebatv.com",
       "is_adult": false
     }

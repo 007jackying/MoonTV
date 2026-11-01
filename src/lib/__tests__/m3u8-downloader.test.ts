@@ -222,6 +222,25 @@ describe('parseM3U8', () => {
     expect(task.durationSecond).toBe(12);
   });
 
+  it('picks the preferred resolution from a master playlist when present', async () => {
+    routes['https://cdn.test/m2.m3u8'] = () =>
+      respond(
+        '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720\nhigh/index.m3u8\n' +
+          '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\nlow/index.m3u8\n'
+      );
+    routes['https://cdn.test/low/index.m3u8'] = () => respond(playlist(2));
+    routes['https://cdn.test/high/index.m3u8'] = () => respond(playlist(3));
+    const low = await parseM3U8('https://cdn.test/m2.m3u8', {
+      preferredResolution: '640x360',
+    });
+    expect(low.url).toBe('https://cdn.test/low/index.m3u8');
+    expect(low.bandwidth).toBe(800000);
+    const missing = await parseM3U8('https://cdn.test/m2.m3u8', {
+      preferredResolution: '1920x1080',
+    });
+    expect(missing.url).toBe('https://cdn.test/high/index.m3u8');
+  });
+
   it('reports HTTP errors and non-playlists clearly', async () => {
     await expect(
       parseM3U8('https://cdn.test/missing.m3u8')

@@ -31,7 +31,7 @@ import { useDownloadTasks } from '@/lib/hooks/useDownloads';
 import type { Messages } from '@/lib/i18n';
 
 import AddDownloadModal from './AddDownloadModal';
-import { confirmAction } from './download/confirm';
+import { confirmAction, toast } from './download/confirm';
 import { DownloadDialog, formatBytes, Tag } from './download/DownloadDialog';
 import SegmentViewer from './download/SegmentViewer';
 import { useI18n } from './LanguageProvider';
@@ -109,6 +109,21 @@ const TaskCard = memo(function TaskCard({
     removeTask(task.id);
   };
 
+  // 需要重新选择保存位置 / 允许访问文件夹时，这次点击里会弹出浏览器的窗口
+  const resume = () =>
+    void resumeTask(task.id).then((result) => {
+      if (result && !result.ok) {
+        void toast({
+          icon: 'error',
+          title: task.config.folder
+            ? t.dl.folderDenied
+            : result.reason === 'cancelled'
+            ? t.dl.pickerCancelled
+            : result.message,
+        });
+      }
+    });
+
   const handleSaveNow = async () => {
     if (
       await confirmAction({
@@ -139,19 +154,19 @@ const TaskCard = memo(function TaskCard({
       label: t.dl.resume,
       icon: <Play className='h-4 w-4' strokeWidth={2.5} />,
       // 需要重新选择保存位置时，保存框必须在这次点击里弹出
-      onClick: () => void resumeTask(task.id),
+      onClick: resume,
     };
   } else if (status === 'incomplete') {
     primary = {
       label: t.dl.retryFailed,
       icon: <RefreshCw className='h-4 w-4' strokeWidth={2.5} />,
-      onClick: () => void resumeTask(task.id),
+      onClick: resume,
     };
   } else if (status === 'error') {
     primary = {
       label: t.dl.retry,
       icon: <RefreshCw className='h-4 w-4' strokeWidth={2.5} />,
-      onClick: () => void resumeTask(task.id),
+      onClick: resume,
     };
   }
 
@@ -172,7 +187,10 @@ const TaskCard = memo(function TaskCard({
   if (status === 'incomplete')
     notes.push({ tone: 'error', text: t.dl.incompleteHint });
   if (task.needsGesture && status === 'paused')
-    notes.push({ tone: 'info', text: t.dl.needsGesture });
+    notes.push({
+      tone: 'info',
+      text: task.config.folder ? t.dl.needsFolderAccess : t.dl.needsGesture,
+    });
   else if (task.restored && status !== 'completed')
     notes.push({ tone: 'info', text: t.dl.restoredNote });
   if (task.notice === 'sw-fallback')
@@ -183,7 +201,9 @@ const TaskCard = memo(function TaskCard({
     notes.push({
       tone: 'ok',
       text:
-        task.config.streamMode === 'file-system'
+        task.folderName && task.savedName
+          ? t.dl.savedFolder(task.folderName, task.savedName)
+          : task.config.streamMode === 'file-system'
           ? t.dl.savedDisk
           : t.dl.savedBrowser,
     });
@@ -398,8 +418,12 @@ export default function DownloadManager({ onClose }: { onClose: () => void }) {
   );
   const canStartAll = tasks.some((x) => ['paused', 'error'].includes(x.status));
   const hasCompleted = tasks.some((x) => x.status === 'completed');
-  // 新任务在最上面
-  const ordered = [...tasks].reverse();
+  // 新加入的在最上面；同一批（多集）里按集数顺序
+  const ordered = [...tasks].sort(
+    (a, b) =>
+      (b.addedAt ?? b.createdAt) - (a.addedAt ?? a.createdAt) ||
+      a.createdAt - b.createdAt
+  );
 
   const handleClearAll = async () => {
     const unfinished = tasks.some((x) => x.status !== 'completed');

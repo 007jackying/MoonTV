@@ -12,6 +12,12 @@
  */
 
 import { buildFilename } from './download-filename';
+import {
+  cachedFolder,
+  createFolderWriteStream,
+  ensureFolderPermission,
+  loadFolder,
+} from './download-folder';
 import type {
   DownloadErrorCode,
   DownloadJob,
@@ -43,6 +49,12 @@ export interface DownloadConfig {
   removeAds: boolean;
   /** 下载范围（1 起始，含两端）；null 表示完整下载 */
   range: { start: number; end: number } | null;
+  /** 按片头 / 片尾时间裁剪（秒，outro 为负数），下载前按这一集的切片换算；与 range 二选一 */
+  skip?: { intro: number; outro: number } | null;
+  /** 直写磁盘时写进已选的下载文件夹，不再逐个弹出保存框 */
+  folder?: boolean;
+  /** 主播放列表里优先选择的分辨率（批量下载多集时沿用同一个清晰度） */
+  preferredResolution?: string;
 }
 
 export type TaskNotice =
@@ -82,8 +94,13 @@ export interface DownloadTaskView {
   notice?: TaskNotice;
   /** 刷新页面后恢复的任务：下载会从头开始 */
   restored?: boolean;
-  /** 需要点击「继续」重新选择保存位置（文件系统直写模式在刷新后无法自动恢复） */
+  /** 需要点击「继续」重新选择保存位置 / 重新允许访问下载文件夹 */
   needsGesture?: boolean;
+  /** 同一次加入的任务（批量下载多集）共用这个时间，列表里放在一起、按集数顺序排列 */
+  addedAt?: number;
+  /** 写进下载文件夹时：文件夹名和实际文件名（重名时会加上 (1)） */
+  folderName?: string;
+  savedName?: string;
 }
 
 export interface AddTaskInput {
@@ -96,6 +113,10 @@ export interface AddTaskInput {
 
 export type AddTaskResult =
   | { ok: true; id: string }
+  | { ok: false; reason: 'cancelled' | 'denied'; message: string };
+
+export type AddTasksResult =
+  | { ok: true; ids: string[] }
   | { ok: false; reason: 'cancelled' | 'denied'; message: string };
 
 interface Runtime {
@@ -272,10 +293,11 @@ function restore(saved: PersistedTask[]): DownloadTaskView[] {
         restored: true,
       };
       const wasActive = ACTIVE.includes(t.status);
-      if (t.config.streamMode === 'file-system') {
+      if (t.config.streamMode === 'file-system' && !t.config.folder) {
         // 需要用户点击才能重新选择保存位置
         return { ...reset, status: 'paused' as const, needsGesture: true };
       }
+      // 写进下载文件夹的任务：开始时还有权限就直接继续，否则停下来等用户点击
       return {
         ...reset,
         status: wasActive ? ('queued' as const) : ('paused' as const),
@@ -360,14 +382,24 @@ function errorOf(e: unknown): DownloadTaskView['error'] {
 
 async function prepare(view: DownloadTaskView, rt: Runtime): Promise<M3U8Task> {
   const { parseM3U8 } = await engine();
+  const mod = await engine();
   const task =
     rt.task ??
-    (await parseM3U8(view.url, { removeAds: view.config.removeAds }));
+    (await parseM3U8(view.url, {
+      removeAds: view.config.removeAds,
+      preferredResolution: view.config.preferredResolution,
+    }));
   rt.task = task;
   const count = task.tsUrlList.length;
-  const range = view.config.range;
-  const start = range ? Math.min(Math.max(1, range.start), count) : 1;
-  const end = range ? Math.min(Math.max(start, range.end), count) : count;
+  const { range, skip } = view.config;
+  let start = 1;
+  let end = count;
+  if (range) {
+    start = Math.min(Math.max(1, range.start), count);
+    end = Math.min(Math.max(start, range.end), count);
+  } else if (skip) {
+    ({ start, end } = mod.rangeFromSkipConfig(task, skip.intro, skip.outro));
+  }
   task.rangeDownload = { startSegment: start, endSegment: end };
   task.title = view.title;
   task.type = task.initSegmentUrl ? 'MP4' : view.config.type;
@@ -397,12 +429,13 @@ async function startTask(id: string) {
     update(id, {
       total: endSegment - startSegment + 1,
       duration: mod.rangeDuration(task, startSegment, endSegment),
-      timeRange: view.config.range
-        ? {
-            from: mod.segmentStartTime(task, startSegment),
-            to: mod.segmentStartTime(task, endSegment + 1),
-          }
-        : null,
+      timeRange:
+        startSegment > 1 || endSegment < task.tsUrlList.length
+          ? {
+              from: mod.segmentStartTime(task, startSegment),
+              to: mod.segmentStartTime(task, endSegment + 1),
+            }
+          : null,
       adsRemoved: task.adsRemoved,
     });
 
@@ -412,6 +445,18 @@ async function startTask(id: string) {
     if (view.config.streamMode === 'file-system') {
       sink = rt.sink ?? null;
       rt.sink = undefined;
+      if (!sink && view.config.folder) {
+        // 下载文件夹：权限还在就直接建文件，不需要用户操作
+        const dir = await loadFolder();
+        if (dir && (await ensureFolderPermission(dir, false))) {
+          const created = await createFolderWriteStream(
+            dir,
+            mod.buildFilename(task.title, task.type)
+          );
+          sink = created.stream;
+          update(id, { folderName: dir.name, savedName: created.name });
+        }
+      }
       if (!sink) {
         rt.running = false;
         update(id, { status: 'paused', needsGesture: true });
@@ -543,53 +588,88 @@ function openFileSink(
   return createFileSystemWriteStream(buildFilename(title, type));
 }
 
-export async function addTask(input: AddTaskInput): Promise<AddTaskResult> {
+/**
+ * 加入一个或多个下载任务（批量下载多集时一次加入）。
+ * 直写磁盘需要用户手势：单个任务弹出保存框，写进下载文件夹时确认一次文件夹权限；
+ * 所以必须在点击处理函数里直接调用，之前不要先 await 别的操作。
+ */
+export async function addTasks(
+  inputs: AddTaskInput[]
+): Promise<AddTasksResult> {
   init();
-  let sink: WritableStream<Uint8Array> | undefined;
-  if (input.config.streamMode === 'file-system') {
+  if (!inputs.length) return { ok: true, ids: [] };
+  const fail = (reason: 'cancelled' | 'denied', message: string) =>
+    ({ ok: false, reason, message } as const);
+
+  const disk = inputs.filter((i) => i.config.streamMode === 'file-system');
+  const sinks = new Map<AddTaskInput, WritableStream<Uint8Array>>();
+  if (disk.some((i) => i.config.folder)) {
+    const dir = cachedFolder() ?? (await loadFolder());
+    if (!dir) return fail('denied', '还没有选择下载文件夹');
+    if (!(await ensureFolderPermission(dir, true))) {
+      return fail('cancelled', '没有获得下载文件夹的访问权限');
+    }
+  }
+  const perFile = disk.filter((i) => !i.config.folder);
+  if (perFile.length > 1) {
+    // 浏览器一次点击只允许弹出一个保存框
+    return fail('denied', '同时下载多个文件请先选择下载文件夹');
+  }
+  for (const input of perFile) {
     try {
-      sink = await openFileSink(input.title, input.config, input.parsedTask);
+      sinks.set(
+        input,
+        await openFileSink(input.title, input.config, input.parsedTask)
+      );
     } catch (e) {
-      const reason = e instanceof FilePickerError ? e.reason : 'denied';
-      return {
-        ok: false,
-        reason,
-        message: e instanceof Error ? e.message : String(e),
-      };
+      return fail(
+        e instanceof FilePickerError ? e.reason : 'denied',
+        e instanceof Error ? e.message : String(e)
+      );
     }
   }
 
-  const id = newId();
-  const parsed = input.parsedTask;
-  const count = parsed?.tsUrlList.length ?? 0;
-  const range = input.config.range;
-  const view: DownloadTaskView = {
-    id,
-    url: parsed?.url ?? input.url,
-    title: input.title,
-    createdAt: Date.now(),
-    config: input.config,
-    status: 'queued',
-    done: 0,
-    failed: 0,
-    total: range ? range.end - range.start + 1 : count,
-    bytes: 0,
-    speed: 0,
-    eta: null,
-    mergePercent: 0,
-    duration: 0,
-    timeRange: null,
-    adsRemoved: parsed?.adsRemoved,
-    skipped: 0,
-  };
-  const rt = runtime(id);
-  // 同一个解析结果被多次添加时各自独立（每个任务有自己的切片状态）
-  rt.task = parsed ? cloneTask(parsed) : undefined;
-  rt.sink = sink;
-  tasks = [...tasks, view];
+  const now = Date.now();
+  const views = inputs.map((input, i): DownloadTaskView => {
+    const id = newId();
+    const parsed = input.parsedTask;
+    const count = parsed?.tsUrlList.length ?? 0;
+    const range = input.config.range;
+    const rt = runtime(id);
+    // 同一个解析结果被多次添加时各自独立（每个任务有自己的切片状态）
+    rt.task = parsed ? cloneTask(parsed) : undefined;
+    rt.sink = sinks.get(input);
+    return {
+      id,
+      url: parsed?.url ?? input.url,
+      title: input.title,
+      // 同一批任务按加入顺序排队
+      createdAt: now + i,
+      addedAt: now,
+      config: input.config,
+      status: 'queued',
+      done: 0,
+      failed: 0,
+      total: range ? range.end - range.start + 1 : count,
+      bytes: 0,
+      speed: 0,
+      eta: null,
+      mergePercent: 0,
+      duration: 0,
+      timeRange: null,
+      adsRemoved: parsed?.adsRemoved,
+      skipped: 0,
+    };
+  });
+  tasks = [...tasks, ...views];
   emit(true);
   pump();
-  return { ok: true, id };
+  return { ok: true, ids: views.map((v) => v.id) };
+}
+
+export async function addTask(input: AddTaskInput): Promise<AddTaskResult> {
+  const result = await addTasks([input]);
+  return result.ok ? { ok: true, id: result.ids[0] } : result;
 }
 
 function cloneTask(task: M3U8Task): M3U8Task {
@@ -623,7 +703,23 @@ export async function resumeTask(id: string): Promise<AddTaskResult | void> {
   const rt = runtime(id);
   const hasLiveJob = !!rt.job && rt.running;
 
-  if (!hasLiveJob && t.config.streamMode === 'file-system' && !rt.sink) {
+  if (
+    !hasLiveJob &&
+    t.config.streamMode === 'file-system' &&
+    !rt.sink &&
+    t.config.folder &&
+    cachedFolder()
+  ) {
+    // 下载文件夹：在这次点击里确认权限，文件在任务开始时再建
+    const dir = cachedFolder() as FileSystemDirectoryHandle;
+    if (!(await ensureFolderPermission(dir, true))) {
+      return {
+        ok: false,
+        reason: 'cancelled',
+        message: '没有获得下载文件夹的访问权限',
+      };
+    }
+  } else if (!hasLiveJob && t.config.streamMode === 'file-system' && !rt.sink) {
     try {
       rt.sink = await openFileSink(t.title, t.config, rt.task);
     } catch (e) {
@@ -700,14 +796,23 @@ export function pauseAll() {
     .forEach((t) => pauseTask(t.id));
 }
 
-/** 继续所有暂停 / 失败的任务（需要重新选择保存位置的除外） */
-export function resumeAll() {
-  tasks
-    .filter(
-      (t) =>
-        ['paused', 'error'].includes(t.status) &&
-        !(t.config.streamMode === 'file-system' && !runtimes.get(t.id)?.job)
-    )
+/**
+ * 继续所有暂停 / 失败的任务。写进下载文件夹的任务在这次点击里确认一次权限；
+ * 需要逐个选择保存位置的任务除外（一次点击只能弹出一个保存框）。
+ */
+export async function resumeAll() {
+  const candidates = tasks.filter((t) =>
+    ['paused', 'error'].includes(t.status)
+  );
+  const needsFile = (t: DownloadTaskView) =>
+    t.config.streamMode === 'file-system' && !runtimes.get(t.id)?.job;
+  let folderOk = false;
+  const dir = cachedFolder();
+  if (dir && candidates.some((t) => needsFile(t) && t.config.folder)) {
+    folderOk = await ensureFolderPermission(dir, true);
+  }
+  candidates
+    .filter((t) => !needsFile(t) || (t.config.folder && folderOk))
     .forEach((t) => void resumeTask(t.id));
 }
 
@@ -761,7 +866,8 @@ export function init() {
     e.returnValue = '';
   });
   window.addEventListener('pagehide', persistNow);
-  pump();
+  // 预先读取下载文件夹，之后在点击里可以同步拿到句柄
+  void loadFolder().finally(pump);
 }
 
 /** 仅供测试：重置所有状态 */

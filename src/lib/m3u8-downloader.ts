@@ -293,6 +293,8 @@ export interface ParseOptions {
   /** 去掉插播广告切片（规则与播放器的去广告一致） */
   removeAds?: boolean;
   signal?: AbortSignal;
+  /** 主播放列表里优先选这个分辨率（如 1280x720，批量下载多集时沿用第一集选的清晰度），没有时选最高码率 */
+  preferredResolution?: string;
 }
 
 /**
@@ -317,9 +319,13 @@ export async function parseM3U8(
     if (!variants.length) {
       throw new DownloadError('invalid-playlist', '主播放列表里没有可用的码率');
     }
-    const task = await parseM3U8(variants[0].url, options, depth + 1);
+    const chosen =
+      (options.preferredResolution &&
+        variants.find((v) => v.resolution === options.preferredResolution)) ||
+      variants[0];
+    const task = await parseM3U8(chosen.url, options, depth + 1);
     task.variants = variants;
-    task.bandwidth = variants[0].bandwidth;
+    task.bandwidth = chosen.bandwidth;
     return task;
   }
 

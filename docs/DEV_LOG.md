@@ -140,6 +140,50 @@ Memory / performance:
   the retry button wrapped badly at 360–390 px.
 - `tsc`, `eslint --max-warnings=0` on the changed files, full Jest suite.
 
+### Follow-up: multi-episode download, download folder, file names
+
+Asked by the owner after the first push: can we pick where to save, what is
+the file-name format, and can a series be downloaded in one go — "build all
+three together".
+
+- **Save location**: a page cannot choose a folder for the user. On Chrome /
+  Edge desktop the user picks one with `showDirectoryPicker`; the handle is
+  kept in IndexedDB and cached in memory (`src/lib/download-folder.ts`) so a
+  click handler can request permission without first awaiting IndexedDB and
+  losing the user gesture. Files are created per task when it starts
+  (`createFolderWriteStream`, ` (1)` suffix on clashes, entry removed on
+  abort). After a reload, folder tasks resume on their own if the permission is
+  still granted, otherwise they stop at 点击「继续」允许访问下载文件夹 and the
+  click requests it. 开始全部 requests it once for all of them.
+- **File names**: `片名 第03集` / `Title E03`, number from the source's episode
+  title (第 3 集, EP03, 03) or the position, zero-padded to
+  `max(2, digits(total))`, non-numeric titles (特别篇) appended; movies stay
+  `片名`. Previously `片名_第1集` or whatever the source called the episode
+  (`片名_HD中字`), which does not sort.
+- **Batch**: an episode picker in the add dialog (全选 / 从当前集起 / 只下当前集
+  / per episode). Each episode is its own task in the existing queue (2 at a
+  time), parsed when it starts; the quality is matched by resolution
+  (`preferredResolution`), intro / outro trimming by time (`config.skip`,
+  computed per episode). Manual segment ranges are hidden in batch mode since
+  segment counts differ. Disk mode in a batch requires the folder (a click can
+  open only one save dialog); the store refuses more than one per-file picker
+  per call. Tasks added together share `addedAt`, so the list shows the
+  newest batch first but its episodes in order.
+- Checks: 10 new unit tests (naming, preferred variant, batch + skip, folder
+  writes, folder required / one picker per click, permission lost after a
+  reload). In the browser, with `showDirectoryPicker` / `showSaveFilePicker`
+  stubbed to return Origin Private File System handles (the real dialogs
+  cannot be driven headless; everything after the picker is real): 3 episodes
+  in memory mode → 3 downloads named 第 01–03 集; 4 episodes into the folder →
+  4 files written there with 已保存到「Downloads」：… on each card; a single
+  episode via the per-file dialog. All files read back from OPFS decode with
+  ffmpeg (12.03 s each).
+- Before / after recordings of the old build (`5340c1e`) and this one, same
+  flows, were made for the owner (not committed). The old build, re-run for
+  them: the
+  Service Worker mode sat at 3/60 and 4/60 segments for 20 s in two runs; a
+  playlist with two missing segments stayed 下载中 97% indefinitely.
+
 ### Open / not done
 
 - next-pwa's default `cross-origin` NetworkFirst route also caches every

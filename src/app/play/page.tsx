@@ -43,6 +43,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { episodeFileTitle } from '@/lib/download-filename';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { formatEpisodeLabel } from '@/lib/i18n';
 import { formatClock, HlsModule } from '@/lib/player/engine';
@@ -95,7 +96,7 @@ type SkipConfig = { enable: boolean; intro_time: number; outro_time: number };
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   // 只渲染当前断点需要的布局（侧栏 / 移动端卡片），避免列表重复渲染两份
   const isDesktop = useMediaQuery('(min-width: 1024px)', true);
   // 异步流程里使用最新的文案
@@ -1470,6 +1471,21 @@ function PlayPageClient() {
   // 派生的显示数据
   // ---------------------------------------------------------------------------
   const isSeries = totalEpisodes > 1;
+  // 下载弹窗里的选集（可以一次下载多集）
+  const downloadSeries = useMemo(
+    () =>
+      isSeries && detail
+        ? {
+            title: videoTitle,
+            episodes: detail.episodes.map((url, i) => ({
+              url,
+              label: detail.episodes_titles?.[i],
+            })),
+            current: currentEpisodeIndex,
+          }
+        : undefined,
+    [isSeries, detail, videoTitle, currentEpisodeIndex]
+  );
   const episodeLabel = isSeries
     ? formatEpisodeLabel(
         t,
@@ -1835,14 +1851,14 @@ function PlayPageClient() {
         onClose={() => setShowAddDownload(false)}
         notifyOnAdd
         initialUrl={videoUrl || ''}
-        initialTitle={`${videoTitle}${
-          isSeries
-            ? `_${
-                detail?.episodes_titles?.[currentEpisodeIndex] ||
-                `第${currentEpisodeIndex + 1}集`
-              }`
-            : ''
-        }`}
+        initialTitle={episodeFileTitle(
+          videoTitle,
+          detail?.episodes_titles?.[currentEpisodeIndex],
+          currentEpisodeIndex,
+          totalEpisodes,
+          lang
+        )}
+        series={downloadSeries}
         skipConfig={skipConfig}
       />
     </PageLayout>

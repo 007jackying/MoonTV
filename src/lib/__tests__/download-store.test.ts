@@ -17,6 +17,40 @@ Object.assign(globalThis, {
   crypto: webcrypto,
 });
 
+// ---- 假的下载文件夹（File System Access API 在 node 里不存在）----
+const mockFolder = {
+  handle: null as null | { name: string },
+  granted: true,
+  grantOnRequest: true,
+  requests: 0,
+  files: new Map<string, number[]>(),
+};
+jest.mock('../download-folder', () => ({
+  loadFolder: async () => mockFolder.handle,
+  cachedFolder: () => mockFolder.handle,
+  ensureFolderPermission: async (_h: unknown, request: boolean) => {
+    if (mockFolder.granted) return true;
+    if (!request) return false;
+    mockFolder.requests++;
+    mockFolder.granted = mockFolder.grantOnRequest;
+    return mockFolder.granted;
+  },
+  createFolderWriteStream: async (_dir: unknown, name: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { WritableStream: WS } = require('stream/web');
+    const chunks: number[] = [];
+    mockFolder.files.set(name, chunks);
+    return {
+      name,
+      stream: new WS({
+        write(c: Uint8Array) {
+          chunks.push(...Array.from(c));
+        },
+      }),
+    };
+  },
+}));
+
 // ---- 假的浏览器环境 ----
 class MemoryStorage {
   data = new Map<string, string>();
@@ -132,6 +166,11 @@ beforeEach(() => {
   requested.length = 0;
   segmentGate = null;
   failing = new Set();
+  mockFolder.handle = null;
+  mockFolder.granted = true;
+  mockFolder.grantOnRequest = true;
+  mockFolder.requests = 0;
+  mockFolder.files.clear();
 });
 
 afterEach(() => store.__resetForTests());
@@ -312,6 +351,103 @@ describe('download store', () => {
     expect(byId('done').status).toBe('completed');
     await waitFor(() => byId(restoredId).status === 'completed');
     expect(byId(restoredId).restored).toBe(true);
+  });
+
+  it('adds several episodes at once, queues them in order and trims each by the skip times', async () => {
+    segmentGate = gate();
+    const res = await store.addTasks(
+      [3, 4, 6].map((n) => ({
+        url: `https://cdn.test/v${n}/index.m3u8`,
+        title: `剧 第0${n}集`,
+        config: { ...config, skip: { intro: 6, outro: -6 } },
+      }))
+    );
+    expect(res.ok).toBe(true);
+    const ids = (res as { ids: string[] }).ids;
+    await waitFor(() => byId(ids[1]).status === 'downloading');
+    expect(byId(ids[2]).status).toBe('queued');
+    segmentGate.open();
+    await waitFor(() => ids.every((id) => byId(id).status === 'completed'));
+    // 每集 5 秒一段：去掉片头 6 秒、片尾 6 秒后，从第 2 段到倒数第 2 段
+    expect(ids.map((id) => byId(id).total)).toEqual([1, 2, 4]);
+    expect(byId(ids[2]).timeRange).toEqual({ from: 5, to: 25 });
+    expect(saved).toEqual(['剧 第03集.ts', '剧 第04集.ts', '剧 第06集.ts']);
+  });
+
+  it('writes into the chosen download folder without a save dialog', async () => {
+    mockFolder.handle = { name: 'Movies' };
+    const res = await store.addTasks(
+      [3, 4].map((n) => ({
+        url: `https://cdn.test/v${n}/index.m3u8`,
+        title: `ep${n}`,
+        config: { ...config, streamMode: 'file-system' as const, folder: true },
+      }))
+    );
+    expect(res.ok).toBe(true);
+    const ids = (res as { ids: string[] }).ids;
+    await waitFor(() => ids.every((id) => byId(id).status === 'completed'));
+    expect(Array.from(mockFolder.files.keys()).sort()).toEqual([
+      'ep3.ts',
+      'ep4.ts',
+    ]);
+    expect(mockFolder.files.get('ep4.ts')).toHaveLength(12);
+    expect(byId(ids[0])).toMatchObject({
+      folderName: 'Movies',
+      savedName: 'ep3.ts',
+    });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('refuses the folder mode without a folder, and several save dialogs in one click', async () => {
+    const noFolder = await store.addTask({
+      url: 'https://cdn.test/v3/index.m3u8',
+      title: 'x',
+      config: { ...config, streamMode: 'file-system', folder: true },
+    });
+    expect(noFolder).toMatchObject({ ok: false, reason: 'denied' });
+    const many = await store.addTasks(
+      [3, 4].map((n) => ({
+        url: `https://cdn.test/v${n}/index.m3u8`,
+        title: `x${n}`,
+        config: { ...config, streamMode: 'file-system' as const },
+      }))
+    );
+    expect(many).toMatchObject({ ok: false, reason: 'denied' });
+    expect(store.getTasks()).toHaveLength(0);
+  });
+
+  it('waits for a click when the folder permission is gone after a reload', async () => {
+    mockFolder.handle = { name: 'Movies' };
+    mockFolder.granted = false;
+    session.setItem(
+      'moontv_downloads',
+      JSON.stringify([
+        {
+          id: 'f1',
+          url: 'https://cdn.test/v3/index.m3u8',
+          title: 'f1',
+          createdAt: 1,
+          config: { ...config, streamMode: 'file-system', folder: true },
+          status: 'downloading',
+          done: 1,
+          failed: 0,
+          total: 3,
+          bytes: 3,
+          duration: 0,
+          timeRange: null,
+          skipped: 0,
+        },
+      ])
+    );
+    store.init();
+    await waitFor(() => byId('f1').status === 'paused');
+    expect(byId('f1').needsGesture).toBe(true);
+    expect(mockFolder.requests).toBe(0);
+    // 用户点击「继续」：在这次点击里申请权限，然后写进文件夹
+    await store.resumeTask('f1');
+    expect(mockFolder.requests).toBe(1);
+    await waitFor(() => byId('f1').status === 'completed');
+    expect(mockFolder.files.has('f1.ts')).toBe(true);
   });
 
   it('asks the browser to confirm leaving while downloads are running', async () => {

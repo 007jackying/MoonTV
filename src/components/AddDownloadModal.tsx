@@ -33,12 +33,14 @@ import type {
 } from '@/lib/m3u8-downloader';
 import {
   estimateBytes,
+  outputFormat,
   parseM3U8,
   rangeDuration,
   rangeFromSkipConfig,
   segmentStartTime,
 } from '@/lib/m3u8-downloader';
 import { supportsFileSystemAccess } from '@/lib/stream-saver-fallback';
+import { incompatibleCodec } from '@/lib/ts-probe';
 
 import { toast } from './download/confirm';
 import { DownloadDialog, formatBytes } from './download/DownloadDialog';
@@ -62,7 +64,6 @@ interface AddDownloadModalProps {
 }
 
 interface Settings {
-  type: OutputFormat;
   streamMode: StreamSaverMode;
   concurrency: number;
   maxRetries: number;
@@ -75,7 +76,6 @@ const SETTINGS_KEY = 'moontv_download_settings';
 const LARGE_FILE_BYTES = 1024 * 1024 * 1024;
 
 const DEFAULT_SETTINGS: Settings = {
-  type: 'MP4',
   streamMode: 'disabled',
   concurrency: 6,
   maxRetries: 3,
@@ -89,8 +89,6 @@ function loadSettings(): Settings {
       return { ...DEFAULT_SETTINGS, ...saved };
     // 兼容旧版本分散保存的设置
     const legacy: Partial<Settings> = {};
-    const type = localStorage.getItem('downloadType');
-    if (type === 'TS' || type === 'MP4') legacy.type = type;
     const mode = localStorage.getItem('streamMode');
     if (
       mode === 'disabled' ||
@@ -279,6 +277,7 @@ function AddDownloadForm({
         const task = await parseM3U8(trimmed, {
           removeAds: opts.ads,
           signal: controller.signal,
+          probeCodecs: true,
         });
         if (controller.signal.aborted) return;
         if (task.variants?.length) {
@@ -325,6 +324,10 @@ function AddDownloadForm({
   const reloading = parse.status === 'loading' && !!task;
   const count = task?.tsUrlList.length ?? 0;
   const isFmp4 = !!task?.initSegmentUrl;
+  // 保存格式：总是 MP4，只有编码转不了时保存原始 TS（解析时已读过第一个切片）
+  const format: OutputFormat = task ? outputFormat(task) : 'MP4';
+  const keptTsCodec =
+    task?.codecs && !task.codecs.mp4 ? incompatibleCodec(task.codecs) : null;
 
   // 解析完成（含切换清晰度、去广告重新解析）后初始化下载范围
   const useSkipRef = useRef(useSkip);
@@ -407,7 +410,7 @@ function AddDownloadForm({
           title: title.trim() || task.title,
           config: {
             ...base,
-            type: isFmp4 ? 'MP4' : settings.type,
+            type: 'MP4',
             range: rangeOn ? { start, end } : null,
           },
           parsedTask: task,
@@ -416,7 +419,7 @@ function AddDownloadForm({
     } else {
       const config: DownloadConfig = {
         ...base,
-        type: settings.type,
+        type: 'MP4',
         range: null,
         skip:
           skipEach && skipConfig
@@ -780,12 +783,34 @@ function AddDownloadForm({
                 </dd>
               </div>
             </dl>
-            {(task.keys.length > 0 || isFmp4 || task.adsRemoved) && (
+            {keptTsCodec && (
+              <p
+                className='m-0 flex items-start gap-1.5 rounded-2xl bg-o-accent/10 px-3.5 py-2.5 text-[13px] text-o-accent-800 dark:text-o-accent-300'
+                role='status'
+              >
+                <AlertCircle
+                  className='mt-px h-4 w-4 flex-none'
+                  strokeWidth={2.5}
+                />
+                {t.dl.willKeepTs(keptTsCodec)}
+              </p>
+            )}
+            {(task.keys.length > 0 ||
+              isFmp4 ||
+              task.adsRemoved ||
+              task.codecs) && (
               <div className='-mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-o-neutral-700'>
                 {task.keys.length > 0 && (
                   <span className='inline-flex items-center gap-1'>
                     <Lock className='h-3.5 w-3.5' strokeWidth={2.5} />
                     {t.dl.encrypted} (AES-128)
+                  </span>
+                )}
+                {task.codecs && (
+                  <span>
+                    {[task.codecs.video, task.codecs.audio]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                 )}
                 {isFmp4 && <span>{t.dl.fmp4}</span>}
@@ -818,16 +843,13 @@ function AddDownloadForm({
                 {selectedList.length > 0 && (
                   <p className='m-0 mt-1.5 truncate text-[12.5px] text-o-neutral-700'>
                     {t.dl.fileNamePreview(
-                      buildFilename(
-                        episodeTitle(selectedList[0]),
-                        settings.type
-                      ) +
+                      buildFilename(episodeTitle(selectedList[0]), format) +
                         (selectedList.length > 1
                           ? ` … ${buildFilename(
                               episodeTitle(
                                 selectedList[selectedList.length - 1]
                               ),
-                              settings.type
+                              format
                             )}`
                           : '')
                     )}
@@ -849,7 +871,7 @@ function AddDownloadForm({
                     className={`${FIELD} min-w-0 flex-1`}
                   />
                   <span className='flex-none text-sm text-o-neutral-700'>
-                    .{(isFmp4 ? 'MP4' : settings.type).toLowerCase()}
+                    .{format.toLowerCase()}
                   </span>
                 </div>
               </div>
@@ -879,37 +901,6 @@ function AddDownloadForm({
                   ))}
                 </select>
               </div>
-            )}
-
-            {/* 格式 */}
-            {!isFmp4 && (
-              <fieldset className='m-0 border-0 p-0'>
-                <legend className={LABEL}>{t.dl.format}</legend>
-                <div className='grid grid-cols-2 gap-2'>
-                  {(['MP4', 'TS'] as const).map((type) => (
-                    <label
-                      key={type}
-                      className={`cursor-pointer rounded-2xl border px-3.5 py-2.5 transition-colors ${
-                        settings.type === type
-                          ? 'border-o-accent bg-o-accent/10'
-                          : 'border-o-divider hover:bg-o-ink/[0.04]'
-                      }`}
-                    >
-                      <input
-                        type='radio'
-                        name='dl-format'
-                        className='sr-only'
-                        checked={settings.type === type}
-                        onChange={() => updateSettings({ type })}
-                      />
-                      <span className='block font-semibold'>{type}</span>
-                      <span className='block text-[12.5px] leading-snug text-o-neutral-700'>
-                        {type === 'MP4' ? t.dl.formatMp4 : t.dl.formatTs}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
             )}
 
             {/* 保存方式 */}

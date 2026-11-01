@@ -184,6 +184,36 @@ three together".
   Service Worker mode sat at 3/60 and 4/60 segments for 20 s in two runs; a
   playlist with two missing segments stayed 下载中 97% indefinitely.
 
+### Follow-up: MP4 only, with a codec check
+
+Asked by the owner: "can we always do mp4 format? why do we even have the ts
+format?" then "do 1 and 2, no TS option at all".
+
+- **Why TS existed**: HLS segments are MPEG-TS, so joining them is free and
+  byte-exact; MP4 needs mux.js to re-package them.
+- **What mux.js silently drops** (measured on ffmpeg-made 4 s clips): H.265 +
+  AAC → audio-only MP4; H.264 + AC-3 or MP3 → video-only MP4 (no sound);
+  MPEG-2 → no output. Only the last case reached the existing "no output →
+  save TS" fallback, so an MP4 download of an H.265 source lost the picture.
+- **Decision**: the format choice is gone; `config.type` is always `MP4` from
+  the UI. `parseM3U8({ probeCodecs: true })` fetches and decrypts the first
+  segment and reads the PMT stream types (`src/lib/ts-probe.ts`: H.264 0x1B,
+  AAC 0x0F → MP4; H.265 0x24, AC-3 0x81, E-AC-3 0x87, MP2/MP3 0x03/0x04,
+  MPEG-2 0x02… → TS; ID3 0x15 ignored; an unknown private stream 0x06 is only
+  tolerated next to AAC). The format is decided before the file is created,
+  because the disk modes fix the extension then; the per-file save dialog uses
+  the probed format. The probed segment is kept on the task
+  (`prefetched`) and used by the download instead of a second request, and
+  released when the run ends. An unreadable segment counts as unknown and
+  falls back to trying MP4.
+- The dialog shows the codecs (H.264 · AAC) and, when the file will be TS,
+  says so before downloading; the task card repeats it (将保存为 / 已保存为).
+- Checks: 16 new unit tests (probe tables on synthetic PAT/PMT packets,
+  parse + prefetch reuse, store end to end). The probe read the five ffmpeg
+  clips correctly. In the browser: H.265 + AAC and H.264 + AC-3 HLS streams
+  saved as `.ts` with both streams intact (also into the download folder),
+  H.264 + AAC as `.mp4`; all decode with ffmpeg.
+
 ### Open / not done
 
 - next-pwa's default `cross-origin` NetworkFirst route also caches every

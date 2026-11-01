@@ -195,6 +195,14 @@ const TaskCard = memo(function TaskCard({
     notes.push({ tone: 'info', text: t.dl.restoredNote });
   if (task.notice === 'sw-fallback')
     notes.push({ tone: 'info', text: t.dl.swFallback });
+  if (task.codecName)
+    notes.push({
+      tone: 'info',
+      text:
+        status === 'completed'
+          ? t.dl.keptTs(task.codecName)
+          : t.dl.willKeepTs(task.codecName),
+    });
   if (task.notice === 'saved-as-ts')
     notes.push({ tone: 'info', text: t.dl.savedAsTs });
   if (status === 'completed') {

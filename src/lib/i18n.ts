@@ -261,6 +261,10 @@ const zh = {
     needsGesture: '点击「继续」重新选择保存位置',
     swFallback: '当前浏览器无法边下边存，已改用普通下载',
     savedAsTs: '无法转换为 MP4，已保存为 TS 格式',
+    willKeepTs: (codec: string) =>
+      `这个视频是 ${codec} 编码，无法转为 MP4，将保存为原始 TS 格式（VLC、PotPlayer 等播放器可以打开）`,
+    keptTs: (codec: string) =>
+      `这个视频是 ${codec} 编码，无法转为 MP4，已保存为原始 TS 格式`,
     adsRemoved: (seconds: number) => `已去广告 ${seconds} 秒`,
     pause: '暂停',
     resume: '继续',
@@ -305,9 +309,6 @@ const zh = {
     estSize: '预计大小',
     encrypted: '已加密',
     fmp4: 'fMP4 视频，直接保存为 MP4',
-    format: '格式',
-    formatMp4: '兼容性最好，几乎所有播放器都能打开',
-    formatTs: '原始格式，无需转换',
     saveMethod: '保存方式',
     modeMemory: '普通下载',
     modeMemoryHint: '下载完成后一次性保存，适合 1 GB 以内的视频',
@@ -625,6 +626,10 @@ const en: Messages = {
     needsGesture: 'Tap “Resume” to choose where to save again',
     swFallback: 'Streaming isn’t available in this browser; using Standard',
     savedAsTs: 'Couldn’t convert to MP4; saved as TS',
+    willKeepTs: (codec) =>
+      `This video uses ${codec}, which can’t be converted to MP4. It will be saved as the original TS file (plays in VLC, PotPlayer and similar players).`,
+    keptTs: (codec) =>
+      `This video uses ${codec}, which can’t be converted to MP4, so it was saved as the original TS file`,
     adsRemoved: (seconds) => `${seconds}s of ads removed`,
     pause: 'Pause',
     resume: 'Resume',
@@ -669,9 +674,6 @@ const en: Messages = {
     estSize: 'Est. size',
     encrypted: 'Encrypted',
     fmp4: 'fMP4 stream, saved as MP4 directly',
-    format: 'Format',
-    formatMp4: 'Plays in almost any player',
-    formatTs: 'Original stream, no conversion',
     saveMethod: 'Save method',
     modeMemory: 'Standard',
     modeMemoryHint: 'Saved when finished. Best for videos under 1 GB',

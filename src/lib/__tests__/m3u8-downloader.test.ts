@@ -11,6 +11,7 @@ import {
 import {
   DownloadJob,
   M3U8Task,
+  outputFormat,
   parseM3U8,
   parseMediaPlaylist,
   rangeFromSkipConfig,
@@ -253,6 +254,97 @@ describe('parseM3U8', () => {
         code: 'invalid-playlist',
       }
     );
+  });
+});
+
+/** 只含 PAT + PMT 的 TS 切片，用来模拟不同编码（与 ts-probe.test.ts 相同） */
+function fakeTs(streamTypes: number[]): Uint8Array {
+  const packet = (pid: number, section: number[]) => {
+    const p = new Uint8Array(188).fill(0xff);
+    p.set([0x47, 0x40 | (pid >> 8), pid & 0xff, 0x10, 0x00, ...section]);
+    return p;
+  };
+  const streams = streamTypes.flatMap((t, i) => [
+    t,
+    0xe1,
+    0x01 + i,
+    0xf0,
+    0x00,
+  ]);
+  const out = new Uint8Array(376);
+  out.set(
+    packet(
+      0,
+      [
+        0x00, 0xb0, 13, 0x00, 0x01, 0xc1, 0x00, 0x00, 0x00, 0x01, 0xe1, 0x00, 0,
+        0, 0, 0,
+      ]
+    )
+  );
+  out.set(
+    packet(0x100, [
+      0x02,
+      0xb0,
+      13 + streams.length,
+      0x00,
+      0x01,
+      0xc1,
+      0x00,
+      0x00,
+      0xe1,
+      0x01,
+      0xf0,
+      0x00,
+      ...streams,
+      0,
+      0,
+      0,
+      0,
+    ]),
+    188
+  );
+  return out;
+}
+
+describe('codec probe', () => {
+  it('keeps H.265 sources as TS and reuses the probed segment', async () => {
+    routes[BASE] = () => respond(playlist(2));
+    const seg0 = fakeTs([0x24, 0x0f]);
+    routes['https://cdn.test/video/seg0.ts'] = () => respond(seg0);
+    routes['https://cdn.test/video/seg1.ts'] = () => respond(bytes(9));
+    const task = await parseM3U8(BASE, { probeCodecs: true });
+    expect(task.codecs).toMatchObject({
+      video: 'H.265',
+      audio: 'AAC',
+      mp4: false,
+    });
+    expect(outputFormat(task)).toBe('TS');
+    task.type = outputFormat(task);
+    task.title = 'hevc';
+    await new DownloadJob(task).run();
+    expect(fetchLog.filter((u) => u.endsWith('seg0.ts'))).toHaveLength(1);
+    expect(saved[0].name).toBe('hevc.ts');
+    expect(await blobBytes(saved[0].blob)).toEqual([...Array.from(seg0), 9]);
+    expect(task.prefetched).toBeUndefined();
+  });
+
+  it('converts H.264 + AAC and does not probe unless asked', async () => {
+    routes[BASE] = () => respond(playlist(1));
+    routes['https://cdn.test/video/seg0.ts'] = () =>
+      respond(fakeTs([0x1b, 0x0f]));
+    const probed = await parseM3U8(BASE, { probeCodecs: true });
+    expect(outputFormat(probed)).toBe('MP4');
+    fetchLog.length = 0;
+    const plain = await parseM3U8(BASE);
+    expect(plain.codecs).toBeUndefined();
+    expect(fetchLog.some((u) => u.endsWith('.ts'))).toBe(false);
+  });
+
+  it('treats an unreadable first segment as unknown instead of failing', async () => {
+    routes[BASE] = () => respond(playlist(1));
+    const task = await parseM3U8(BASE, { probeCodecs: true });
+    expect(task.codecs).toBeNull();
+    expect(outputFormat(task)).toBe('MP4');
   });
 });
 

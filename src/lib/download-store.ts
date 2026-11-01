@@ -98,6 +98,8 @@ export interface DownloadTaskView {
   needsGesture?: boolean;
   /** 同一次加入的任务（批量下载多集）共用这个时间，列表里放在一起、按集数顺序排列 */
   addedAt?: number;
+  /** 视频编码不能转 MP4、按原始 TS 保存时，导致这样做的编码（如 H.265） */
+  codecName?: string;
   /** 写进下载文件夹时：文件夹名和实际文件名（重名时会加上 (1)） */
   folderName?: string;
   savedName?: string;
@@ -388,6 +390,8 @@ async function prepare(view: DownloadTaskView, rt: Runtime): Promise<M3U8Task> {
     (await parseM3U8(view.url, {
       removeAds: view.config.removeAds,
       preferredResolution: view.config.preferredResolution,
+      // 要转 MP4 时先看编码，转不了的直接保存 TS
+      probeCodecs: view.config.type === 'MP4',
     }));
   rt.task = task;
   const count = task.tsUrlList.length;
@@ -402,7 +406,7 @@ async function prepare(view: DownloadTaskView, rt: Runtime): Promise<M3U8Task> {
   }
   task.rangeDownload = { startSegment: start, endSegment: end };
   task.title = view.title;
-  task.type = task.initSegmentUrl ? 'MP4' : view.config.type;
+  task.type = mod.outputFormat(task, view.config.type);
   return task;
 }
 
@@ -426,7 +430,12 @@ async function startTask(id: string) {
     const task = await prepare(view, rt);
     if (!alive()) return;
     const { startSegment, endSegment } = task.rangeDownload;
+    const { incompatibleCodec } = await import('./ts-probe');
     update(id, {
+      codecName:
+        task.type === 'TS' && view.config.type === 'MP4' && task.codecs
+          ? incompatibleCodec(task.codecs)
+          : undefined,
       total: endSegment - startSegment + 1,
       duration: mod.rangeDuration(task, startSegment, endSegment),
       timeRange:
@@ -584,7 +593,10 @@ function openFileSink(
   config: DownloadConfig,
   parsed?: M3U8Task
 ) {
-  const type = parsed?.initSegmentUrl ? 'MP4' : config.type;
+  // 保存框里的扩展名要和最终格式一致：编码转不了 MP4 时是 .ts
+  let type = config.type;
+  if (parsed?.initSegmentUrl) type = 'MP4';
+  else if (parsed?.codecs && !parsed.codecs.mp4) type = 'TS';
   return createFileSystemWriteStream(buildFilename(title, type));
 }
 
@@ -679,6 +691,7 @@ function cloneTask(task: M3U8Task): M3U8Task {
     rangeDownload: { ...task.rangeDownload },
     downloadedSegments: undefined,
     initSegment: undefined,
+    prefetched: task.prefetched ? new Map(task.prefetched) : undefined,
   };
 }
 

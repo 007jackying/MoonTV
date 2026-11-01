@@ -14,6 +14,7 @@
 
 import { buildFilename } from './download-filename';
 import { removeAdsFromM3U8 } from './player/adFilter';
+import { probeTsCodecs, TsCodecs } from './ts-probe';
 
 export { buildFilename, sanitizeFilename } from './download-filename';
 
@@ -126,6 +127,23 @@ export interface M3U8Task {
   /** 内存模式下已下载的切片 */
   downloadedSegments?: Map<number, Blob>;
   initSegment?: Blob;
+  /** 第一个切片的编码（解析时 probeCodecs 才有）；null 表示读不出来 */
+  codecs?: TsCodecs | null;
+  /** 解析时为了判断编码已经下载（并解密）的切片，下载时直接用，不再请求一次 */
+  prefetched?: Map<number, Uint8Array>;
+}
+
+/**
+ * 实际保存的格式：fMP4 片源本来就是 MP4；TS 片源默认转成 MP4，
+ * 只有确认是 mux.js 转不了的编码（H.265、AC-3 等）时才保存原始 TS。
+ */
+export function outputFormat(
+  task: M3U8Task,
+  preferred: OutputFormat = 'MP4'
+): OutputFormat {
+  if (task.initSegmentUrl) return 'MP4';
+  if (task.codecs && !task.codecs.mp4) return 'TS';
+  return preferred;
 }
 
 export function resolveUrl(target: string, base: string): string {
@@ -295,6 +313,8 @@ export interface ParseOptions {
   signal?: AbortSignal;
   /** 主播放列表里优先选这个分辨率（如 1280x720，批量下载多集时沿用第一集选的清晰度），没有时选最高码率 */
   preferredResolution?: string;
+  /** 下载第一个切片看编码（决定能否转成 MP4）。该切片会留在任务上，下载时不再重复请求 */
+  probeCodecs?: boolean;
 }
 
 /**
@@ -370,7 +390,7 @@ export async function parseM3U8(
     })
   );
 
-  return {
+  const task: M3U8Task = {
     url,
     title: defaultTitle(url),
     type: 'TS',
@@ -386,6 +406,23 @@ export async function parseM3U8(
     adsRemoved,
     rangeDownload: { startSegment: 1, endSegment: segments.length },
   };
+
+  if (options.probeCodecs && !task.initSegmentUrl) {
+    try {
+      const raw = await fetchBytes(task.tsUrlList[0], {
+        signal: options.signal,
+        timeoutMs: PLAYLIST_TIMEOUT_MS,
+      });
+      const bytes = await decryptSegment(task, 0, raw);
+      task.codecs = probeTsCodecs(bytes);
+      task.prefetched = new Map([[0, bytes]]);
+    } catch (e) {
+      if (isAbortError(e)) throw e;
+      // 读不到就当作未知编码，按 MP4 尝试（转不出来时仍会退回 TS）
+      task.codecs = null;
+    }
+  }
+  return task;
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,6 +1056,8 @@ export class DownloadJob {
     );
     signal.removeEventListener('abort', wakeWindow);
     const missing = total - done - failed;
+    // 解析时预取的切片用不上了（不在下载范围内等），不再占内存
+    task.prefetched = undefined;
 
     if (this.cancelled) {
       await abortWriter();
@@ -1082,6 +1121,14 @@ export class DownloadJob {
   ): Promise<Uint8Array> {
     const signal = this.controller.signal;
     const st = index >= 0 ? this.task.finishList[index] : null;
+    const prefetched =
+      index >= 0 ? this.task.prefetched?.get(index) : undefined;
+    if (prefetched) {
+      // 解析时已经下载并解密过
+      this.task.prefetched?.delete(index);
+      this.options.onBytes?.(prefetched.byteLength);
+      return prefetched;
+    }
     for (let attempt = 0; ; attempt++) {
       if (st) st.retryCount = attempt;
       const paused = this.requestController.signal;

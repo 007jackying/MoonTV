@@ -124,6 +124,55 @@ function playlist(n: number) {
   return s + '#EXT-X-ENDLIST\n';
 }
 
+/** 只含 PAT + PMT 的 TS 切片，用来模拟不同编码（与 ts-probe.test.ts 相同） */
+function fakeTs(streamTypes: number[]): Uint8Array {
+  const packet = (pid: number, section: number[]) => {
+    const p = new Uint8Array(188).fill(0xff);
+    p.set([0x47, 0x40 | (pid >> 8), pid & 0xff, 0x10, 0x00, ...section]);
+    return p;
+  };
+  const streams = streamTypes.flatMap((t, i) => [
+    t,
+    0xe1,
+    0x01 + i,
+    0xf0,
+    0x00,
+  ]);
+  const out = new Uint8Array(376);
+  out.set(
+    packet(
+      0,
+      [
+        0x00, 0xb0, 13, 0x00, 0x01, 0xc1, 0x00, 0x00, 0x00, 0x01, 0xe1, 0x00, 0,
+        0, 0, 0,
+      ]
+    )
+  );
+  out.set(
+    packet(0x100, [
+      0x02,
+      0xb0,
+      13 + streams.length,
+      0x00,
+      0x01,
+      0xc1,
+      0x00,
+      0x00,
+      0xe1,
+      0x01,
+      0xf0,
+      0x00,
+      ...streams,
+      0,
+      0,
+      0,
+      0,
+    ]),
+    188
+  );
+  return out;
+}
+
 global.fetch = jest.fn(async (input: RequestInfo | URL) => {
   const url = String(input);
   requested.push(url);
@@ -131,6 +180,7 @@ global.fetch = jest.fn(async (input: RequestInfo | URL) => {
   if (m) return respond(playlist(Number(m[1].replace(/\D/g, '')) || 3));
   if (segmentGate) await segmentGate.promise;
   if (failing.has(url)) return respond('nope', 500);
+  if (url.endsWith('/hevc3/s0.ts')) return respond(fakeTs([0x24, 0x0f]));
   return respond(new Uint8Array([1, 2, 3]));
 }) as unknown as typeof fetch;
 
@@ -448,6 +498,19 @@ describe('download store', () => {
     expect(mockFolder.requests).toBe(1);
     await waitFor(() => byId('f1').status === 'completed');
     expect(mockFolder.files.has('f1.ts')).toBe(true);
+  });
+
+  it('saves H.265 sources as TS when MP4 was asked for, and says why', async () => {
+    const r = await store.addTask({
+      url: 'https://cdn.test/hevc3/index.m3u8',
+      title: '剧 第01集',
+      config: { ...config, type: 'MP4' },
+    });
+    const id = (r as { id: string }).id;
+    await waitFor(() => byId(id).status === 'completed');
+    expect(byId(id)).toMatchObject({ savedFormat: 'TS', codecName: 'H.265' });
+    expect(saved).toEqual(['剧 第01集.ts']);
+    expect(requested.filter((u) => u.endsWith('/hevc3/s0.ts'))).toHaveLength(1);
   });
 
   it('asks the browser to confirm leaving while downloads are running', async () => {

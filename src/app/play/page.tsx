@@ -1833,13 +1833,7 @@ function PlayPageClient() {
       <AddDownloadModal
         isOpen={showAddDownload}
         onClose={() => setShowAddDownload(false)}
-        onAddTask={(config) => {
-          // 触发自定义事件，通知导航栏的下载管理器
-          window.dispatchEvent(
-            new CustomEvent('addDownloadTask', { detail: config })
-          );
-          setShowAddDownload(false);
-        }}
+        notifyOnAdd
         initialUrl={videoUrl || ''}
         initialTitle={`${videoTitle}${
           isSeries

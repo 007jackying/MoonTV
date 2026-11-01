@@ -1,607 +1,858 @@
 'use client';
 
-import { Loader2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  AlertCircle,
+  ChevronDown,
+  Download,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { M3U8Task, parseM3U8, StreamSaverMode } from '@/lib/m3u8-downloader';
+import { addTask, DownloadConfig } from '@/lib/download-store';
+import { formatTime } from '@/lib/formatTime';
+import type {
+  M3U8Task,
+  OutputFormat,
+  PlaylistVariant,
+  StreamSaverMode,
+} from '@/lib/m3u8-downloader';
+import {
+  estimateBytes,
+  parseM3U8,
+  rangeDuration,
+  rangeFromSkipConfig,
+  segmentStartTime,
+} from '@/lib/m3u8-downloader';
+import { supportsFileSystemAccess } from '@/lib/stream-saver-fallback';
+
+import { toast } from './download/confirm';
+import { DownloadDialog, formatBytes } from './download/DownloadDialog';
+import { openDownloadManager } from './DownloadNavButton';
+import { useI18n } from './LanguageProvider';
 
 interface AddDownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddTask: (config: {
-    url: string;
-    title: string;
-    downloadType: 'TS' | 'MP4';
-    concurrency: number;
-    rangeMode: boolean;
-    startSegment: number;
-    endSegment: number;
-    streamMode: StreamSaverMode;
-    maxRetries: number; // 最大重试次数
-    parsedTask: M3U8Task;
-  }) => void;
   initialUrl?: string;
   initialTitle?: string;
-  skipConfig?: {
-    enable: boolean;
-    intro_time: number;
-    outro_time: number;
-  };
+  skipConfig?: { enable: boolean; intro_time: number; outro_time: number };
+  /** 加入后弹出提示（从播放页添加时用，用户看不到下载列表） */
+  notifyOnAdd?: boolean;
 }
 
-import { formatTime } from '@/lib/formatTime';
+interface Settings {
+  type: OutputFormat;
+  streamMode: StreamSaverMode;
+  concurrency: number;
+  maxRetries: number;
+}
 
-const AddDownloadModal = ({ isOpen, onClose, onAddTask, initialUrl = '', initialTitle = '', skipConfig }: AddDownloadModalProps) => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [task, setTask] = useState<M3U8Task | null>(null);
-  const [downloadType, setDownloadType] = useState<'TS' | 'MP4'>('TS');
-  const [rangeMode, setRangeMode] = useState(false);
-  const [startSegment, setStartSegment] = useState(1);
-  const [endSegment, setEndSegment] = useState(0);
-  const [concurrency, setConcurrency] = useState(6);
-  const [maxRetries, setMaxRetries] = useState(3); // 默认重试3次
-  const [streamMode, setStreamMode] = useState<StreamSaverMode>('disabled');
-  const [editableUrl, setEditableUrl] = useState('');
-  const [editableTitle, setEditableTitle] = useState('');
-  const [syncWithSkipConfig, setSyncWithSkipConfig] = useState(false);
-  
-  // 检测各种模式的支持情况
-  const [modeSupport, setModeSupport] = useState({
-    serviceWorker: false,
-    fileSystem: false,
-    blob: true, // Blob模式总是支持的
+const SETTINGS_KEY = 'moontv_download_settings';
+/** 普通下载超过这个大小时提示改用边下边存 */
+const LARGE_FILE_BYTES = 1024 * 1024 * 1024;
+
+const DEFAULT_SETTINGS: Settings = {
+  type: 'MP4',
+  streamMode: 'disabled',
+  concurrency: 6,
+  maxRetries: 3,
+};
+
+function loadSettings(): Settings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if (saved && typeof saved === 'object')
+      return { ...DEFAULT_SETTINGS, ...saved };
+    // 兼容旧版本分散保存的设置
+    const legacy: Partial<Settings> = {};
+    const type = localStorage.getItem('downloadType');
+    if (type === 'TS' || type === 'MP4') legacy.type = type;
+    const mode = localStorage.getItem('streamMode');
+    if (
+      mode === 'disabled' ||
+      mode === 'file-system' ||
+      mode === 'service-worker'
+    ) {
+      legacy.streamMode = mode;
+    }
+    const c = parseInt(localStorage.getItem('concurrency') || '', 10);
+    if (c >= 1 && c <= 16) legacy.concurrency = c;
+    const r = parseInt(localStorage.getItem('maxRetries') || '', 10);
+    if (r >= 0 && r <= 10) legacy.maxRetries = r;
+    return { ...DEFAULT_SETTINGS, ...legacy };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+function saveSettings(s: Settings) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    // ignore
+  }
+}
+
+/** 播放页的去广告开关（默认开） */
+function playerBlocksAds(): boolean {
+  try {
+    return localStorage.getItem('enable_blockad') !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+type ParseState =
+  | { status: 'idle' }
+  /** previous：切换清晰度 / 去广告重新解析时，先继续显示上一次的结果，避免整个表单跳动 */
+  | { status: 'loading'; previous?: M3U8Task }
+  | { status: 'ready'; task: M3U8Task }
+  | { status: 'error'; message: string; code?: string };
+
+function variantLabel(v: PlaylistVariant): string {
+  const height = v.resolution?.split('x')[1];
+  const parts = [height ? `${height}p` : v.resolution];
+  if (v.bandwidth) parts.push(`${(v.bandwidth / 1e6).toFixed(1)} Mbps`);
+  return parts.filter(Boolean).join(' · ') || v.url;
+}
+
+const FIELD =
+  'w-full rounded-2xl border border-o-divider bg-o-surface px-3.5 py-2.5 text-[15px] text-o-ink outline-none transition-colors placeholder:text-o-neutral-500 focus:border-o-accent focus:ring-2 focus:ring-o-accent/25';
+/** @tailwindcss/forms 的勾选框 / 单选框默认是蓝色（这里被映射成了绿色），改用主题色 */
+const CHECK =
+  'h-4 w-4 flex-none rounded border-o-neutral-500 bg-transparent text-o-accent focus:ring-o-accent/40 focus:ring-offset-0';
+const RADIO =
+  'h-4 w-4 flex-none border-o-neutral-500 bg-transparent text-o-accent focus:ring-o-accent/40 focus:ring-offset-0';
+const LABEL = 'mb-1.5 block text-[13px] font-semibold text-o-neutral-800';
+
+export default function AddDownloadModal(props: AddDownloadModalProps) {
+  if (!props.isOpen) return null;
+  return <AddDownloadForm {...props} />;
+}
+
+function AddDownloadForm({
+  onClose,
+  initialUrl = '',
+  initialTitle = '',
+  skipConfig,
+  notifyOnAdd = false,
+}: AddDownloadModalProps) {
+  const { t } = useI18n();
+  const [url, setUrl] = useState(initialUrl);
+  const [title, setTitle] = useState(initialTitle);
+  const [parse, setParse] = useState<ParseState>({ status: 'idle' });
+  const [variants, setVariants] = useState<PlaylistVariant[]>([]);
+  // 只在打开时挂载（服务端不渲染），可以直接读取本地设置，避免先显示默认值再跳变
+  const [settings, setSettings] = useState<Settings>(() => {
+    const saved = loadSettings();
+    if (saved.streamMode === 'file-system' && !supportsFileSystemAccess()) {
+      saved.streamMode = 'disabled';
+    }
+    return saved;
   });
+  const [removeAds, setRemoveAds] = useState(playerBlocksAds);
+  const [support, setSupport] = useState(() => ({
+    fileSystem: supportsFileSystemAccess(),
+    serviceWorker: false,
+  }));
+  const [rangeOn, setRangeOn] = useState(false);
+  const [useSkip, setUseSkip] = useState(false);
+  const [start, setStart] = useState(1);
+  const [end, setEnd] = useState(1);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  const variantsRef = useRef<PlaylistVariant[]>([]);
 
-  // 检测边下边存模式的支持情况
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // 动态导入，避免服务端渲染时执行
-      Promise.all([
-        import('@/lib/stream-saver-fallback'),
-        import('@/lib/stream-saver')
-      ]).then(([fallback, streamSaver]) => {
-        const fileSystemSupported = fallback.supportsFileSystemAccess();
-        const serviceWorkerSupported = streamSaver.isStreamSaverSupported();
-        
-        setModeSupport({
-          serviceWorker: serviceWorkerSupported,
-          fileSystem: fileSystemSupported,
-          blob: true,
-        });
-      }).catch(err => {
-        console.error('Failed to detect stream saver support:', err);
-      });
-    }
-  }, []);
+  const hasSkip =
+    !!skipConfig && (skipConfig.intro_time > 0 || skipConfig.outro_time < 0);
 
-  // 从 localStorage 恢复用户配置
+  // 读取设置与浏览器能力
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedDownloadType = localStorage.getItem('downloadType') as 'TS' | 'MP4' | null;
-      const savedConcurrency = localStorage.getItem('concurrency');
-      const savedMaxRetries = localStorage.getItem('maxRetries');
-      const savedStreamMode = localStorage.getItem('streamMode') as StreamSaverMode | null;
-      
-      if (savedDownloadType) setDownloadType(savedDownloadType);
-      if (savedConcurrency) setConcurrency(parseInt(savedConcurrency, 10));
-      if (savedMaxRetries) setMaxRetries(parseInt(savedMaxRetries, 10));
-      if (savedStreamMode) setStreamMode(savedStreamMode);
-    }
-  }, []);
-
-  // 保存用户配置到 localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('downloadType', downloadType);
-      localStorage.setItem('concurrency', concurrency.toString());
-      localStorage.setItem('maxRetries', String(maxRetries));
-      localStorage.setItem('streamMode', streamMode);
-    }
-  }, [downloadType, concurrency, maxRetries, streamMode]);
-
-  // 当模态框打开时，设置初始值
-  useEffect(() => {
-    if (isOpen) {
-      setEditableUrl(initialUrl || '');
-      setEditableTitle(initialTitle || '');
-      setTask(null);
-      setStartSegment(1);
-      setEndSegment(0);
-    }
-  }, [isOpen, initialUrl, initialTitle]);
-
-  // 监听 initialTitle 变化（例如切换剧集时）
-  useEffect(() => {
-    if (isOpen && initialTitle) {
-      setEditableTitle(initialTitle);
-      if (task) {
-        setTask({ ...task, title: initialTitle });
+    let cancelled = false;
+    import('@/lib/stream-saver').then(({ isStreamSaverSupported }) => {
+      if (cancelled) return;
+      const serviceWorker = isStreamSaverSupported();
+      setSupport((prev) => ({ ...prev, serviceWorker }));
+      // 保存的方式在这个浏览器上不可用时退回普通下载
+      if (!serviceWorker) {
+        setSettings((prev) =>
+          prev.streamMode === 'service-worker'
+            ? { ...prev, streamMode: 'disabled' }
+            : prev
+        );
       }
-    }
-  }, [isOpen, initialTitle]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 当添加窗口打开且有URL时，自动执行解析
-  useEffect(() => {
-    if (isOpen && editableUrl && !task && !isLoading) {
-      handleParse();
-    }
-  }, [isOpen, editableUrl]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 当task解析完成且syncWithSkipConfig为true时，自动执行同步逻辑
-  useEffect(() => {
-    if (task && syncWithSkipConfig && skipConfig) {
-      const segs = task.segmentDurations || [];
-      // 计算起始片段（跳过片头）
-      let introSegment = 1;
-      if (skipConfig.intro_time > 0 && segs.length > 0) {
-        let acc = 0;
-        let lastIdx = 0;
-        for (let i = 0; i < segs.length; i++) {
-          if (acc + segs[i] <= skipConfig.intro_time) {
-            acc += segs[i];
-            lastIdx = i;
-          } else {
-            break;
-          }
-        }
-        introSegment = Math.min(task.tsUrlList.length, lastIdx + 2); // 下一个片段开始
-      }
-
-      // 计算结束片段（跳过片尾）
-      let outroSegment = task.tsUrlList.length;
-      if (skipConfig.outro_time !== 0 && segs.length > 0) {
-        let acc = 0;
-        const targetTime = (task.durationSecond || 0) + skipConfig.outro_time;
-        outroSegment = task.tsUrlList.length;
-        for (let i = 0; i < segs.length; i++) {
-          acc += segs[i];
-          if (acc >= targetTime) {
-            outroSegment = i + 1;
-            break;
-          }
-        }
-        outroSegment = Math.max(1, Math.min(task.tsUrlList.length, outroSegment));
-      }
-
-      setStartSegment(introSegment);
-      setEndSegment(outroSegment);
-    }
-  }, [task, syncWithSkipConfig, skipConfig]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 解析 M3U8
-  const handleParse = async () => {
-    if (!editableUrl) {
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const parsedTask = await parseM3U8(editableUrl);
-      parsedTask.title = editableTitle || parsedTask.title;
-      parsedTask.type = downloadType;
-      setTask(parsedTask);
-      setEndSegment(parsedTask.tsUrlList.length);
-    } catch (error) {
-      // 解析失败，静默处理
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 添加下载任务
-  const handleAdd = () => {
-    if (!task) return;
-
-    onAddTask({
-      url: editableUrl,
-      title: task.title,
-      downloadType,
-      concurrency,
-      rangeMode,
-      startSegment,
-      endSegment,
-      streamMode,
-      maxRetries,
-      parsedTask: task,
     });
+    return () => {
+      cancelled = true;
+      requestRef.current?.abort();
+    };
+  }, []);
 
-    // 关闭弹窗并重置状态
-    onClose();
-    setTask(null);
-    setEditableUrl('');
-    setEditableTitle('');
+  const updateSettings = (patch: Partial<Settings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      saveSettings(next);
+      return next;
+    });
   };
 
-  // 处理关闭
-  const handleClose = () => {
-    onClose();
-    setTask(null);
-    setEditableUrl('');
-    setEditableTitle('');
+  const load = useCallback(
+    async (target: string, opts: { keepVariants?: boolean; ads: boolean }) => {
+      const trimmed = target.trim();
+      if (!trimmed) return;
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
+      setParse((prev) => ({
+        status: 'loading',
+        previous: opts.keepVariants
+          ? prev.status === 'ready'
+            ? prev.task
+            : prev.status === 'loading'
+            ? prev.previous
+            : undefined
+          : undefined,
+      }));
+      setSubmitError(null);
+      try {
+        const task = await parseM3U8(trimmed, {
+          removeAds: opts.ads,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (task.variants?.length) {
+          variantsRef.current = task.variants;
+          setVariants(task.variants);
+        } else if (opts.keepVariants) {
+          // 直接解析某个码率时没有主播放列表，从之前的码率列表里取带宽，用于估算大小
+          const variant = variantsRef.current.find((v) => v.url === task.url);
+          task.bandwidth = variant?.bandwidth;
+        } else {
+          variantsRef.current = [];
+          setVariants([]);
+        }
+        setParse({ status: 'ready', task });
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        const code =
+          e && typeof e === 'object' && 'code' in e
+            ? String(e.code)
+            : undefined;
+        setParse({
+          status: 'error',
+          code,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    []
+  );
+
+  // 打开时有地址就直接解析；打开期间播放页换了集，也跟着换
+  useEffect(() => {
+    setUrl(initialUrl);
+    if (initialUrl) void load(initialUrl, { ads: playerBlocksAds() });
+  }, [initialUrl, load]);
+  useEffect(() => setTitle(initialTitle), [initialTitle]);
+
+  const task =
+    parse.status === 'ready'
+      ? parse.task
+      : parse.status === 'loading'
+      ? parse.previous ?? null
+      : null;
+  const reloading = parse.status === 'loading' && !!task;
+  const count = task?.tsUrlList.length ?? 0;
+  const isFmp4 = !!task?.initSegmentUrl;
+
+  // 解析完成（含切换清晰度、去广告重新解析）后初始化下载范围
+  const useSkipRef = useRef(useSkip);
+  useSkipRef.current = useSkip;
+  useEffect(() => {
+    if (!task) return;
+    if (useSkipRef.current && skipConfig) {
+      const r = rangeFromSkipConfig(
+        task,
+        skipConfig.intro_time,
+        skipConfig.outro_time
+      );
+      setStart(r.start);
+      setEnd(r.end);
+    } else {
+      setStart((s) => Math.min(Math.max(1, s), task.tsUrlList.length));
+      setEnd(task.tsUrlList.length);
+    }
+    // skipConfig 只在勾选「按片头片尾设置」时读取
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task]);
+
+  const rangeStart = rangeOn ? start : 1;
+  const rangeEnd = rangeOn ? end : count;
+  const rangeValid = !rangeOn || (start >= 1 && end <= count && start <= end);
+  const duration = task ? rangeDuration(task, rangeStart, rangeEnd) : 0;
+  const estimate = task ? estimateBytes(task, rangeStart, rangeEnd) : null;
+  const largeInMemory =
+    settings.streamMode === 'disabled' &&
+    estimate !== null &&
+    estimate > LARGE_FILE_BYTES;
+  const selectedVariant = task && variants.find((v) => v.url === task.url);
+
+  const errorText = (() => {
+    if (parse.status !== 'error') return null;
+    const known = parse.code
+      ? t.dl.errors[parse.code as keyof typeof t.dl.errors]
+      : undefined;
+    if (!known || parse.code === 'unknown') return parse.message;
+    return parse.code === 'http' ? `${known} (${parse.message})` : known;
+  })();
+
+  const handleAdd = () => {
+    if (!task || reloading || !rangeValid || submitting) return;
+    const config: DownloadConfig = {
+      type: isFmp4 ? 'MP4' : settings.type,
+      concurrency: settings.concurrency,
+      maxRetries: settings.maxRetries,
+      streamMode: settings.streamMode,
+      removeAds,
+      range: rangeOn ? { start, end } : null,
+    };
+    setSubmitting(true);
+    setSubmitError(null);
+    // 直写磁盘时 addTask 会立刻弹出保存框，必须在这次点击里同步调用
+    void addTask({
+      url: task.url,
+      title: title.trim() || task.title,
+      config,
+      parsedTask: task,
+    }).then((result) => {
+      setSubmitting(false);
+      if (!result.ok) {
+        setSubmitError(
+          result.reason === 'cancelled' ? t.dl.pickerCancelled : result.message
+        );
+        return;
+      }
+      onClose();
+      if (notifyOnAdd) {
+        void toast({ title: t.dl.added, actionText: t.dl.view }).then(
+          (view) => {
+            if (view) openDownloadManager();
+          }
+        );
+      }
+    });
   };
 
-  if (!isOpen) return null;
+  const modes: Array<{
+    value: StreamSaverMode;
+    label: string;
+    hint: string;
+    supported: boolean;
+  }> = [
+    {
+      value: 'disabled',
+      label: t.dl.modeMemory,
+      hint: t.dl.modeMemoryHint,
+      supported: true,
+    },
+    {
+      value: 'file-system',
+      label: t.dl.modeDisk,
+      hint: t.dl.modeDiskHint,
+      supported: support.fileSystem,
+    },
+    {
+      value: 'service-worker',
+      label: t.dl.modeStream,
+      hint: t.dl.modeStreamHint,
+      supported: support.serviceWorker,
+    },
+  ];
+  const recommendedMode: StreamSaverMode | null = largeInMemory
+    ? support.fileSystem
+      ? 'file-system'
+      : support.serviceWorker
+      ? 'service-worker'
+      : null
+    : null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
-      <div className="relative max-h-[90vh] w-full max-w-2xl animate-o-pop overflow-y-auto rounded-[28px] bg-o-surface p-6 text-o-ink shadow-o-lg">
-        {/* 关闭按钮 */}
-        <button
-          onClick={handleClose}
-          className="absolute right-4 top-4 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
-        >
-          <X className="h-6 w-6" />
-        </button>
-
-        {/* 标题 */}
-        <h2 className="mb-6 text-2xl font-bold text-gray-900 dark:text-white">下载 M3U8 视频</h2>
-
-        {/* 内容 */}
-        <div className="space-y-4">
-          {/* M3U8 URL */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              M3U8 地址
-            </label>
-            <input
-              type="text"
-              value={editableUrl}
-              onChange={(e) => setEditableUrl(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="请输入 M3U8 链接地址"
-            />
-          </div>
-
-          {/* 视频标题 */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              保存标题
-            </label>
-            <input
-              type="text"
-              value={task ? task.title : editableTitle}
-              onChange={(e) => {
-                const newTitle = e.target.value;
-                setEditableTitle(newTitle);
-                if (task) {
-                  setTask({ ...task, title: newTitle });
-                }
-              }}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="请输入文件名"
-            />
-          </div>
-
-          {/* 保存格式 */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              保存格式
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="TS"
-                  checked={downloadType === 'TS'}
-                  onChange={() => setDownloadType('TS')}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">TS 格式</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="format"
-                  value="MP4"
-                  checked={downloadType === 'MP4'}
-                  onChange={() => setDownloadType('MP4')}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">MP4 格式</span>
-              </label>
-            </div>
-          </div>
-
-          {/* 线程数 */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              下载线程数: {concurrency}
-            </label>
-            <input
-              type="range"
-              min="1"
-              max="16"
-              value={concurrency}
-              onChange={(e) => setConcurrency(parseInt(e.target.value, 10))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-              <span>1 线程</span>
-              <span>16 线程</span>
-            </div>
-          </div>
-          {/* 重试次数 */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              失败重试次数: {maxRetries}
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="10"
-              value={maxRetries}
-              onChange={(e) => setMaxRetries(parseInt(e.target.value, 10))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-              <span>不重试</span>
-              <span>10 次</span>
-            </div>
-          </div>
-          {/* 边下边存模式 */}
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-              下载模式
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="streamMode"
-                  value="disabled"
-                  checked={streamMode === 'disabled'}
-                  onChange={() => setStreamMode('disabled')}
-                  className="w-4 h-4"
-                />
-                <div className="text-sm flex-1">
-                  <div className="flex items-center gap-1">
-                    <span className="text-green-500">✓</span>
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">
-                      普通模式
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 ml-4">
-                    内存下载，适合小文件（&lt;500MB）
-                  </div>
-                </div>
-              </label>
-              
-              <label className={`flex items-center gap-2 ${!modeSupport.serviceWorker ? 'opacity-60' : 'cursor-pointer'}`}>
-                <input
-                  type="radio"
-                  name="streamMode"
-                  value="service-worker"
-                  checked={streamMode === 'service-worker'}
-                  onChange={() => setStreamMode('service-worker')}
-                  disabled={!modeSupport.serviceWorker}
-                  className="w-4 h-4 disabled:cursor-not-allowed"
-                />
-                <div className="text-sm flex-1">
-                  <div className="flex items-center gap-1">
-                    {modeSupport.serviceWorker ? (
-                      <span className="text-green-500">✓</span>
-                    ) : (
-                      <span className="text-red-500">✗</span>
-                    )}
-                    <span className={`font-medium ${!modeSupport.serviceWorker ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
-                      Service Worker 流式下载
-                    </span>
-                  </div>
-                  <div className={`text-xs ml-4 ${!modeSupport.serviceWorker ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}`}>
-                    {modeSupport.serviceWorker ? (
-                      '边下边存，无大小限制，适合超大文件'
-                    ) : (
-                      '不支持：需要HTTPS或本地环境'
-                    )}
-                  </div>
-                </div>
-              </label>
-              
-              <label className={`flex items-center gap-2 ${!modeSupport.fileSystem ? 'opacity-60' : 'cursor-pointer'}`}>
-                <input
-                  type="radio"
-                  name="streamMode"
-                  value="file-system"
-                  checked={streamMode === 'file-system'}
-                  onChange={() => setStreamMode('file-system')}
-                  disabled={!modeSupport.fileSystem}
-                  className="w-4 h-4 disabled:cursor-not-allowed"
-                />
-                <div className="text-sm flex-1">
-                  <div className="flex items-center gap-1">
-                    {modeSupport.fileSystem ? (
-                      <span className="text-green-500">✓</span>
-                    ) : (
-                      <span className="text-red-500">✗</span>
-                    )}
-                    <span className={`font-medium ${!modeSupport.fileSystem ? 'text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
-                      文件系统直写
-                    </span>
-                  </div>
-                  <div className={`text-xs ml-4 ${!modeSupport.fileSystem ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}`}>
-                    {modeSupport.fileSystem ? (
-                      '直接写入磁盘，无大小限制（推荐）'
-                    ) : (
-                      '不支持：需要Chrome/Edge浏览器'
-                    )}
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* 解析信息 */}
-          {isLoading && (
-            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span>正在解析 M3U8...</span>
-            </div>
+    <DownloadDialog
+      onClose={onClose}
+      title={t.dl.addTitle}
+      icon={<Download className='h-[18px] w-[18px]' strokeWidth={2.5} />}
+      closeLabel={t.dl.close}
+      layer={2}
+      footer={
+        <div className='space-y-2'>
+          {submitError && (
+            <p className='m-0 flex items-start gap-1.5 text-[13px] text-red-700 dark:text-red-300'>
+              <AlertCircle
+                className='mt-px h-4 w-4 flex-none'
+                strokeWidth={2.5}
+              />
+              {submitError}
+            </p>
           )}
-
-          {task && (
-            <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50">
-              <h3 className="mb-2 font-medium text-gray-900 dark:text-white">解析结果</h3>
-              <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
-                <p>总时长: {formatTime(task.durationSecond || 0)}</p>
-                <p>片段数: {task.tsUrlList.length}</p>
-                {task.aesConf?.key && <p className="text-yellow-600 dark:text-yellow-400">🔒 已加密 (AES-128)</p>}
-              </div>
-
-              {/* 范围下载 */}
-              <div className="mt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={rangeMode}
-                      onChange={(e) => setRangeMode(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      范围下载
-                    </span>
-                  </label>
-                  {rangeMode && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={syncWithSkipConfig}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setSyncWithSkipConfig(checked);
-                          if (checked && task) {
-                            // 根据跳过配置计算起始和结束片段
-                            const totalSegments = task.tsUrlList.length;
-                            const segmentDuration = (task.durationSecond || 0) / totalSegments;
-                            
-                            if (segmentDuration > 0) {
-                              // 计算起始片段（跳过片头）
-                              let introSegment = 1;
-                              if (skipConfig && skipConfig.intro_time > 0) {
-                                // 片头时间对应的片段数 + 1（从下一个片段开始）
-                                introSegment = Math.min(totalSegments, Math.ceil(skipConfig.intro_time / segmentDuration) + 1);
-                              }
-                              
-                              // 计算结束片段（跳过片尾）
-                              let outroSegment = totalSegments;
-                              if (skipConfig && skipConfig.outro_time !== 0) {
-                                // 实际结束时间 = 总时长 + 片尾时间
-                                // 片尾时间通常是负数，表示在结束前多少秒停止
-                                const actualEndTime = task.durationSecond + skipConfig.outro_time;
-                                // 计算这个时间点对应的片段编号（向下取整，确保不超过这个时间）
-                                outroSegment = Math.max(1, Math.min(totalSegments, Math.floor(actualEndTime / segmentDuration)));
-                              }
-                              
-                              setStartSegment(introSegment);
-                              setEndSegment(outroSegment);
-                            }
-                          }
-                        }}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-xs text-gray-600 dark:text-gray-400">
-                        同步跳过配置
-                      </span>
-                    </label>
-                  )}
-                </div>
-
-                {rangeMode && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="block text-xs text-gray-600 dark:text-gray-400">起始片段:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={task.tsUrlList.length}
-                          value={startSegment}
-                          onChange={(e) => {
-                            let v = parseInt(e.target.value, 10);
-                            if (isNaN(v)) v = 1;
-                            v = Math.max(1, Math.min(task.tsUrlList.length, v));
-                            setStartSegment(v);
-                          }}
-                          className="w-20 px-2 py-1 rounded text-sm bg-[#f5f5f5] dark:bg-gray-800 text-gray-900 dark:text-gray-100 outline-none border-none focus:outline-none focus:border-none focus:ring-0 ml-1"
-                        />
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max={task.tsUrlList.length}
-                        value={startSegment}
-                        onChange={(e) => setStartSegment(parseInt(e.target.value, 10))}
-                        className="w-full"
-                      />
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {formatTime(
-                          task.segmentDurations
-                            ? task.segmentDurations.slice(0, startSegment - 1).reduce((a, b) => a + b, 0)
-                            : 0
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="block text-xs text-gray-600 dark:text-gray-400">结束片段:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={task.tsUrlList.length}
-                          value={endSegment}
-                          onChange={(e) => {
-                            let v = parseInt(e.target.value, 10);
-                            if (isNaN(v)) v = 1;
-                            v = Math.max(1, Math.min(task.tsUrlList.length, v));
-                            setEndSegment(v);
-                          }}
-                          className="w-20 px-2 py-1 rounded text-sm bg-[#f5f5f5] dark:bg-gray-800 text-gray-900 dark:text-gray-100 outline-none border-none focus:outline-none focus:border-none focus:ring-0 ml-1"
-                        />
-                      </div>
-                      <input
-                        type="range"
-                        min="1"
-                        max={task.tsUrlList.length}
-                        value={endSegment}
-                        onChange={(e) => setEndSegment(parseInt(e.target.value, 10))}
-                        className="w-full"
-                      />
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {formatTime(
-                          task.segmentDurations
-                            ? task.segmentDurations.slice(0, endSegment).reduce((a, b) => a + b, 0)
-                            : 0
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* 按钮 */}
-          <div className="flex gap-3 pt-4">
+          <div className='flex items-center gap-3'>
+            {settings.streamMode === 'file-system' && task && (
+              <span className='hidden text-[12.5px] text-o-neutral-700 sm:block'>
+                {t.dl.pickLocationNext}
+              </span>
+            )}
             <button
-              onClick={handleParse}
-              disabled={!editableUrl || isLoading}
-              className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
+              type='button'
+              className='o-btn o-btn-secondary ml-auto'
+              onClick={onClose}
             >
-              {isLoading ? '解析中...' : '解析'}
+              {t.cancel}
             </button>
             <button
+              type='button'
+              className='o-btn o-btn-primary'
               onClick={handleAdd}
-              disabled={!task}
-              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg transition-colors"
+              disabled={!task || reloading || !rangeValid || submitting}
             >
-              添加下载
+              {submitting ? (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              ) : (
+                <Download className='h-4 w-4' strokeWidth={2.5} />
+              )}
+              {t.dl.add}
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-};
+      }
+    >
+      <form
+        className='space-y-5'
+        onSubmit={(e) => {
+          e.preventDefault();
+          void load(url, { ads: removeAds });
+        }}
+      >
+        {/* 链接 */}
+        <div>
+          <label htmlFor='dl-url' className={LABEL}>
+            {t.dl.url}
+          </label>
+          <div className='flex gap-2'>
+            <input
+              id='dl-url'
+              type='url'
+              inputMode='url'
+              autoComplete='off'
+              spellCheck={false}
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                // 地址变了，之前的解析结果作废
+                if (parse.status !== 'idle') {
+                  requestRef.current?.abort();
+                  setParse({ status: 'idle' });
+                  setVariants([]);
+                  variantsRef.current = [];
+                }
+              }}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData('text').trim();
+                if (/^https?:\/\//i.test(pasted)) {
+                  e.preventDefault();
+                  setUrl(pasted);
+                  void load(pasted, { ads: removeAds });
+                }
+              }}
+              className={`${FIELD} min-w-0 flex-1`}
+              placeholder={t.dl.urlPlaceholder}
+              autoFocus={!initialUrl}
+            />
+            <button
+              type='submit'
+              className='o-btn o-btn-secondary flex-none'
+              disabled={!url.trim() || parse.status === 'loading'}
+            >
+              {parse.status === 'loading' ? (
+                <Loader2 className='h-4 w-4 animate-spin' />
+              ) : (
+                t.dl.load
+              )}
+            </button>
+          </div>
+        </div>
 
-export default AddDownloadModal;
+        {parse.status === 'loading' && !task && (
+          <div className='flex items-center gap-2 rounded-2xl bg-o-surface px-4 py-3 text-sm text-o-neutral-700'>
+            <Loader2 className='h-4 w-4 animate-spin text-o-accent' />
+            {t.dl.loading}
+          </div>
+        )}
+
+        {parse.status === 'error' && (
+          <div className='flex items-start gap-2 rounded-2xl bg-red-500/10 px-4 py-3 text-sm text-red-800 dark:text-red-200'>
+            <AlertCircle
+              className='mt-0.5 h-4 w-4 flex-none'
+              strokeWidth={2.5}
+            />
+            <div className='min-w-0 flex-1'>
+              <div className='font-semibold'>{t.dl.loadFailed}</div>
+              <div className='break-words'>{errorText}</div>
+            </div>
+            <button
+              type='button'
+              className='o-btn o-btn-ghost -my-1 flex-none !text-red-800 dark:!text-red-200'
+              onClick={() => void load(url, { ads: removeAds })}
+            >
+              <RefreshCw className='h-3.5 w-3.5' strokeWidth={2.5} />
+              {t.dl.retry}
+            </button>
+          </div>
+        )}
+
+        {task && (
+          <div
+            className={`space-y-5 transition-opacity ${
+              reloading ? 'pointer-events-none opacity-60' : ''
+            }`}
+            aria-busy={reloading}
+          >
+            {/* 概要 */}
+            <dl className='m-0 grid grid-cols-3 gap-2 rounded-2xl bg-o-surface p-3 text-center'>
+              <div>
+                <dt className='text-[11.5px] text-o-neutral-700'>
+                  {t.dl.duration}
+                </dt>
+                <dd className='m-0 mt-0.5 font-semibold tabular-nums'>
+                  {formatTime(task.durationSecond)}
+                </dd>
+              </div>
+              <div>
+                <dt className='text-[11.5px] text-o-neutral-700'>
+                  {t.dl.segmentCount}
+                </dt>
+                <dd className='m-0 mt-0.5 font-semibold tabular-nums'>
+                  {count}
+                </dd>
+              </div>
+              <div>
+                <dt className='text-[11.5px] text-o-neutral-700'>
+                  {t.dl.estSize}
+                </dt>
+                <dd className='m-0 mt-0.5 font-semibold tabular-nums'>
+                  {estimate !== null ? `≈ ${formatBytes(estimate)}` : '—'}
+                </dd>
+              </div>
+            </dl>
+            {(task.keys.length > 0 || isFmp4 || task.adsRemoved) && (
+              <div className='-mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-o-neutral-700'>
+                {task.keys.length > 0 && (
+                  <span className='inline-flex items-center gap-1'>
+                    <Lock className='h-3.5 w-3.5' strokeWidth={2.5} />
+                    {t.dl.encrypted} (AES-128)
+                  </span>
+                )}
+                {isFmp4 && <span>{t.dl.fmp4}</span>}
+                {task.adsRemoved && (
+                  <span className='inline-flex items-center gap-1 text-o-sage-700'>
+                    <Sparkles className='h-3.5 w-3.5' strokeWidth={2.5} />
+                    {t.dl.adsFound(
+                      task.adsRemoved.segments,
+                      Math.round(task.adsRemoved.seconds)
+                    )}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* 文件名 */}
+            <div>
+              <label htmlFor='dl-title' className={LABEL}>
+                {t.dl.fileName}
+              </label>
+              <div className='flex items-center gap-2'>
+                <input
+                  id='dl-title'
+                  type='text'
+                  value={title}
+                  placeholder={task.title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className={`${FIELD} min-w-0 flex-1`}
+                />
+                <span className='flex-none text-sm text-o-neutral-700'>
+                  .{(isFmp4 ? 'MP4' : settings.type).toLowerCase()}
+                </span>
+              </div>
+            </div>
+
+            {/* 清晰度 */}
+            {variants.length > 1 && (
+              <div>
+                <label htmlFor='dl-quality' className={LABEL}>
+                  {t.dl.quality}
+                </label>
+                <select
+                  id='dl-quality'
+                  className={FIELD}
+                  value={selectedVariant?.url ?? ''}
+                  onChange={(e) =>
+                    void load(e.target.value, {
+                      keepVariants: true,
+                      ads: removeAds,
+                    })
+                  }
+                >
+                  {variants.map((v) => (
+                    <option key={v.url} value={v.url}>
+                      {variantLabel(v)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* 格式 */}
+            {!isFmp4 && (
+              <fieldset className='m-0 border-0 p-0'>
+                <legend className={LABEL}>{t.dl.format}</legend>
+                <div className='grid grid-cols-2 gap-2'>
+                  {(['MP4', 'TS'] as const).map((type) => (
+                    <label
+                      key={type}
+                      className={`cursor-pointer rounded-2xl border px-3.5 py-2.5 transition-colors ${
+                        settings.type === type
+                          ? 'border-o-accent bg-o-accent/10'
+                          : 'border-o-divider hover:bg-o-ink/[0.04]'
+                      }`}
+                    >
+                      <input
+                        type='radio'
+                        name='dl-format'
+                        className='sr-only'
+                        checked={settings.type === type}
+                        onChange={() => updateSettings({ type })}
+                      />
+                      <span className='block font-semibold'>{type}</span>
+                      <span className='block text-[12.5px] leading-snug text-o-neutral-700'>
+                        {type === 'MP4' ? t.dl.formatMp4 : t.dl.formatTs}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
+            {/* 保存方式 */}
+            <fieldset className='m-0 border-0 p-0'>
+              <legend className={LABEL}>{t.dl.saveMethod}</legend>
+              <div className='space-y-2'>
+                {modes.map((m) => (
+                  <label
+                    key={m.value}
+                    className={`flex items-start gap-3 rounded-2xl border px-3.5 py-2.5 transition-colors ${
+                      !m.supported
+                        ? 'cursor-not-allowed border-o-divider opacity-50'
+                        : settings.streamMode === m.value
+                        ? 'cursor-pointer border-o-accent bg-o-accent/10'
+                        : 'cursor-pointer border-o-divider hover:bg-o-ink/[0.04]'
+                    }`}
+                  >
+                    <input
+                      type='radio'
+                      name='dl-mode'
+                      className={`mt-1 ${RADIO}`}
+                      checked={settings.streamMode === m.value}
+                      disabled={!m.supported}
+                      onChange={() => updateSettings({ streamMode: m.value })}
+                    />
+                    <span className='min-w-0'>
+                      <span className='flex items-center gap-2 font-semibold'>
+                        {m.label}
+                        {recommendedMode === m.value && (
+                          <span className='rounded-full bg-o-sage-100 px-2 py-px text-[11px] font-medium text-o-sage-800'>
+                            {t.dl.recommended}
+                          </span>
+                        )}
+                      </span>
+                      <span className='block text-[12.5px] leading-snug text-o-neutral-700'>
+                        {m.supported ? m.hint : t.dl.unsupportedHere}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {largeInMemory && estimate !== null && (
+                <p className='m-0 mt-2 flex items-start gap-1.5 text-[12.5px] text-o-accent-800 dark:text-o-accent-300'>
+                  <AlertCircle
+                    className='mt-px h-3.5 w-3.5 flex-none'
+                    strokeWidth={2.5}
+                  />
+                  {t.dl.largeFile(formatBytes(estimate))}
+                </p>
+              )}
+            </fieldset>
+
+            {/* 下载范围 */}
+            <div className='rounded-2xl border border-o-divider px-3.5 py-3'>
+              <label className='flex cursor-pointer items-center justify-between gap-3'>
+                <span className='font-semibold'>{t.dl.partial}</span>
+                <input
+                  type='checkbox'
+                  className={CHECK}
+                  checked={rangeOn}
+                  onChange={(e) => setRangeOn(e.target.checked)}
+                />
+              </label>
+              {rangeOn && (
+                <div className='mt-3 space-y-3'>
+                  {hasSkip && (
+                    <label className='flex cursor-pointer items-center gap-2 text-[13px]'>
+                      <input
+                        type='checkbox'
+                        className={CHECK}
+                        checked={useSkip}
+                        onChange={(e) => {
+                          setUseSkip(e.target.checked);
+                          if (e.target.checked && skipConfig) {
+                            const r = rangeFromSkipConfig(
+                              task,
+                              skipConfig.intro_time,
+                              skipConfig.outro_time
+                            );
+                            setStart(r.start);
+                            setEnd(r.end);
+                          }
+                        }}
+                      />
+                      {t.dl.useSkip}
+                    </label>
+                  )}
+                  {(
+                    [
+                      ['from', start, setStart, segmentStartTime(task, start)],
+                      ['to', end, setEnd, segmentStartTime(task, end + 1)],
+                    ] as const
+                  ).map(([key, value, set, time]) => (
+                    <div key={key}>
+                      <div className='mb-1 flex items-center justify-between text-[13px]'>
+                        <label
+                          htmlFor={`dl-range-${key}`}
+                          className='text-o-neutral-800'
+                        >
+                          {key === 'from' ? t.dl.from : t.dl.to}
+                        </label>
+                        <span className='tabular-nums text-o-neutral-700'>
+                          {t.dl.segmentN(value)} · {formatTime(time)}
+                        </span>
+                      </div>
+                      <input
+                        id={`dl-range-${key}`}
+                        type='range'
+                        min={1}
+                        max={count}
+                        value={value}
+                        onChange={(e) => {
+                          setUseSkip(false);
+                          set(parseInt(e.target.value, 10));
+                        }}
+                        className='w-full accent-[rgb(var(--o-accent))]'
+                      />
+                    </div>
+                  ))}
+                  <p
+                    className={`m-0 text-[12.5px] ${
+                      rangeValid
+                        ? 'text-o-neutral-700'
+                        : 'text-red-700 dark:text-red-300'
+                    }`}
+                    role={rangeValid ? undefined : 'alert'}
+                  >
+                    {rangeValid
+                      ? t.dl.rangeSummary(end - start + 1, formatTime(duration))
+                      : t.dl.rangeInvalid}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* 高级设置 */}
+            <div>
+              <button
+                type='button'
+                className='flex w-full items-center justify-between text-[13px] font-semibold text-o-neutral-800'
+                aria-expanded={advancedOpen}
+                onClick={() => setAdvancedOpen((v) => !v)}
+              >
+                {t.dl.advanced}
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${
+                    advancedOpen ? 'rotate-180' : ''
+                  }`}
+                  strokeWidth={2.5}
+                />
+              </button>
+              {advancedOpen && (
+                <div className='mt-3 space-y-4'>
+                  <label className='flex cursor-pointer items-start justify-between gap-3'>
+                    <span>
+                      <span className='block text-[14px]'>
+                        {t.dl.removeAds}
+                      </span>
+                      <span className='block text-[12.5px] text-o-neutral-700'>
+                        {t.dl.removeAdsHint}
+                      </span>
+                    </span>
+                    <input
+                      type='checkbox'
+                      className={`mt-1 ${CHECK}`}
+                      checked={removeAds}
+                      onChange={(e) => {
+                        setRemoveAds(e.target.checked);
+                        // 去广告会改变片段列表，需要重新解析
+                        void load(task.url, {
+                          keepVariants: true,
+                          ads: e.target.checked,
+                        });
+                      }}
+                    />
+                  </label>
+                  {(
+                    [
+                      ['concurrency', t.dl.threads, 1, 16],
+                      ['maxRetries', t.dl.retries, 0, 10],
+                    ] as const
+                  ).map(([key, label, min, max]) => (
+                    <div key={key}>
+                      <div className='mb-1 flex items-center justify-between text-[14px]'>
+                        <label htmlFor={`dl-${key}`}>{label}</label>
+                        <span className='font-semibold tabular-nums'>
+                          {settings[key]}
+                        </span>
+                      </div>
+                      <input
+                        id={`dl-${key}`}
+                        type='range'
+                        min={min}
+                        max={max}
+                        value={settings[key]}
+                        onChange={(e) =>
+                          updateSettings({
+                            [key]: parseInt(e.target.value, 10),
+                          })
+                        }
+                        className='w-full accent-[rgb(var(--o-accent))]'
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </form>
+    </DownloadDialog>
+  );
+}

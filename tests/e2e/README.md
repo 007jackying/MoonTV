@@ -13,20 +13,21 @@ proxy does not fail a test (see _Console errors_ below).
 
 ## Files
 
-| File                      | Purpose                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mock-cms.mjs`            | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried. `fast` serves a messy real-world synopsis and a Douban id, `mid` a short synopsis (see _Play details suite_).                      |
-| `serve.mjs`               | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                                                                                                                                           |
-| `make-media.sh`           | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                                                                                                                                              |
-| `measure.py`              | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                                                                                                                                          |
-| `test_play_perf.py`       | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                                        |
-| `test_failover.py`        | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                                                 |
-| `test_play_details.py`    | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                                         |
-| `test_ad_filter.py`       | Playwright/pytest suite for 去广告: splices the red ad clips into the mock playlist (pre-roll / mid-roll, own or unrelated timestamps) with request routing and samples frames to prove the ad never reaches the screen. Runs on H.264/TS (closest to real sources) or VP9/fMP4 fixtures.                                                                       |
-| `test_player_controls.py` | Playwright/pytest suite (78 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons (mouse), YouTube-style double-tap seeking (touch), the centre play / pause, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
-| `test_av_filter.mjs`      | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                                            |
-| `test_av_filter.py`       | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                                             |
-| `run-av-filter.sh`        | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                                                 |
+| File                          | Purpose                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mock-cms.mjs`                | Mock CMS V10 (`/cms/<key>/provide/vod`) + HLS origin (`/media/<quality>/…`), with per-site latency and bandwidth knobs. Also records the search fan-out (`/__hits`) so tests can assert which sources were actually queried. `fast` serves a messy real-world synopsis and a Douban id, `mid` a short synopsis (see _Play details suite_).                      |
+| `serve.mjs`                   | Boot harness: swaps `config.json` + `public/sw.js` + `public/workbox-*.js`, regenerates `src/lib/runtime.ts`, starts the mock + the app, restores everything on exit.                                                                                                                                                                                           |
+| `make-media.sh`               | Regenerates the 720p/1080p HLS fixtures (needs `ffmpeg`). `CODEC=vp9` for browsers without H.264 (see below). Media is gitignored.                                                                                                                                                                                                                              |
+| `measure.py`                  | Play-page time-to-first-frame probe (`clicked` / `cold` / `prefer`). Needs Playwright.                                                                                                                                                                                                                                                                          |
+| `test_play_perf.py`           | Playwright/pytest suite for the play page's critical path: TTFF budgets, `/api/detail` on the critical path, background search, no blocking spinner, single `<video>`, the advisory banner, plus regressions. Needs Playwright + pytest.                                                                                                                        |
+| `test_failover.py`            | Playwright/pytest suite for automatic failover: dead sources are injected with request routing; covers the switch, pick order, no retries, speed tests off, all-failed, banner.                                                                                                                                                                                 |
+| `test_unreachable_sources.py` | Playwright/pytest suite for the source list folding unreachable sources (speed test never connected, or no measured speed) behind "显示 N 个无法连接的源" at the end of the list, filled in real time; layout and screenshots on eight viewports.                                                                                                               |
+| `test_play_details.py`        | Browser e2e for the play page details block: description cleaning, 4-line clamp with 展开全文 / 收起, clearance from the bottom nav, and the 豆瓣 rating button. Needs Playwright and the HLS fixtures.                                                                                                                                                         |
+| `test_ad_filter.py`           | Playwright/pytest suite for 去广告: splices the red ad clips into the mock playlist (pre-roll / mid-roll, own or unrelated timestamps) with request routing and samples frames to prove the ad never reaches the screen. Runs on H.264/TS (closest to real sources) or VP9/fMP4 fixtures.                                                                       |
+| `test_player_controls.py`     | Playwright/pytest suite (78 tests) for the player controls on eight viewports (phones portrait/landscape, tablets, laptop, desktop): 10 s seek buttons (mouse), YouTube-style double-tap seeking (touch), the centre play / pause, the two-level settings menu, the fullscreen 下一集 button, and the player fitting on screen. Saves screenshots per viewport. |
+| `test_av_filter.mjs`          | API e2e for the global AV-source filter. Node only, no dependencies.                                                                                                                                                                                                                                                                                            |
+| `test_av_filter.py`           | Browser e2e for the same feature. Needs Playwright.                                                                                                                                                                                                                                                                                                             |
+| `run-av-filter.sh`            | One-command wrapper: boots the harness with the right profile, runs both AV suites, tears down.                                                                                                                                                                                                                                                                 |
 
 ## Source profiles
 
@@ -112,7 +113,10 @@ sources are never _queried_ (not merely that their results are dropped):
 - `/search`: adult sources appear as cards when the toggle is off and none when
   on — asserted on the rendered card hrefs _and_ on the `/api/search` payloads
 - the source-selector popup: lists adult sources when off, none when on
-- the play page source panel: same, plus the page's own `/api/search` fan-out
+- the play page source panel: same, plus the page's own `/api/search` fan-out.
+  The suite aborts every playlist, so every speed test fails and the panel
+  folds those sources behind 显示 N 个无法连接的源; the suite opens that group
+  before reading the rows
 - `savedSources`: an adult key is honoured while the toggle is off, stays in
   localStorage while it is on (so toggling back off restores it), and an explicit
   `?sources=` link is not clobbered by the saved-source cleanup
@@ -251,8 +255,10 @@ The suite asserts
   status shown first and a "switched to X" notice after;
 - with speed tests on, exactly one switch, straight to a tested source:
   `dead` arrives first in list order but measures broken, so it is skipped;
-- after the switch the panel is sorted by health (tested → untested → test
-  failed → failed in the player), with `fast` last and tagged 无法播放;
+- after the switch the panel lists only the other working source, with the
+  three broken ones folded behind "显示 3 个无法连接的源"; expanded, the whole
+  list is sorted by health (tested → untested → test failed → failed in the
+  player), with `fast` last and tagged 无法播放;
 - a source that failed in the player is never switched back to;
 - with `enableOptimization=false` it walks the list but never revisits a source;
 - with every source broken it stops after at most five switches, keeps the
@@ -264,6 +270,38 @@ The suite asserts
 The first seven fail on the commit before failover was added; the last one
 failed on `1bb3029`, before the resume fix. This suite does not
 check console errors: the aborted media requests are the point of the test.
+
+### Unreachable sources suite
+
+```bash
+node tests/e2e/serve.mjs --build
+python -m pytest tests/e2e/test_unreachable_sources.py -v
+```
+
+Runs on the `perf` profile, playing `mid` (1080p) and breaking the 720p ladder
+with request routing, so `fast`, `dead` and `slow1` are the unreachable ones
+and `slow2` is the only other working source:
+
+- every 720p request aborted: the speed test never connects (无测速数据);
+- only `/media/720p/seg_*` aborted: the playlist loads but no download speed
+  is measured.
+
+The suite asserts
+
+- the broken sources are not listed while folded, `slow2` is; the toggle
+  expands them in place after every working source, still selectable, and
+  folds them away again;
+- the group fills up in real time: a `MutationObserver` records every count
+  the toggle showed and it rises (1 → 3) as `dead` (1.5 s) and `slow1` (2.5 s)
+  arrive, rather than appearing once at the end;
+- sources that connect but measure no speed are folded too;
+- with every source working there is no toggle at all;
+- picking a folded source switches to it (it is not folded away mid-switch);
+- on eight viewports (phones portrait / landscape, tablets, laptop, desktop):
+  no horizontal page scroll, the toggle and every row fit the viewport, the
+  toggle is at least 44 px tall and its label is not clipped, and every top
+  nav control is on screen. Screenshots of the collapsed and expanded list
+  are saved to `tests/e2e/shots/unreachable-<viewport>-{collapsed,expanded}.png`.
 
 ### Play details suite
 

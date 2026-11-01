@@ -113,6 +113,8 @@ const zh = {
   noSources: '暂无可用的播放源',
   testFailed: '检测失败',
   noSpeedData: '无测速数据',
+  showFailedSources: (n: number) => `显示 ${n} 个无法连接的源`,
+  hideFailedSources: '隐藏无法连接的源',
   measuring: '测速中…',
   switchingState: '切换中…',
 
@@ -482,6 +484,8 @@ const en: Messages = {
   noSources: 'No other sources available',
   testFailed: 'Test failed',
   noSpeedData: 'No speed data',
+  showFailedSources: (n) => `Show ${n} unreachable source${n === 1 ? '' : 's'}`,
+  hideFailedSources: 'Hide unreachable sources',
   measuring: 'Testing…',
   switchingState: 'Switching…',
 

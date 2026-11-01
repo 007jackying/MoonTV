@@ -1,4 +1,4 @@
-import { boundsFor, scoreMetrics } from '@/lib/source-metrics';
+import { boundsFor, parseSpeedKBps, scoreMetrics } from '@/lib/source-metrics';
 import { SearchResult } from '@/lib/types';
 
 import { episodeUrlOf, sourceKeyOf, VideoInfo } from './useSourceSpeedTest';
@@ -64,6 +64,48 @@ export function rankSources(
       (a, b) => a.health - b.health || b.score - a.score || a.index - b.index
     )
     .map((x) => x.s);
+}
+
+/**
+ * 源列表里视为"连不上"的源：测速失败（根本没连上）、测速完成但没测出
+ * 下载速度，或在播放器里实际播放失败过。还在测速 / 没测过的源不算。
+ *
+ * 只决定源列表的显示（收起到末尾），不影响自动换源：没测出速度往往只是
+ * 切片不允许跨域测速，播放器仍可能放得了，所以 pickFailoverSource 照旧
+ * 把它们当作候选（healthOf 为 0）。
+ */
+export function isUnreachable(
+  s: SearchResult,
+  infoMap: Map<string, VideoInfo>,
+  failedKeys: ReadonlySet<string>
+): boolean {
+  const health = healthOf(s, infoMap, failedKeys);
+  if (health >= 2) return true;
+  if (health === 1) return false;
+  const info = infoMap.get(sourceKeyOf(s));
+  return !!info && parseSpeedKBps(info.loadSpeed) <= 0;
+}
+
+/**
+ * 把源列表拆成可用和连不上的两组，各自保持原有相对顺序；
+ * 连不上的组里播放失败的排在最后。随着测速结果陆续返回实时更新。
+ */
+export function splitUnreachable(
+  sources: SearchResult[],
+  infoMap: Map<string, VideoInfo>,
+  failedKeys: ReadonlySet<string>
+): { reachable: SearchResult[]; unreachable: SearchResult[] } {
+  const reachable: SearchResult[] = [];
+  const unreachable: SearchResult[] = [];
+  sources.forEach((s) =>
+    (isUnreachable(s, infoMap, failedKeys) ? unreachable : reachable).push(s)
+  );
+  unreachable.sort(
+    (a, b) =>
+      Number(failedKeys.has(sourceKeyOf(a))) -
+      Number(failedKeys.has(sourceKeyOf(b)))
+  );
+  return { reachable, unreachable };
 }
 
 export type FailoverDecision =

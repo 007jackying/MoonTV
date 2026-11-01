@@ -6,6 +6,74 @@ open, so a later change can tell whether a decision still holds.
 
 ---
 
+## 2026-11-01 — unreachable sources fold to the end of the source list (3.15.0)
+
+Branch: `claude/pensive-hopper-1gh33e`. Asked by the owner: sources in the
+play page's source list that never connect or show no network speed should
+move to the end in real time, or be hidden behind an option that expands
+them at the end of the list. Then: test end to end with screenshots on every
+screen size, fix what does not work, update docs.
+
+### What changed
+
+- `sourceHealth.ts`: `isUnreachable` (speed test errored, finished with no
+  measured download speed, or failed in the player) and `splitUnreachable`
+  (reachable / unreachable, original order kept, player failures last).
+- `PlayPanels.tsx`: the other-sources list renders reachable sources, then
+  a full-width, 44 px tall "显示 N 个无法连接的源" toggle that expands the
+  unreachable ones in place at the end. Recomputed from `infoMap` on every
+  render, so sources fold as their results arrive. A source the user is
+  switching to is never folded. Applies to the desktop side panel and the
+  mobile source card.
+- i18n: `showFailedSources(n)` / `hideFailedSources` in zh and en.
+- Top nav at 768–1023 px (found by the new viewport checks, not caused by this
+  change): it needed ~900 px, so the search box, language toggle and user
+  menu were pushed off screen on portrait tablets. The wordmark now shows from
+  `lg` (logo link keeps an `aria-label`), the search source picker's label is
+  screen-reader only between `md` and `lg`, and padding / gaps are a little
+  tighter below `lg`. The search input is ≥ 100 px wide at every viewport.
+
+### Decisions
+
+- **Hide behind a toggle rather than only reorder.** The owner offered both;
+  folding keeps the list short and the working sources together, and the
+  toggle still gives access to every source (a failed light-weight probe
+  does not prove the player cannot play it).
+- **"No measured speed" counts as unreachable for display only.** Often the
+  segment host just refuses cross-origin reads; failover (`pickFailoverSource`)
+  still treats these as tested-OK candidates, unchanged.
+- **Untested / measuring sources stay visible**, so nothing disappears before
+  there is a result. Healthy sources keep their order unless a failure has
+  happened (`prioritizeHealthy`), as before.
+- **`md:sr-only lg:not-sr-only`, not `md:max-lg:sr-only`.** The Tailwind config
+  adds a raw `mobile-landscape` screen, which disables `max-*` variants; the
+  class was silently not generated.
+
+### Checks run
+
+- `pnpm test`: 128 / 128 (1 new: `splitUnreachable`). `pnpm typecheck` clean;
+  eslint / prettier clean on changed files.
+- New `tests/e2e/test_unreachable_sources.py`: 13 / 13 — folded and expanded
+  at the end, real-time count (1 → 3), no-speed case, nothing folded when all
+  work, picking a folded source, and on eight viewports (360×740 to
+  1440×900, touch and mouse): no sideways scroll, toggle / rows fit, toggle
+  ≥ 44 px, label not clipped, header controls on screen, search ≥ 100 px.
+- `test_failover.py` 8 / 8 (panel test updated: broken sources are folded,
+  then sorted by health once expanded); `test_player_controls.py` +
+  `test_play_perf.py` 99 / 99; `test_ad_filter.py` 6 / 6;
+  `test_play_details.py` 38 / 38; `test_av_filter.mjs` 24 / 24;
+  `test_av_filter.py` 31 / 31 after opening the folded group (it aborts all
+  media, so every source is unreachable there).
+- Screenshots: `docs/screenshots/unreachable-sources-3.15.0/`.
+
+### Open / not done
+
+- The desktop "另有 N 个源" count still includes folded sources.
+- Sandbox shortcuts, not committed: the GitHub `mux.js` fork could not be
+  fetched, so the harness ran from a copy with npm `mux.js@6.3.0`.
+
+---
+
 ## 2026-10-19 — 去广告 removes ad segments instead of discontinuity tags (3.14.0)
 
 Branch: `feat/ad-segment-removal`. Asked by the owner: "check how 去广告

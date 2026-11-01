@@ -69,6 +69,10 @@ export function rankSources(
 /**
  * 源列表里视为"连不上"的源：测速失败（根本没连上）、测速完成但没测出
  * 下载速度，或在播放器里实际播放失败过。还在测速 / 没测过的源不算。
+ *
+ * 只决定源列表的显示（收起到末尾），不影响自动换源：没测出速度往往只是
+ * 切片不允许跨域测速，播放器仍可能放得了，所以 pickFailoverSource 照旧
+ * 把它们当作候选（healthOf 为 0）。
  */
 export function isUnreachable(
   s: SearchResult,

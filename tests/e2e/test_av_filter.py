@@ -457,9 +457,19 @@ def play_page_sources(page, base, capture=None):
         pass  # single-source result: nothing to expand
     page.wait_for_timeout(SETTLE_MS * 2)
 
+    # MEDIA_GLOBS aborts every playlist, so every speed test fails and the
+    # source list folds those sources behind "显示 N 个无法连接的源" at the end.
+    # They are still rendered sources of the panel: open the group.
+    folded = page.locator(
+        "button[aria-expanded='false']:has-text('无法连接的源'), "
+        "button[aria-expanded='false']:has-text('unreachable source')"
+    )
+
     adult, normal = set(), set()
     # Rows stream in, so poll instead of sampling once.
     for _ in range(PLAY_TIMEOUT_MS // 500):
+        if folded.count():
+            folded.first.click()
         rows = page.eval_on_selector_all(
             "button",
             """els => els.map(b => b.innerText.replace(/\\s+/g, ' ').trim())""",

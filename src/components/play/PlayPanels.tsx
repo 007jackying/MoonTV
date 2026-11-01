@@ -201,11 +201,12 @@ function OtherSourceRows({
       )}
       {unreachable.length > 0 && (
         <>
+          {/* 整行宽、至少 44px 高：手机上也好点按 */}
           <button
             type='button'
             onClick={() => setShowUnreachable((v) => !v)}
             aria-expanded={showUnreachable}
-            className='o-btn o-btn-ghost flex-none self-start px-2.5 py-1 text-[13px] text-o-neutral-700'
+            className='o-btn o-btn-secondary min-h-[44px] w-full flex-none px-3 py-[7px] text-[13px] text-o-neutral-700'
           >
             {showUnreachable
               ? t.hideFailedSources

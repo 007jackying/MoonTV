@@ -248,7 +248,8 @@ export default function SourceSelector({
       className='flex h-8 flex-none items-center gap-1.5 rounded-full bg-o-bg px-3 text-[13px] font-semibold text-o-ink transition-colors hover:bg-o-neutral-100 disabled:opacity-60'
     >
       <Server className='h-3.5 w-3.5' strokeWidth={2.75} />
-      <span className='whitespace-nowrap'>
+      {/* 平板竖屏（md–lg）的顶栏太挤：文字只留给读屏，把宽度让给搜索框 */}
+      <span className='whitespace-nowrap md:sr-only lg:not-sr-only'>
         {selectedCount > 0 ? t.nSources(selectedCount) : t.allSources}
       </span>
       <ChevronDown

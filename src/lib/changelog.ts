@@ -11,6 +11,20 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: '3.15.0',
+    date: '2026-11-01',
+    added: [
+      // 无新增内容
+    ],
+    changed: [
+      '播放源列表里连不上、测不出网速的源会在测速结果出来后自动收起到列表末尾, 不再夹在能用的源中间; 点「显示 N 个无法连接的源」可以展开查看, 仍然可以手动切换过去',
+      '平板竖屏时顶部导航栏只显示图标, 搜索框、语言切换和账户按钮不再被挤出屏幕',
+    ],
+    fixed: [
+      // 无修复内容
+    ],
+  },
+  {
     version: '3.14.0',
     date: '2026-10-19',
     added: [

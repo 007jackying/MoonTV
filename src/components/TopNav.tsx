@@ -342,14 +342,15 @@ const TopNav = ({ activePath }: TopNavProps) => {
   };
 
   const navItemClass =
-    'flex items-center gap-2 rounded-full px-4 py-[9px] text-sm font-semibold transition-colors text-o-ink hover:bg-o-ink/[0.07] data-[active=true]:bg-o-accent-200 data-[active=true]:text-o-accent-800';
+    'flex items-center gap-2 rounded-full px-2.5 py-[9px] text-sm lg:px-3 xl:px-4 font-semibold transition-colors text-o-ink hover:bg-o-ink/[0.07] data-[active=true]:bg-o-accent-200 data-[active=true]:text-o-accent-800';
 
   return (
     <header className='sticky top-0 z-50 hidden w-full bg-o-bg/90 backdrop-blur-xl md:block'>
-      <div className='flex h-[76px] items-center gap-4 px-6 lg:gap-[26px] lg:px-10'>
+      <div className='flex h-[76px] items-center gap-3 px-5 lg:gap-[26px] lg:px-10'>
         {/* Logo */}
         <Link
           href='/'
+          aria-label={siteName}
           className='flex flex-none select-none items-center gap-2.5 transition-opacity hover:opacity-80'
           onClick={() => {
             if (active !== '/') startLoading();
@@ -361,7 +362,8 @@ const TopNav = ({ activePath }: TopNavProps) => {
               strokeWidth={2.75}
             />
           </span>
-          <span className='font-heading text-2xl tracking-[-0.015em]'>
+          {/* 平板竖屏（768px）放不下站名 + 导航 + 搜索 + 右侧按钮，站名到 lg 才显示 */}
+          <span className='hidden font-heading text-2xl tracking-[-0.015em] lg:inline'>
             {siteName}
           </span>
         </Link>
@@ -409,7 +411,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
         {/* 搜索栏 */}
         <div
           ref={searchBarRef}
-          className='relative ml-auto flex h-11 min-w-[220px] max-w-[480px] flex-1 items-center gap-1.5 rounded-full border border-o-divider bg-o-surface px-1.5'
+          className='relative ml-auto flex h-11 min-w-0 max-w-[480px] lg:min-w-[220px] flex-1 items-center gap-1.5 rounded-full border border-o-divider bg-o-surface px-1.5'
         >
           <SourceSelector
             selectedSources={searchSources}
@@ -504,7 +506,7 @@ const TopNav = ({ activePath }: TopNavProps) => {
         </div>
 
         {/* 右侧按钮组 */}
-        <div className='flex flex-none items-center gap-2'>
+        <div className='flex flex-none items-center gap-1.5 lg:gap-2'>
           <LanguageToggle />
           <button
             onClick={() => {

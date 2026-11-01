@@ -4,6 +4,7 @@ import { SearchResult } from '@/lib/types';
 import {
   pickFailoverSource,
   rankSources,
+  splitUnreachable,
 } from '@/components/play/sourceHealth';
 
 const src = (name: string, episodes = 1) =>
@@ -53,6 +54,27 @@ describe('rankSources', () => {
       'b',
       'c',
     ]);
+  });
+});
+
+describe('splitUnreachable', () => {
+  it('moves errored, speedless and player-failed sources out, keeping order', () => {
+    const sources = ['a', 'b', 'c', 'd', 'e', 'f'].map((n) => src(n));
+    const infoMap = new Map([
+      [keyOf('a'), broken],
+      [keyOf('b'), ok('1.0 MB/s')],
+      [keyOf('c'), ok('未知')],
+      [keyOf('e'), ok('500 KB/s')],
+    ]);
+    const { reachable, unreachable } = splitUnreachable(
+      sources,
+      infoMap,
+      new Set([keyOf('e')])
+    );
+    // d is untested (still measuring), so it stays visible
+    expect(names(reachable)).toEqual(['b', 'd', 'f']);
+    // player-failed sources sink to the very end
+    expect(names(unreachable)).toEqual(['a', 'c', 'e']);
   });
 });
 

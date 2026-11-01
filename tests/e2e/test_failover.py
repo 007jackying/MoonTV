@@ -42,6 +42,8 @@ SWITCHED_TO = "已自动切换到"
 ALL_FAILED = "暂时没有找到可以播放的源"
 CANNOT_PLAY = "无法播放"
 NO_SPEED_DATA = "无测速数据"
+FOLDED = "个无法连接的源"
+UNFOLDED = "隐藏无法连接的源"
 
 # Recorded in the page rather than polled:
 #   __seen     text that appears and disappears faster than a poll can catch
@@ -143,11 +145,23 @@ def _wait_switched_and_playing(page, timeout_ms=30000):
     page.wait_for_function(PLAYING, timeout=timeout_ms)
 
 
-def _source_rows(page):
-    """Rows of the "other sources" list, top to bottom, as single-line text."""
+ROW = "button:visible:has(span.truncate.text-\\[15px\\].font-bold)"
+
+
+def _source_rows(page, *, show_unreachable=True):
+    """
+    Rows of the "other sources" list, top to bottom, as single-line text.
+    Unreachable sources are folded behind "显示 N 个无法连接的源" at the end of
+    the list (see test_unreachable_sources.py); by default that group is
+    expanded first so every source is returned.
+    """
     page.locator('button:has-text("另有")').first.click()
-    rows = page.locator("button:has(span.truncate.text-\\[15px\\].font-bold)")
+    rows = page.locator(ROW)
     rows.first.wait_for()
+    toggle = page.locator("button[aria-expanded]:visible", has_text=FOLDED)
+    if show_unreachable and toggle.count():
+        toggle.first.click()
+        page.wait_for_selector(f"button:visible:has-text('{UNFOLDED}')")
     return [" | ".join(t.split("\n")) for t in rows.all_inner_texts()]
 
 
@@ -197,6 +211,14 @@ def test_panel_lists_working_sources_first_after_a_failure(browser):
         _wait_switched_and_playing(page)
         # Let the slowest source (4s) arrive and get measured.
         page.wait_for_timeout(6000)
+        # Folded by default: only the other working source is listed ...
+        visible = _source_rows(page, show_unreachable=False)
+        assert len(visible) == 1 and "/s" in visible[0], visible
+        # ... and the three broken ones are behind the toggle at the end.
+        assert page.locator(
+            "button:visible", has_text=f"3 {FOLDED}"
+        ).count() == 1
+        page.locator('button:has-text("收起")').first.click()
         rows = _source_rows(page)
         assert len(rows) == 4, rows
 

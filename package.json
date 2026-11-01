@@ -18,6 +18,7 @@
     "gen:manifest": "node scripts/generate-manifest.js",
     "gen:runtime": "node scripts/generate-runtime.js",
     "check:sources": "node scripts/check-sources.mjs",
+    "check:candidates": "node scripts/check-sources.mjs --config=scripts/source-candidates.json",
     "postbuild": "echo 'Build completed - sitemap generation disabled'",
     "prepare": "husky install",
     "pages:build": "npx @cloudflare/next-on-pages"

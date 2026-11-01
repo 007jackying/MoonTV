@@ -14,6 +14,11 @@
  *   node scripts/check-sources.mjs --disabled           # 只测已 disabled 的源（看能否恢复）
  *   node scripts/check-sources.mjs --wd=斗罗大陆 --timeout=15000 --json
  *
+ * 测试候选源（不改 config.json）：
+ *   node scripts/check-sources.mjs --config=scripts/source-candidates.json
+ *   node scripts/check-sources.mjs --config=scripts/source-candidates.json --ok-json > ok.json
+ *   --ok-json 只输出可用源的 {"key": {...}} 片段，可直接粘进 config.json 的 api_site
+ *
  * 只要有源不可用，退出码为 1。
  * 注意：要在能访问这些站点的网络里运行（本机或服务器）；
  * 部分源有地域封锁，结果因出口 IP 而异。
@@ -122,7 +127,12 @@ await Promise.all(
   }),
 );
 
-if (flag('json')) {
+if (flag('ok-json')) {
+  const ok = Object.fromEntries(
+    results.filter((r) => r.ok).map((r) => [r.key, sites[r.key]]),
+  );
+  console.log(JSON.stringify(ok, null, 2));
+} else if (flag('json')) {
   console.log(JSON.stringify(results, null, 2));
 } else {
   const today = new Date().toISOString().slice(0, 10);

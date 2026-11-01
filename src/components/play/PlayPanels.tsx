@@ -18,7 +18,7 @@ import {
   useEpisodeOrder,
   WrongMatchButton,
 } from './PlayPanelParts';
-import { rankSources } from './sourceHealth';
+import { rankSources, splitUnreachable } from './sourceHealth';
 import { sourceKeyOf, VideoInfo } from './useSourceSpeedTest';
 import { useI18n } from '../LanguageProvider';
 import { staggerStyle } from '../ui/Organic';
@@ -51,18 +51,53 @@ export interface PlayPanelProps {
 
 const NO_FAILED: ReadonlySet<string> = new Set();
 
-function useOtherSources(props: PlayPanelProps) {
-  const { detail, availableSources, infoMap, prioritizeHealthy } = props;
+interface OtherSources {
+  /** 除当前源外的全部源 */
+  all: SearchResult[];
+  /** 可用（或还没测完）的源 */
+  reachable: SearchResult[];
+  /** 连不上 / 没测出速度 / 播放失败的源，默认折叠在列表末尾 */
+  unreachable: SearchResult[];
+}
+
+function useOtherSources(props: PlayPanelProps): OtherSources {
+  const {
+    detail,
+    availableSources,
+    infoMap,
+    prioritizeHealthy,
+    pendingSourceKey,
+  } = props;
   const failedKeys = props.failedKeys || NO_FAILED;
   const currentKey = detail ? sourceKeyOf(detail) : '';
   return useMemo(() => {
     const others = availableSources.filter(
       (s) => sourceKeyOf(s) !== currentKey
     );
-    return prioritizeHealthy
+    const ordered = prioritizeHealthy
       ? rankSources(others, infoMap, failedKeys)
       : others;
-  }, [availableSources, currentKey, infoMap, failedKeys, prioritizeHealthy]);
+    const { reachable, unreachable } = splitUnreachable(
+      ordered,
+      infoMap,
+      failedKeys
+    );
+    // 正在切换到的源不能被折叠起来，否则"切换中…"就看不到了
+    const pendingIdx = unreachable.findIndex(
+      (s) => sourceKeyOf(s) === pendingSourceKey
+    );
+    if (pendingIdx >= 0) {
+      reachable.push(...unreachable.splice(pendingIdx, 1));
+    }
+    return { all: others, reachable, unreachable };
+  }, [
+    availableSources,
+    currentKey,
+    infoMap,
+    failedKeys,
+    prioritizeHealthy,
+    pendingSourceKey,
+  ]);
 }
 
 function SourceListStatus({ props }: { props: PlayPanelProps }) {
@@ -124,32 +159,66 @@ function OtherSourceRows({
   tone,
 }: {
   props: PlayPanelProps;
-  others: SearchResult[];
+  others: OtherSources;
   tone: 'bg' | 'surface';
 }) {
-  if (others.length === 0) return <SourceListStatus props={props} />;
+  const { t } = useI18n();
+  const [showUnreachable, setShowUnreachable] = useState(false);
+  const { reachable, unreachable } = others;
+
+  const renderRow = (s: SearchResult, i: number) => {
+    const key = sourceKeyOf(s);
+    return (
+      <div key={key} className='animate-o-rise' style={staggerStyle(i)}>
+        <SourceRow
+          source={s}
+          info={props.infoMap.get(key)}
+          measuring={props.isMeasuring(s)}
+          pending={props.pendingSourceKey === key}
+          failed={!!props.failedKeys?.has(key)}
+          currentTitle={props.detail?.title || ''}
+          disabled={!!props.pendingSourceKey}
+          onSelect={() => props.onSourceSelect(s)}
+          tone={tone}
+        />
+      </div>
+    );
+  };
+
+  const showStatus =
+    reachable.length === 0 &&
+    (unreachable.length === 0 || props.sourceSearchLoading);
+
   return (
     <>
-      {others.map((s, i) => {
-        const key = sourceKeyOf(s);
-        return (
-          <div key={key} className='animate-o-rise' style={staggerStyle(i)}>
-            <SourceRow
-              key={key}
-              source={s}
-              info={props.infoMap.get(key)}
-              measuring={props.isMeasuring(s)}
-              pending={props.pendingSourceKey === key}
-              failed={!!props.failedKeys?.has(key)}
-              currentTitle={props.detail?.title || ''}
-              disabled={!!props.pendingSourceKey}
-              onSelect={() => props.onSourceSelect(s)}
-              tone={tone}
-            />
-          </div>
-        );
-      })}
-      {props.sourceSearchLoading && <SourceSkeletonRows />}
+      {showStatus ? (
+        <SourceListStatus props={props} />
+      ) : (
+        <>
+          {reachable.map(renderRow)}
+          {props.sourceSearchLoading && <SourceSkeletonRows />}
+        </>
+      )}
+      {unreachable.length > 0 && (
+        <>
+          <button
+            type='button'
+            onClick={() => setShowUnreachable((v) => !v)}
+            aria-expanded={showUnreachable}
+            className='o-btn o-btn-ghost flex-none self-start px-2.5 py-1 text-[13px] text-o-neutral-700'
+          >
+            {showUnreachable
+              ? t.hideFailedSources
+              : t.showFailedSources(unreachable.length)}
+            {showUnreachable ? (
+              <ChevronUp className='h-3.5 w-3.5' strokeWidth={2.75} />
+            ) : (
+              <ChevronDown className='h-3.5 w-3.5' strokeWidth={2.75} />
+            )}
+          </button>
+          {showUnreachable && unreachable.map(renderRow)}
+        </>
+      )}
     </>
   );
 }
@@ -222,10 +291,10 @@ export function PlaySidePanel(props: PlayPanelProps) {
               >
                 {sourcesExpanded
                   ? t.collapse
-                  : props.sourceSearchLoading && others.length === 0
+                  : props.sourceSearchLoading && others.all.length === 0
                   ? t.searchingSources
-                  : others.length > 0
-                  ? t.moreSources(others.length)
+                  : others.all.length > 0
+                  ? t.moreSources(others.all.length)
                   : t.noSources}
                 {sourcesExpanded ? (
                   <ChevronUp className='h-3.5 w-3.5' strokeWidth={2.75} />

@@ -632,6 +632,54 @@
       "is_adult": false,
       "disabled": true,
       "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
+    },
+    "kuaikan": {
+      "api": "https://www.kuaikanzy.net/api.php/provide/vod",
+      "name": "快看资源",
+      "detail": "https://www.kuaikanzy.net",
+      "is_adult": false
+    },
+    "yhdm": {
+      "api": "https://api.yhdm6.com/api.php/provide/vod",
+      "name": "樱花动漫",
+      "detail": "https://api.yhdm6.com",
+      "is_adult": false
+    },
+    "dm84": {
+      "api": "https://www.dm84.tv/api.php/provide/vod",
+      "name": "动漫巴士",
+      "detail": "https://www.dm84.tv",
+      "is_adult": false
+    },
+    "jilupian": {
+      "api": "https://www.jlpzy.net/api.php/provide/vod",
+      "name": "纪录片之家",
+      "detail": "https://www.jlpzy.net",
+      "is_adult": false
+    },
+    "1080zy": {
+      "api": "https://api.1080zyku.com/api.php/provide/vod",
+      "name": "1080资源库",
+      "detail": "https://api.1080zyku.com",
+      "is_adult": false
+    },
+    "haokan": {
+      "api": "https://api.haokanapi.com/api.php/provide/vod",
+      "name": "好看资源",
+      "detail": "https://api.haokanapi.com",
+      "is_adult": false
+    },
+    "taopian": {
+      "api": "https://taopianapi.com/home/cjapi/as/mc10/vod",
+      "name": "淘片资源",
+      "detail": "https://taopianapi.com",
+      "is_adult": false
+    },
+    "xueba": {
+      "api": "https://api.xuebatv.com/api.php/provide/vod",
+      "name": "学霸TV",
+      "detail": "https://api.xuebatv.com",
+      "is_adult": false
     }
   }
 }

@@ -223,6 +223,11 @@ const zh = {
   allLoaded: '已经到底了',
   nothingHere: '暂无相关内容',
   loadFailed: '加载失败，请稍后重试',
+
+  // 开发者工具拦截页
+  blockedTitle: '访问已中断',
+  blockedMessage: '检测到开发者工具，播放已停止。请关闭开发者工具后返回首页。',
+  blockedBack: '返回首页',
   // 下载
   dl: {
     title: '下载',
@@ -589,6 +594,11 @@ const en: Messages = {
   allLoaded: 'You’ve reached the end',
   nothingHere: 'Nothing here yet',
   loadFailed: 'Couldn’t load. Try again later.',
+
+  blockedTitle: 'Access interrupted',
+  blockedMessage:
+    'Developer tools were detected and playback was stopped. Close them, then go back to the home page.',
+  blockedBack: 'Back to home',
   dl: {
     title: 'Downloads',
     summary: (active, total) =>

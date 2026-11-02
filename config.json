@@ -75,7 +75,7 @@
     },
     "wolongzy_cc": {
       "api": "https://collect.wolongzy.cc/api.php/provide/vod",
-      "name": "TV-卧龙资源",
+      "name": "TV-卧龙资源-1",
       "detail": "",
       "is_adult": false,
       "disabled": true,
@@ -83,7 +83,7 @@
     },
     "wolongzyw_com": {
       "api": "https://wolongzyw.com/api.php/provide/vod",
-      "name": "TV-卧龙资源",
+      "name": "TV-卧龙资源-2",
       "detail": "https://wolongzyw.com",
       "is_adult": false,
       "disabled": true,
@@ -119,13 +119,13 @@
     },
     "wujinapi_com": {
       "api": "https://api.wujinapi.com/api.php/provide/vod",
-      "name": "TV-无尽资源",
+      "name": "TV-无尽资源-1",
       "detail": "",
       "is_adult": false
     },
     "wujinapi_me": {
       "api": "https://api.wujinapi.me/api.php/provide/vod",
-      "name": "TV-无尽资源",
+      "name": "TV-无尽资源-2",
       "detail": "",
       "is_adult": false,
       "disabled": true,
@@ -133,7 +133,7 @@
     },
     "wujinapi_net": {
       "api": "https://api.wujinapi.net/api.php/provide/vod",
-      "name": "TV-无尽资源",
+      "name": "TV-无尽资源-3",
       "detail": "",
       "is_adult": false,
       "disabled": true,
@@ -253,7 +253,7 @@
     },
     "dbzy_caiji": {
       "api": "https://caiji.dbzy.tv/api.php/provide/vod",
-      "name": "TV-豆瓣资源",
+      "name": "TV-豆瓣资源-1",
       "detail": "https://caiji.dbzy.tv",
       "is_adult": false,
       "disabled": true,
@@ -261,7 +261,7 @@
     },
     "dbzy": {
       "api": "https://dbzy.tv/api.php/provide/vod",
-      "name": "TV-豆瓣资源",
+      "name": "TV-豆瓣资源-2",
       "detail": "https://dbzy.tv",
       "is_adult": false,
       "disabled": true,
@@ -632,6 +632,46 @@
       "is_adult": false,
       "disabled": true,
       "note": "DNS/连接失败（fetch failed，主机疑似已停止解析），暂不可用（2026-10-04 实测）"
+    },
+    "kuaikan": {
+      "api": "https://www.kuaikanzy.net/api.php/provide/vod",
+      "name": "快看资源 (new test)",
+      "is_adult": false
+    },
+    "yhdm": {
+      "api": "https://api.yhdm6.com/api.php/provide/vod",
+      "name": "樱花动漫 (new test)",
+      "is_adult": false
+    },
+    "dm84": {
+      "api": "https://www.dm84.tv/api.php/provide/vod",
+      "name": "动漫巴士 (new test)",
+      "is_adult": false
+    },
+    "jilupian": {
+      "api": "https://www.jlpzy.net/api.php/provide/vod",
+      "name": "纪录片之家 (new test)",
+      "is_adult": false
+    },
+    "1080zy": {
+      "api": "https://api.1080zyku.com/api.php/provide/vod",
+      "name": "1080资源库 (new test)",
+      "is_adult": false
+    },
+    "haokan": {
+      "api": "https://api.haokanapi.com/api.php/provide/vod",
+      "name": "好看资源 (new test)",
+      "is_adult": false
+    },
+    "taopian": {
+      "api": "https://taopianapi.com/home/cjapi/as/mc10/vod",
+      "name": "淘片资源 (new test)",
+      "is_adult": false
+    },
+    "xueba": {
+      "api": "https://api.xuebatv.com/api.php/provide/vod",
+      "name": "学霸TV (new test)",
+      "is_adult": false
     }
   }
 }

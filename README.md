@@ -648,6 +648,15 @@ DreamTV 支持标准的苹果 CMS V10 API 格式。
 
 当前停用了哪些源、失效分类与复测脚本见 [`docs/broken-sources.md`](docs/broken-sources.md)。
 
+实测某个源能不能用：`pnpm check:sources <key...>`，加 `--play` 会一直测到能否拿到可播放的
+`.m3u8`。新找到的候选源先放进单独的 JSON（格式同 `api_site`），用
+`--config=<文件>` 测，通过的再加进 `config.json`——`scripts/source-candidates.json` 就是这样
+一份待测清单，`pnpm check:candidates` 会对它跑 `--play`，`--ok-json` 只输出通过的源。
+
+`detail` 只给**确实需要抓网页**的源填：填了以后 `/api/detail`（播放页首帧、收藏 /
+播放记录打开）会改为抓取 `<detail>/index.php/vod/detail/id/<id>.html`，不再走 JSON API。
+把它填成 API 自己的域名时，API 专用的域名通常没有这个网页，详情就拿不到分集，播放页只能退回多源搜索。
+
 ## 管理员配置
 
 **该特性目前仅支持通过非 localstorage 存储的部署方式使用**

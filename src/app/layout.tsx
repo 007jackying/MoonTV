@@ -2,11 +2,18 @@
 
 import type { Metadata, Viewport } from 'next';
 import { Caprasimo, Figtree } from 'next/font/google';
+import { cookies } from 'next/headers';
 
 import './globals.css';
 import 'sweetalert2/dist/sweetalert2.min.css';
 
+import type { AdminConfig } from '@/lib/admin.types';
 import { getConfig } from '@/lib/config';
+import {
+  buildDevToolsGuardScript,
+  isDevToolsGuardEnabled,
+  isDevToolsGuardExempt,
+} from '@/lib/devtools-guard';
 
 import ConditionalNav from '../components/ConditionalNav';
 import GlobalDownloadManager from '../components/GlobalDownloadManager';
@@ -78,8 +85,9 @@ export default async function RootLayout({
     process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
   let danmakuApiBaseUrl = process.env.NEXT_PUBLIC_DANMU_API_BASE_URL || '';
   let autoUpdateEnabled = false;
+  let config: AdminConfig | null = null;
   if (storageType !== 'localstorage') {
-    const config = await getConfig();
+    config = await getConfig();
     siteName = config.SiteConfig.SiteName;
     announcement = config.SiteConfig.Announcement;
     enableRegister = config.UserConfig.AllowRegister;
@@ -91,6 +99,19 @@ export default async function RootLayout({
     danmakuApiBaseUrl =
       config.SiteConfig.DanmakuApiBaseUrl || danmakuApiBaseUrl;
     autoUpdateEnabled = config.SubscriptionConfig?.autoUpdate === true;
+  }
+
+  // 开发者工具拦截：默认开启，站长 / 管理员豁免（见 lib/devtools-guard.ts）
+  let devToolsGuard = isDevToolsGuardEnabled();
+  if (devToolsGuard) {
+    let username: string | undefined;
+    try {
+      const raw = cookies().get('auth')?.value;
+      if (raw) username = JSON.parse(decodeURIComponent(raw))?.username;
+    } catch {
+      // cookie 损坏时按普通用户处理
+    }
+    devToolsGuard = !isDevToolsGuardExempt(username, config);
   }
 
   // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
@@ -120,6 +141,11 @@ export default async function RootLayout({
             __html: `window.RUNTIME_CONFIG = ${JSON.stringify(runtimeConfig)};`,
           }}
         />
+        {devToolsGuard && (
+          <script
+            dangerouslySetInnerHTML={{ __html: buildDevToolsGuardScript() }}
+          />
+        )}
       </head>
       <body
         className={`${caprasimo.variable} ${figtree.variable} min-h-screen bg-o-bg font-body text-o-ink`}

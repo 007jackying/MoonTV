@@ -522,6 +522,7 @@ services:
 | NEXT_PUBLIC_DOUBAN_IMAGE_PROXY      | 自定义豆瓣图片代理 URL                       | url prefix                       | (空)                                                                                                                       |
 | NEXT_PUBLIC_DISABLE_YELLOW_FILTER   | 关闭色情内容过滤                             | true/false                       | false                                                                                                                      |
 | NEXT_PUBLIC_DANMU_API_BASE_URL      | 弹幕接口地址                                 | 接口地址                         | (空)                                                                                                                       |
+| DEVTOOLS_GUARD                      | 拦截开发者工具（见下方）                     | true / false                     | true                                                                                                                       |
 
 NEXT_PUBLIC_DOUBAN_PROXY_TYPE 选项解释：
 
@@ -542,6 +543,12 @@ NEXT_PUBLIC_DOUBAN_IMAGE_PROXY_TYPE 选项解释：
 - cmliussss-cdn-tencent：由浏览器请求豆瓣 CDN，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由腾讯云 cdn 提供加速
 - cmliussss-cdn-ali：由浏览器请求豆瓣 CDN，该 CDN 由 [CMLiussss](https://github.com/cmliu) 搭建，并由阿里云 cdn 提供加速
 - custom: 用户自定义 proxy，由 NEXT_PUBLIC_DOUBAN_IMAGE_PROXY 定义
+
+DEVTOOLS_GUARD 说明：
+
+- 开启时在页面 `<head>` 内联一段脚本：屏蔽 F12、Ctrl/Cmd+Shift+I/J/C、Cmd+Option+I/J/C、Ctrl+U（查看源代码）和右键菜单（输入框除外）；并用 `debugger` 计时检测开发者工具，检测到后停止所有音视频并整页跳转到 `/blocked`（浏览器默认会随之清空 Network 面板）。
+- 站长（`USERNAME`）与管理员不受影响，角色以服务端配置为准，不信任 cookie 里的 role。localstorage 模式或未设置 `PASSWORD` 时没有可信身份，所有人都会被拦截，需要调试时设 `DEVTOOLS_GUARD=false`。开发环境（`next dev`）始终关闭。
+- 这是威慑措施，不是安全边界：检测前已发出的请求仍可见，关闭断点、使用抓包代理或直接请求接口都能绕过。没有使用「窗口尺寸差」检测，因为浏览器侧边栏与页面缩放会把普通用户误判踢走。
 
 ## 配置说明
 

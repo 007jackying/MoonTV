@@ -15,7 +15,7 @@ const ConditionalNav = () => {
   const pathname = usePathname();
 
   // 不显示导航栏的路径列表
-  const hideNavPaths = ['/login'];
+  const hideNavPaths = ['/login', '/blocked'];
 
   // 检查当前路径是否需要隐藏导航栏
   const shouldHideNav = hideNavPaths.some(path => pathname.startsWith(path));

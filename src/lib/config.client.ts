@@ -19,11 +19,15 @@ export async function getCustomCategories(): Promise<{
   }));
 }
 
+/**
+ * `/api/config/sources` 下发给浏览器的采集源信息。
+ *
+ * 故意不含 `api` / `detail`：采集源地址只在服务端使用（/api/search、/api/detail
+ * 等路由代为请求），不暴露给前端。
+ */
 export interface ApiSite {
   key: string;
   name: string;
-  api: string;
-  detail?: string;
   is_adult?: boolean;
 }
 
@@ -47,8 +51,6 @@ export async function fetchApiSites(): Promise<ApiSite[]> {
     return data.map((site: any) => ({
       key: site.key,
       name: site.name,
-      api: site.api,
-      detail: site.detail,
       is_adult: site.is_adult,
     })) as ApiSite[];
   } catch (error) {
